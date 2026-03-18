@@ -1,0 +1,150 @@
+"""Tests for the fluent SDK with context manager."""
+
+import pytest
+
+from model_ledger import Inventory
+from model_ledger.core.enums import RiskTier, VersionStatus
+from model_ledger.core.exceptions import (
+    ImmutableVersionError,
+    ModelNotFoundError,
+    VersionNotFoundError,
+)
+
+
+@pytest.fixture
+def inv(tmp_path):
+    return Inventory(db_path=str(tmp_path / "test.db"))
+
+
+def test_register_model(inv):
+    model = inv.register_model(
+        name="fraud_model",
+        owner="alice",
+        tier="high",
+        intended_purpose="Detect fraud",
+    )
+    assert model.name == "fraud_model"
+    assert model.tier == RiskTier.HIGH
+
+
+def test_register_model_idempotent(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    assert len(inv.list_models()) == 1
+
+
+def test_new_version_context_manager(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.add_component("inputs/features/risk_score", type="Feature")
+        v.add_document(doc_type="system_design", title="CSD v1")
+    loaded = inv.get_version("m", v.version_str)
+    assert loaded is not None
+    assert loaded.status == VersionStatus.DRAFT
+    # Inputs should have a child
+    inputs = loaded.tree.children[0]
+    assert len(inputs.children) > 0
+
+
+def test_new_version_with_base_copies_content(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.add_component("inputs/features/f1", type="Feature")
+        v.add_document(doc_type="model_spec", title="Spec")
+    inv.publish("m", v.version_str)
+
+    with inv.new_version("m", base=v.version_str) as v2:
+        pass
+    loaded = inv.get_version("m", v2.version_str)
+    # Tree copied from base
+    inputs = loaded.tree.children[0]
+    assert len(inputs.children) > 0
+    # Docs copied from base
+    assert len(loaded.documents) > 0
+
+
+def test_publish_makes_immutable(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        pass
+    inv.publish("m", v.version_str)
+    loaded = inv.get_version("m", v.version_str)
+    assert loaded.status == VersionStatus.PUBLISHED
+
+
+def test_model_not_found(inv):
+    with pytest.raises(ModelNotFoundError, match="No model named"):
+        inv.new_version("nonexistent")
+
+
+def test_add_reference(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.add_reference("github", identifier="abc123", metadata={"repo": "test"})
+    loaded = inv.get_version("m", v.version_str)
+    assert len(loaded.references) == 1
+
+
+def test_add_evidence(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.add_evidence("test_result", title="Unit tests", artifact_uri="gs://bucket/results.json")
+    loaded = inv.get_version("m", v.version_str)
+    assert len(loaded.evidence) == 1
+
+
+def test_add_artifact(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.add_artifact(artifact_type="pickle", uri="gs://bucket/model.pkl")
+    loaded = inv.get_version("m", v.version_str)
+    assert len(loaded.artifacts) == 1
+
+
+def test_deprecate_version(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        pass
+    inv.publish("m", v.version_str)
+    inv.deprecate("m", v.version_str)
+    loaded = inv.get_version("m", v.version_str)
+    assert loaded.status == VersionStatus.DEPRECATED
+
+
+def test_audit_trail(inv):
+    inv.register_model(
+        name="m", owner="a", tier="low", intended_purpose="Test", actor="vignesh"
+    )
+    log = inv.get_audit_log("m")
+    assert len(log) >= 1
+    assert log[0].action == "registered_model"
+    assert log[0].actor == "vignesh"
+
+
+def test_set_training_target(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.set_training_target("SAR filing prediction")
+        v.set_run_frequency("daily")
+    loaded = inv.get_version("m", v.version_str)
+    assert loaded.training_target == "SAR filing prediction"
+    assert loaded.run_frequency == "daily"
+
+
+def test_set_next_validation_due(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with inv.new_version("m") as v:
+        v.set_next_validation_due("2027-01-01")
+    loaded = inv.get_version("m", v.version_str)
+    assert str(loaded.next_validation_due) == "2027-01-01"
+
+
+def test_get_model_raises_on_missing(inv):
+    with pytest.raises(ModelNotFoundError):
+        inv.get_model("nonexistent")
+
+
+def test_version_not_found_on_publish(inv):
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
+    with pytest.raises(VersionNotFoundError):
+        inv.publish("m", "99.0.0")

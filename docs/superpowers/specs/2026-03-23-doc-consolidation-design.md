@@ -63,8 +63,12 @@ model-ledger has ~15 overlapping docs accumulated across design iterations, stra
 #### 1. The Problem Everyone Has (~200 words)
 Every bank's model inventory is a spreadsheet. SR 11-7 requires comprehensive model inventories; the industry responds with Excel and SharePoint. Commercial tools (Yields.io, ValidMind, SAS) exist but are expensive, proprietary, and not developer-friendly. No open standard exists.
 
-#### 2. Why Now: The Agent Era Changes Everything (~150 words)
-AI agents are governing models — AutoValidator proves it. But agents can't consume spreadsheets or PDFs. The gap isn't "we need a better UI" — it's "we need machine-readable governance infrastructure." This is the agent-first differentiator.
+#### 2. Why Now: The Agent Era Changes Everything (~200 words)
+AI agents are governing models — AutoValidator proves it. But agents can't consume spreadsheets or PDFs. The gap isn't "we need a better UI" — it's "we need machine-readable governance infrastructure."
+
+Frame through the Bitter Lesson (Sutton, 2019): the history of AI shows that general methods leveraging computation always win over hand-encoded human knowledge. Model governance is about to learn the same lesson. Today's governance is manual: humans assemble context, humans check compliance, humans write reports. model-ledger doesn't try to encode governance intelligence — it builds the structured representation that lets AI agents do the governing. The validation rules are the floor (regulatory minimums), not the ceiling. The real intelligence lives in agents that traverse, reason over, and act on the structured data.
+
+Key distinction: model-ledger is infrastructure (representation), not reasoning. Like how good data formats (protobuf, JSON-LD) enable computation to scale, model-ledger is the governance data format that makes the Bitter Lesson possible for MRM.
 
 #### 3. What model-ledger Is (~200 words)
 One-paragraph definition, then three capabilities:
@@ -160,8 +164,9 @@ Internal adapter package (lives in `forge-internal-mrm`, not OSS repo):
 - AutoValidator bridge — generates configs from assembled models
 - Contract boundary: adapters depend on `model-ledger`, never the reverse
 
-#### 8. Design Rationale (~400 words)
+#### 8. Design Rationale (~500 words)
 The "why" section:
+- **Bitter Lesson alignment**: model-ledger is representation, not reasoning. The schema and validation rules are the minimum structure agents need — the floor, not the ceiling. The design deliberately avoids encoding governance intelligence (what to do about findings, how to prioritize risks, when a model is "good enough") and instead provides the structured data that lets agents like AutoValidator discover those answers through computation. Hardcoded rules (SR 11-7 profile) are regulatory minimums — test suites, not decision engines.
 - Why OWL/SHACL-inspired but Pydantic-implemented (rigor without RDF complexity)
 - Why strict I/P/O tree (SR 11-7 alignment, agent navigability, examiner expectations)
 - Why immutable published versions (audit integrity, regulatory defensibility)
@@ -189,3 +194,4 @@ Contributor roadmap:
 | Hackweek scope | Both docs drafted + OSPO issue + code push | Ambitious but source material is ready |
 | Technical Design focus | Contributor-first, then design rationale | Serves the OSS audience first, curious readers second |
 | Writing approach | Parallel with shared skeleton | Zero audience overlap, single feedback round, hackweek demands speed |
+| Bitter Lesson framing | Integrate into both docs | Manager (Krish) sent Sutton's essay — model-ledger is representation (infrastructure) not reasoning (intelligence). Validation rules are the floor, agents are the ceiling. |

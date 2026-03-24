@@ -1,33 +1,46 @@
 # model-ledger
 
-The first Apache-2.0-licensed, developer-first Python framework for ML model governance.
+A typed, version-controlled model inventory and governance framework.
 
-90% of banks use spreadsheets for model inventory. We built the alternative.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Quickstart
+## What It Does
+
+model-ledger provides a formal, machine-readable inventory for model risk management. It tracks models, governance documents, validation observations, and structured feedback — all as typed Python objects with pluggable storage and executable compliance profiles.
 
 ```python
 from model_ledger import Inventory
 
 inv = Inventory()
 
-inv.register_model(
-    name="fraud_detector",
-    owner="risk-team",
+# Register a model
+model = inv.register_model(
+    name="cCRR Global",
+    owner="Risk ML",
     tier="high",
-    intended_purpose="Score transaction fraud risk in real time",
+    intended_purpose="Credit risk scoring for Square sellers",
+    developers=["alice", "bob"],
+    validator="carol",
 )
 
-with inv.new_version("fraud_detector", actor="alice") as v:
-    v.add_component("inputs/features/transaction_signals", type="FeatureSet")
-    v.add_component("processing/algorithm/xgboost", type="Algorithm")
-    v.add_component("outputs/scores/fraud_probability", type="ProbabilityScore")
-    v.add_document(doc_type="system_design", title="CSD v2")
+# Build a version with the I/P/O component tree
+with inv.new_version("cCRR Global", version="2.0.0", actor="alice") as v:
+    v.add_component("Inputs/beacon_features", type="feature_set",
+                     metadata={"count": 497, "source": "Dumbo"})
+    v.add_component("Processing/xgboost_classifier", type="algorithm",
+                     metadata={"library": "xgboost", "features": 200})
+    v.add_component("Outputs/risk_score", type="probability_score",
+                     metadata={"range": [0, 1]})
+    v.add_document(doc_type="system_design", title="cCRR v2 CSD")
 
-    result = v.validate(profile="sr_11_7")
-    print(result)  # PASS: 9/9 rules satisfied
+# Validate against SR 11-7
+from model_ledger.validate import validate
 
-inv.publish("fraud_detector", "0.1.0", actor="alice")
+result = validate(model, inv.get_version("cCRR Global", "2.0.0"), profile="sr_11_7")
+print(result)
+
+# Publish (immutable after this)
+inv.publish_version("cCRR Global", "2.0.0", actor="carol")
 ```
 
 ## Install
@@ -36,25 +49,34 @@ inv.publish("fraud_detector", "0.1.0", actor="alice")
 pip install model-ledger
 ```
 
-## What It Does
+## Key Concepts
 
-| Concept | Spreadsheet | MLflow | model-ledger |
-|---------|-------------|--------|--------------|
-| Model inventory | Ad hoc columns | Not provided | Typed schema with SR 11-7 fields |
-| Component tree (I/P/O) | Flat lists | Not supported | First-class hierarchical structure |
-| Regulatory validation | Manual checklist | None | Automated compliance profiles |
-| Audit trail | None | Run history | Append-only, immutable event log |
-| Version control | Manual | Model versions | Immutable published versions |
+- **Models** — Hierarchical I/P/O component trees per SR 11-7, with versions, ownership, and lifecycle states
+- **Observations** — Validation findings from any source (human reviewers, AI agents, automated tools), with full lifecycle tracking (draft → issued/removed)
+- **Feedback** — Structured records of what happened to each observation: kept, removed, modified — and why
+- **Validation profiles** — Executable compliance checks (SR 11-7 built-in, extensible to EU AI Act, NIST AI RMF, etc.)
+- **Immutable versions** — Published model versions cannot be modified. All changes require a new version with an audit event.
+- **Pluggable storage** — SQLite by default, extensible via the `InventoryBackend` protocol
 
-## Features
+## Documentation
 
-- **Typed schema** — Pydantic models covering SR 11-7, EU AI Act, OSFI E-23, PRA SS1/23, NIST AI RMF
-- **Component tree** — SR 11-7's Inputs/Processing/Outputs structure as first-class data
-- **Compliance profiles** — Validate your inventory against regulatory frameworks
-- **Audit trail** — Append-only event log on every mutation
-- **Immutable versions** — Published versions cannot be modified (enforced at SDK and storage layer)
-- **Pluggable storage** — SQLite by default, extensible via Protocol-based backends
-- **CLI** — `model-ledger validate`, `model-ledger export`, `model-ledger tree`
+- [What & Why](docs/what-and-why.md) — Motivation, architecture, and strategic context
+- [Technical Design](docs/technical-design.md) — Data model, SDK, validation engine, and code examples
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contribution guidelines.
+
+All commits require DCO sign-off (`git commit --signoff`) and PR titles use conventional commit format.
+
+## Project Resources
+
+| Resource | Description |
+|----------|-------------|
+| [CODEOWNERS](CODEOWNERS) | Project lead(s) |
+| [GOVERNANCE.md](GOVERNANCE.md) | Block open source governance |
+| [LICENSE](LICENSE) | Apache License, Version 2.0 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 
 ## License
 

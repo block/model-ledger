@@ -12,7 +12,7 @@ def test_save_and_get_observation():
     obs = Observation(
         content="Missing monitoring",
         source_type="human_reviewer",
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     backend.save_observation(obs)
     retrieved = backend.get_observation(obs.observation_id)
@@ -26,14 +26,14 @@ def test_list_observations_by_model_version():
         backend.save_observation(Observation(
             content=f"Finding {i}",
             source_type="ai_agent",
-            model_version_ref="cCRR/2.0.0",
+            model_version_ref="fraud_detection/2.0.0",
         ))
     backend.save_observation(Observation(
         content="Other model finding",
         source_type="human_reviewer",
-        model_version_ref="aCRR/1.0.0",
+        model_version_ref="credit_model/1.0.0",
     ))
-    results = backend.list_observations(model_version_ref="cCRR/2.0.0")
+    results = backend.list_observations(model_version_ref="fraud_detection/2.0.0")
     assert len(results) == 3
 
 
@@ -41,7 +41,7 @@ def test_save_and_get_validation_run():
     backend = InMemoryBackend()
     run = ValidationRun(
         source_type="ai_agent",
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     backend.save_validation_run(run)
     retrieved = backend.get_validation_run(run.run_id)
@@ -51,7 +51,7 @@ def test_save_and_get_validation_run():
 def test_save_and_get_validation_report():
     backend = InMemoryBackend()
     report = ValidationReport(
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
         issued_observations=["obs-1", "obs-2"],
         issued_by="vignesh",
     )
@@ -66,7 +66,7 @@ def test_append_and_list_feedback_events():
     obs = Observation(
         content="Test finding",
         source_type="ai_agent",
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     backend.save_observation(obs)
     event = FeedbackEvent(

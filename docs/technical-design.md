@@ -193,10 +193,10 @@ inv = Inventory("governance.db")
 
 # Register a model
 model = inv.register_model(
-    name="cCRR Global",
-    owner="Risk ML",
+    name="Fraud Detection Model",
+    owner="ML Engineering",
     tier="high",
-    intended_purpose="Credit risk scoring for Square sellers",
+    intended_purpose="Credit risk scoring for loan applicants",
     developers=["alice", "bob"],
     validator="carol",
     model_type="ml_model",
@@ -209,19 +209,19 @@ model = inv.register_model(
 Context manager for building a version. Mutations happen on the draft. Auto-saves on exit, does not auto-publish.
 
 ```python
-with inv.new_version("cCRR Global", version="2.0.0", actor="alice") as v:
+with inv.new_version("Fraud Detection Model", version="2.0.0", actor="alice") as v:
     # Build the component tree
-    v.add_component("Inputs/beacon_features", type="feature_set",
-                     metadata={"count": 497, "source": "Dumbo"})
-    v.add_component("Inputs/active_sellers_population", type="dataset",
-                     metadata={"source": "Snowflake", "query": "SELECT ..."})
+    v.add_component("Inputs/credit_features", type="feature_set",
+                     metadata={"count": 150, "source": "Feature Store"})
+    v.add_component("Inputs/active_customers", type="dataset",
+                     metadata={"source": "data_warehouse", "query": "SELECT ..."})
     v.add_component("Processing/xgboost_classifier", type="algorithm",
                      metadata={"library": "xgboost", "features": 200})
     v.add_component("Outputs/risk_score", type="probability_score",
                      metadata={"range": [0, 1]})
 
     # Attach governance documents
-    v.add_document(doc_type="system_design", title="cCRR v2 CSD",
+    v.add_document(doc_type="system_design", title="Fraud Detection v2 Design Doc",
                    url="https://docs.google.com/document/d/...")
     v.add_document(doc_type="validation_report", title="2025 Annual Validation")
 
@@ -229,7 +229,7 @@ with inv.new_version("cCRR Global", version="2.0.0", actor="alice") as v:
     v.set_next_validation_due("2027-03-01")
 
 # Publish when ready (immutable after this)
-inv.publish_version("cCRR Global", "2.0.0", actor="carol")
+inv.publish_version("Fraud Detection Model", "2.0.0", actor="carol")
 ```
 
 ### Assembly Flow (with adapters)
@@ -244,12 +244,12 @@ inventory = InventoryAdapter(credentials=...)
 tickets = TicketAdapter(credentials=...)
 
 # Assemble from existing systems
-model_data = inventory.fetch_model("cCRR Global")
-change_history = tickets.fetch_changes("cCRR Global")
+model_data = inventory.fetch_model("Fraud Detection Model")
+change_history = tickets.fetch_changes("Fraud Detection Model")
 
 # Normalize into model-ledger schema
 inv.register_model(**model_data)
-with inv.new_version("cCRR Global", version="2.0.0") as v:
+with inv.new_version("Fraud Detection Model", version="2.0.0") as v:
     inventory.populate_tree(v)
     tickets.attach_findings(v, change_history)
 ```
@@ -337,7 +337,7 @@ removed = corpus.query(
 )
 
 # Acceptance rate by observation type
-stats = corpus.summary_stats(model_name="cCRR Global")
+stats = corpus.summary_stats(model_name="Fraud Detection Model")
 ```
 
 ### Schema Extension Points
@@ -357,7 +357,7 @@ from model_ledger.validate import validate
 
 result = validate(model, version, profile="sr_11_7")
 print(result)
-# FAIL: cCRR Global [sr_11_7]
+# FAIL: Fraud Detection Model [sr_11_7]
 #   Errors: 2
 #   [ERROR] has_ipo_structure: Component tree missing required sections: {'Outputs'}
 #   [ERROR] has_governance_document: No governance documents attached to this version.

@@ -10,7 +10,7 @@ def test_observation_defaults():
     obs = Observation(
         content="Model has no independent monitoring",
         source_type="human_reviewer",
-        model_version_ref="cCRR Global/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     assert obs.observation_id  # auto-generated UUID
     assert obs.status == "draft"
@@ -25,19 +25,19 @@ def test_observation_with_all_fields():
         priority="P1",
         pillar="Input Data Validation",
         source_type="ai_agent",
-        source_detail="AutoValidator run 3",
-        model_version_ref="cCRR Global/2.0.0",
+        source_detail="Validation Agent run 3",
+        model_version_ref="fraud_detection/2.0.0",
         status="issued",
     )
     assert obs.priority == "P1"
-    assert obs.source_detail == "AutoValidator run 3"
+    assert obs.source_detail == "Validation Agent run 3"
     assert obs.status == "issued"
 
 
 def test_validation_run_defaults():
     run = ValidationRun(
         source_type="ai_agent",
-        model_version_ref="cCRR Global/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     assert run.run_id
     assert run.status == "draft"
@@ -46,7 +46,7 @@ def test_validation_run_defaults():
 
 def test_validation_report_immutability_fields():
     report = ValidationReport(
-        model_version_ref="cCRR Global/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
         issued_observations=["obs-1", "obs-2"],
         issued_by="vignesh",
     )

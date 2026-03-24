@@ -44,13 +44,7 @@ Commercial tools exist — hosted platforms with UIs, dashboards, and workflow e
 
 ### What's different now
 
-Two things have changed that make a new approach viable:
-
-**1. AI agents are doing governance work.** Organizations are building AI agents that generate validation reports from model artifacts — compressing multi-day manual work into sub-hour generation. These agents need machine-readable governance data as input, not spreadsheets and PDFs.
-
-**2. The Bitter Lesson applies to governance.** Rich Sutton's observation — that general methods leveraging computation always outperform hand-encoded human knowledge — is playing out in model risk management. The bottleneck isn't "smarter rules" or "better checklists." It's structured data that agents can compute over. More data, better agents, less manual work. The alternative is encoding more human judgment into more rigid workflows, which is exactly the approach that plateaus.
-
-model-ledger is the infrastructure layer that makes both of these possible.
+AI agents are starting to do governance work — generating validation reports, checking compliance, assembling documentation. These tools need machine-readable governance data as input, not spreadsheets and PDFs. model-ledger provides that structured data layer.
 
 ---
 

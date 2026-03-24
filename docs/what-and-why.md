@@ -171,7 +171,7 @@ model-ledger follows Block's established open-source program:
 
 | Phase | Scope | Timeline |
 |-------|-------|----------|
-| v0.1 | Core schema, SDK, SR 11-7 profile, storage backends, observation lifecycle | Built (81 tests passing) |
+| v0.1 | Core schema, SDK, SR 11-7 profile, storage backends, observation lifecycle, feedback corpus | Built (95 tests passing) |
 | v0.2 | Block adapters (Yields, Jira CCM, GDrive), AutoValidator integration | Q2 2026 |
 | v0.3 | CLI tooling, JSON-LD export, additional compliance profiles | Q3 2026 |
 | v0.4 | CycloneDX MBOM export, contributor ecosystem, first external adopter | Q4 2026 |

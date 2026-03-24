@@ -2,7 +2,7 @@
 
 A typed, version-controlled model inventory with pluggable storage, executable compliance profiles, and structured observation tracking.
 
-**Author**: Vignesh Narayanaswamy, Block MRM
+**Author**: Vignesh Narayanaswamy
 **Date**: March 2026
 **Prerequisite**: [What & Why](what-and-why.md) covers the motivation and strategic context.
 
@@ -26,7 +26,7 @@ model-ledger has four layers:
 └──────────────────────────────────────────────────────┘
 ```
 
-The Block adapter layer (`model-ledger-block`) sits alongside, not above — it depends on `model-ledger`, never the reverse.
+Organization-specific adapters sit alongside, not above — they depend on `model-ledger`, never the reverse.
 
 ### Package Structure
 
@@ -237,21 +237,21 @@ inv.publish_version("cCRR Global", "2.0.0", actor="carol")
 For existing models, adapters read from source systems and populate the inventory:
 
 ```python
-# Planned for v0.2 — Block-internal
-from model_ledger_block.adapters import YieldsAdapter, JiraCCMAdapter
+# Example: adapters for your organization's systems
+from my_org.adapters import InventoryAdapter, TicketAdapter
 
-yields = YieldsAdapter(credentials=...)
-jira = JiraCCMAdapter(credentials=...)
+inventory = InventoryAdapter(credentials=...)
+tickets = TicketAdapter(credentials=...)
 
 # Assemble from existing systems
-model_data = yields.fetch_model("cCRR Global")
-change_history = jira.fetch_changes("cCRR Global")
+model_data = inventory.fetch_model("cCRR Global")
+change_history = tickets.fetch_changes("cCRR Global")
 
 # Normalize into model-ledger schema
 inv.register_model(**model_data)
 with inv.new_version("cCRR Global", version="2.0.0") as v:
-    yields.populate_tree(v)
-    jira.attach_findings(v, change_history)
+    inventory.populate_tree(v)
+    tickets.attach_findings(v, change_history)
 ```
 
 ---
@@ -270,7 +270,7 @@ class Observation(BaseModel):
     pillar: str | None = None           # "Conceptual Soundness", "Input Data Validation", etc.
 
     source_type: str                    # "human_reviewer", "ai_agent", "automated_tool", "manual_entry"
-    source_detail: str | None = None    # "AutoValidator run 3", "Dan Smith during annual review"
+    source_detail: str | None = None    # "Validation Agent run 3", "Jane Smith during annual review"
 
     model_version_ref: str              # model_name + version
     status: str = "draft"               # draft → issued | removed
@@ -436,35 +436,11 @@ Implement the protocol. PostgreSQL, DynamoDB, or any storage system that can enf
 |--------|--------|-------------|
 | Audit packs | Planned (v0.2) | Examiner-ready bundles with model profile, findings, evidence |
 | Gap reports | Planned (v0.2) | Missing fields with severity and remediation hints |
-| AutoValidator configs | Planned (v0.2) | `ValidationRunConfig` contract for automated validation |
+| Agent configs | Planned (v0.2) | Structured inputs for AI validation tools |
 | JSON-LD | Planned (v0.3) | Machine-readable semantic export with linked data context |
 | CycloneDX MBOM | Planned (v0.4) | Software supply chain integration for model components |
 
-The `export/` module is scaffolded but not yet implemented. This is the primary focus for v0.2 alongside the Block adapters.
-
----
-
-## Block Integration Layer
-
-`model-ledger-block` is a separate internal package (planned for `forge-internal-mrm`). It depends on `model-ledger`; the reverse is never true.
-
-### Adapters
-
-- **Yields adapter** — reads model identity, status, tier, ownership from the current inventory system
-- **Jira CCM adapter** — reads change history, approval records, and findings from CCM tickets
-- **GDrive adapter** — reads governance documents (CSDs, validation reports, model specs)
-- **Assembly engine** — orchestrates adapters into unified `Model` objects
-
-### AutoValidator Integration
-
-Block-specific wiring between model-ledger and AutoValidator:
-
-- **Ingest.** Reads `problems_registry.json` from completed AutoValidator runs, creates `Observation` objects with `source_type: "ai_agent"`.
-- **Context.** Provides model component tree, governance docs, and prior feedback history as inputs to validation runs — replacing manual context assembly.
-- **Feedback retrieval.** Before AutoValidator generates observations, queries the `FeedbackCorpus` for similar past removals on this model and pillar.
-- **Adaptation metrics.** Tracks whether the same removal reasons recur (tooling not improving) or decline (tooling learning from feedback).
-
-AutoValidator is one integration. The OSS schema supports any validation tool that can produce or consume observations.
+The `export/` module is scaffolded but not yet implemented. This is the primary focus for v0.2.
 
 ---
 
@@ -484,11 +460,11 @@ Regulatory defensibility. If a published version's tree can be silently modified
 
 ### Why assembler-first, SDK-next
 
-Block has ~44 models already in production. An SDK-only approach would require every model team to adopt model-ledger before it provides value. The assembler approach provides immediate value by reading from existing systems (Yields, Jira, GDrive) — no workflow changes required. The SDK path follows for new models and teams that want to register governance metadata in code.
+Most organizations have models already in production. An SDK-only approach would require every model team to adopt model-ledger before it provides value. The assembler approach provides immediate value by reading from existing systems via adapters — no workflow changes required. The SDK path follows for new models and teams that want to register governance metadata in code.
 
 ### Why Apache-2.0
 
-Block's standard open-source license. Maximizes adoption (no copyleft concerns for enterprise users), includes patent protection, and aligns with the OSPO's existing processes and legal review.
+Maximizes adoption (no copyleft concerns for enterprise users) and includes patent protection.
 
 ### Why representation, not reasoning
 
@@ -504,7 +480,7 @@ model-ledger deliberately avoids encoding governance intelligence — it doesn't
 
 ## Contributing
 
-model-ledger follows Block's open-source contribution guidelines:
+model-ledger follows standard open-source contribution guidelines:
 
 - **DCO sign-off** on all commits (`git commit --signoff`)
 - **Conventional commits** for PR titles (`feat(sdk): add bulk registration`)
@@ -515,6 +491,6 @@ See CONTRIBUTING.md for build, test, and development instructions.
 
 ### Roadmap
 
-- **v0.2**: Block adapters (Yields, Jira, GDrive), export layer, AutoValidator integration
-- **v0.3**: CLI tooling, JSON-LD export, additional compliance profiles (`eu_ai_act`, `nist_ai_rmf`)
+- **v0.2**: Export layer, CLI tooling, adapter examples
+- **v0.3**: JSON-LD export, additional compliance profiles (`eu_ai_act`, `nist_ai_rmf`)
 - **v0.4**: CycloneDX MBOM export, contributor ecosystem growth

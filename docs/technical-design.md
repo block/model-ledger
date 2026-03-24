@@ -55,7 +55,7 @@ src/model_ledger/
 
 ## Data Model
 
-The data model is informed by OWL ontology and SHACL constraint patterns, but implemented in Pydantic — ontological rigor without RDF complexity.
+The data model is implemented in Pydantic, informed by OWL ontology and SHACL constraint patterns.
 
 ### Model
 
@@ -468,7 +468,7 @@ Maximizes adoption (no copyleft concerns for enterprise users) and includes pate
 
 ### Why representation, not reasoning
 
-model-ledger deliberately avoids encoding governance intelligence — it doesn't decide what observations mean, how to prioritize risks, or when a model is "good enough." It provides the structured data that lets agents discover those answers through computation. The validation rules (SR 11-7 profile) are regulatory minimums — the floor, not the ceiling. The real governance intelligence lives in agents and human reviewers who operate over the data model-ledger provides.
+model-ledger deliberately avoids encoding governance intelligence — it doesn't decide what observations mean, how to prioritize risks, or when a model is "good enough." It provides structured data. The validation rules (SR 11-7 profile) are regulatory minimums — the floor, not the ceiling.
 
 ### When NOT to use model-ledger
 

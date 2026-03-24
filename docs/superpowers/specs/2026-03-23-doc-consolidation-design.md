@@ -78,6 +78,15 @@ One-paragraph definition, then three capabilities:
 
 Includes the cCRR tree diagram (visual, no code).
 
+#### 3.5. The Feedback Loop: How Governance Gets Better Over Time (~200 words)
+Today, AutoValidator generates thousands of raw observations per validation cycle — but the human corrections (removals, refinements, rationale) are trapped in spreadsheets. Every cycle starts from zero.
+
+model-ledger captures this feedback as structured data: what the agent said, what the human decided, and why. Over validation cycles and across models, this accumulates into a golden dataset that agents can query before generating new observations. The schema provides stable structure that regulators require. The feedback layer provides the learning surface that agents need. Stability where governance demands it; adaptability where computation can improve it.
+
+The core schema (I/P/O tree, regulatory fields) is fixed — this is the auditable floor. But the system is designed for evolution: extensible metadata fields let agents surface patterns they discover, and frequently-appearing extensions can be promoted to first-class fields over time. The structure doesn't change on its own — but the data tells you when it should.
+
+Boundary with AutoValidator: model-ledger owns the feedback *data* (storage, schema, query). AutoValidator owns the feedback *intelligence* (what to do with it). Infrastructure vs. application — complementary, not competing.
+
 #### 4. Dual Value: Open Source + Block Internal (~250 words)
 Two subsections:
 - **External (PyPI, Apache-2.0)**: Industry standard anyone can adopt. Targets the 90% on spreadsheets. Positions Block as a governance thought leader.
@@ -155,6 +164,39 @@ What comes out:
 - JSON-LD (machine-readable semantic export)
 - CycloneDX MBOM (supply chain integration)
 
+#### 6.5. Feedback Schema & Validation Lineage (~350 words + code)
+The structured feedback system — how governance improves over time:
+
+**`FeedbackEvent` (OSS core)** — A record of agent-output-meets-human-judgment:
+- `observation_id`, `observation_content` — what the agent said
+- `verdict`: keep | remove | modify
+- `reason_code` — from a taxonomy (refuted_by_code, justified_by_design, wrong_scope, consolidated, etc.)
+- `rationale` — human explanation (free text)
+- `stage` — when in the pipeline (pipeline_filter, model_tab_triage, stakeholder_review)
+- `model_context` — which ModelVersion this relates to
+- Append-only, immutable once written
+
+**`FeedbackCorpus` (OSS core)** — Aggregate view over feedback events:
+- Query interface: "show me all removals for this observation type / model type / pillar"
+- Summary stats: acceptance rates by observation type, model, pillar
+- Taxonomy management: the reason codes in use, with definitions
+
+**`ValidationLineage` (OSS core)** — Connects a model version's full validation history:
+- Links ModelVersion → ValidationRuns → FeedbackEvents
+- Tracks raw → filtered → triaged observation counts per run
+- Improvement trajectory: whether the same removal reasons recur or decline over time
+
+**Schema Extension Points** — How the schema evolves without breaking stability:
+- Core fields (I/P/O tree, regulatory fields, structural invariants) are fixed and auditable
+- `extra_metadata: dict[str, Any]` on Model, ModelVersion, ComponentNode allows agents to park discovered patterns
+- Promotion path: if a field consistently appears in extra_metadata across many models, humans can promote it to a first-class field in a future version
+- This is the Bitter Lesson applied to schema design: agents discover what's useful, humans decide when it's stable enough to formalize
+
+**Block-internal implementation** (model-ledger-block):
+- AutoValidator adapter: reads `problems_registry.json` into FeedbackEvent objects
+- Feedback retrieval: before AutoValidator finalizes observations, query corpus for similar past removals
+- Adaptation metrics: track whether removal reasons recur (agent not learning) or decline (agent improving)
+
 #### 7. Block Integration Layer — `model-ledger-block` (~200 words)
 Internal adapter package (lives in `forge-internal-mrm`, not OSS repo):
 - Yields adapter — model metadata and status
@@ -195,3 +237,6 @@ Contributor roadmap:
 | Technical Design focus | Contributor-first, then design rationale | Serves the OSS audience first, curious readers second |
 | Writing approach | Parallel with shared skeleton | Zero audience overlap, single feedback round, hackweek demands speed |
 | Bitter Lesson framing | Integrate into both docs | Manager (Krish) sent Sutton's essay — model-ledger is representation (infrastructure) not reasoning (intelligence). Validation rules are the floor, agents are the ceiling. |
+| Feedback loop | Add FeedbackEvent/Corpus/Lineage to OSS schema; AutoValidator adapter in internal layer | Captures human corrections as structured data agents can learn from. Golden dataset that improves with scale. |
+| AutoValidator boundary | model-ledger owns feedback data, AutoValidator owns feedback intelligence | Infrastructure vs. application — complementary with Dan's work, not competing. Gives AutoValidator the memory it doesn't have today. |
+| Schema evolution | Fixed core + extensible extra_metadata + human-gated promotion | Krish's vision: agents discover useful patterns, humans decide when to formalize. Stability for regulators, adaptability for fast-moving AI. |

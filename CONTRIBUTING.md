@@ -44,6 +44,10 @@ git commit --signoff -m "feat(sdk): add bulk registration"
 - ruff for linting and formatting
 - pytest for testing
 
+## Block Employees
+
+If you work at Block, see internal documentation for Block-specific integrations and adapters.
+
 ## Questions?
 
 Open a discussion on GitHub or reach out on Discord.

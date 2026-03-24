@@ -2,7 +2,7 @@
 name: Bug Report
 about: Report a bug in model-ledger
 labels: bug
-assignees: vigneshn
+assignees: vigneshnarayanaswamy
 ---
 
 **Describe the bug**

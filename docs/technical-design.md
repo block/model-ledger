@@ -1,183 +1,520 @@
 # model-ledger — Technical Design
 
+A typed, version-controlled model inventory with pluggable storage, executable compliance profiles, and structured observation tracking.
+
 **Author**: Vignesh Narayanaswamy, Block MRM
 **Date**: March 2026
-**Status**: Outline — drafting during Hackweek
-**Prerequisite**: Read [What & Why](what-and-why.md) for strategic context.
+**Prerequisite**: [What & Why](what-and-why.md) covers the motivation and strategic context.
 
 ---
 
-## 1. Overview
+## Overview
 
-model-ledger is a Python library that provides a formal, machine-readable inventory for model governance. Four layers:
+model-ledger has four layers:
 
 ```
-Schema (core/models.py) → SDK (sdk/) → Validation (validate/) → Export (export/)
+┌──────────────────────────────────────────────────────┐
+│  Export          audit packs, gap reports, configs    │
+├──────────────────────────────────────────────────────┤
+│  Validation      SR 11-7 profile, pluggable engine   │
+├──────────────────────────────────────────────────────┤
+│  SDK             Inventory, DraftVersion, feedback    │
+├──────────────────────────────────────────────────────┤
+│  Core            Models, enums, exceptions, schema   │
+├──────────────────────────────────────────────────────┤
+│  Storage         SQLite, Memory, Protocol interface   │
+└──────────────────────────────────────────────────────┘
 ```
 
-The Block adapter layer (`model-ledger-block`) is a separate internal package.
+The Block adapter layer (`model-ledger-block`) sits alongside, not above — it depends on `model-ledger`, never the reverse.
 
-## 2. Data Model
+### Package Structure
 
-The core of the library.
+```
+src/model_ledger/
+├── core/
+│   ├── models.py       # Pydantic data models
+│   ├── enums.py        # Case-insensitive enums
+│   └── exceptions.py   # Actionable error hierarchy
+├── sdk/
+│   ├── inventory.py    # Main entry point
+│   └── draft_version.py # Context manager for version building
+├── validate/
+│   ├── engine.py       # Profile registry and runner
+│   └── profiles/
+│       └── sr_11_7.py  # SR 11-7 compliance rules
+├── backends/
+│   ├── protocol.py     # Backend interface (Protocol)
+│   ├── sqlite.py       # SQLite with immutability enforcement
+│   └── memory.py       # In-memory for testing
+├── export/             # Audit packs, gap reports, configs
+└── introspect/         # Schema introspection utilities
+```
 
-- `Model` and `ModelVersion` — identity, ownership, lifecycle states
-- `ComponentNode` — the I/P/O tree structure, typed containment rules
-- `Finding`, `AuditEvent`, `GovernanceDoc` — governance artifacts
-- Enums: `ModelType`, `RiskTier`, `ModelStatus`, `VersionStatus` (case-insensitive)
+---
 
-Structural invariants:
+## Data Model
 
-1. Single parent — every component has exactly one parent (strict tree)
-2. Three top-level children — every model has exactly one Inputs, Processing, Outputs
-3. Typed containment — Inputs can only contain Datasets, Assumptions, FeatureSets, etc.
-4. Version isolation — modifying one version cannot affect another
+The data model is informed by OWL ontology and SHACL constraint patterns, but implemented in Pydantic — ontological rigor without RDF complexity.
 
-Real Pydantic code from `core/models.py`.
+### Model
 
-## 3. SDK
+The top-level entity. Carries identity, ownership, risk classification, and regulatory metadata.
 
-How you use the library.
+```python
+class Model(BaseModel):
+    model_id: str = Field(default_factory=_uuid)
+    name: str
+    description: str | None = None
+    model_type: ModelType = ModelType.ML_MODEL     # ml_model, heuristic, vendor, llm, spreadsheet
 
-- `Inventory` — the entry point, backend-agnostic
-- `DraftVersion` — context manager for building model versions
-- Registration flow: create model → draft version → add components → publish
-- Assembly flow: read from adapters → normalize → validate → export
+    owner: str
+    developers: list[str] = Field(default_factory=list)
+    validator: str | None = None
+    approver: str | None = None
+    stakeholders: list[Stakeholder] = Field(default_factory=list)
 
-Real examples from `sdk/inventory.py` and `sdk/draft_version.py`.
+    intended_purpose: str
+    actual_use: str | None = None
+    restrictions_on_use: list[str] = Field(default_factory=list)
 
-## 4. Validation Engine
+    tier: RiskTier                                  # high, medium, low
+    risk_rating: ModelRiskRating | None = None       # 4-factor calculator
+    status: ModelStatus = ModelStatus.DEVELOPMENT    # development, review, active, deprecated, retired
 
-How compliance checks work.
+    jurisdictions: list[str] = Field(default_factory=list)
+    vendor: str | None = None
 
-- `ValidationProfile` interface — what a profile must implement
-- `sr_11_7` profile — 6 rules, what each checks, severity levels
-- How to add a new profile (extension point for `eu-ai-act`, `nist-ai-rmf`, etc.)
+    versions: list[ModelVersion] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+```
 
-Real code from `validate/engine.py` and `profiles/sr_11_7.py`.
+### ModelVersion
 
-## 5. Storage Backends
+A versioned snapshot of a model's structure and metadata. Versions are immutable once published — modifying a published version raises `ImmutableVersionError`.
 
-Pluggable persistence.
+```python
+class ModelVersion(BaseModel):
+    version: str
+    status: VersionStatus = VersionStatus.DRAFT     # draft, published, deprecated
 
-- `MemoryBackend` — for testing and ephemeral use
-- `SQLiteBackend` — immutability enforcement, audit trail, migration strategy
-- Backend interface — what you implement to add Postgres, DynamoDB, etc.
-- Append-only audit events — every mutation is recorded
+    training_target: str | None = None
+    methodology_approach: str | None = None
+    run_frequency: str | None = None
+    deployment_mode: str | None = None
+    monitoring_frequency: str | None = None
+    next_validation_due: date | None = None
 
-## 6. Export
+    tree: ComponentNode = Field(default_factory=_default_tree)
 
-What comes out.
+    upstream_models: list[str] = Field(default_factory=list)
+    downstream_models: list[str] = Field(default_factory=list)
 
-- Audit packs (examiner-ready bundles)
-- Gap reports (missing fields, severity, remediation hints)
-- AutoValidator configs (`ValidationRunConfig` contract)
-- JSON-LD (machine-readable semantic export) — *planned*
-- CycloneDX MBOM (supply chain integration) — *planned*
+    documents: list[GovernanceDoc] = Field(default_factory=list)
+    findings: list[Finding] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    artifacts: list[ModelArtifact] = Field(default_factory=list)
+    deployments: list[DeploymentRecord] = Field(default_factory=list)
+```
 
-Note: flag which formats are implemented vs. planned when drafting.
+### ComponentNode
 
-## 7. Observations & Feedback Schema
+The I/P/O tree. Each model version has a root node with exactly three children: Inputs, Processing, Outputs. Leaf nodes are typed components.
 
-Observations are first-class inventory objects — not tied to any specific tool.
+```python
+class ComponentNode(BaseModel):
+    node_id: str = Field(default_factory=_uuid)
+    name: str
+    node_type: str              # "category", "dataset", "algorithm", "feature_set", etc.
+    path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    children: list[ComponentNode] = Field(default_factory=list)
+
+def _default_tree() -> ComponentNode:
+    return ComponentNode(
+        name="root", node_type="root",
+        children=[
+            ComponentNode(name="Inputs", node_type="category"),
+            ComponentNode(name="Processing", node_type="category"),
+            ComponentNode(name="Outputs", node_type="category"),
+        ],
+    )
+```
+
+### Enums
+
+All enums are case-insensitive. `RiskTier("HIGH")`, `RiskTier("high")`, and `RiskTier("High")` all resolve to `RiskTier.HIGH`.
+
+```python
+class CaseInsensitiveEnum(str, Enum):
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            for member in cls:
+                if member.value.lower() == value.lower():
+                    return member
+        return None
+
+class ModelType(CaseInsensitiveEnum):
+    ML_MODEL = "ml_model"
+    HEURISTIC = "heuristic"
+    VENDOR = "vendor"
+    LLM = "llm"
+    SPREADSHEET = "spreadsheet"
+
+class RiskTier(CaseInsensitiveEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+```
+
+### Structural Invariants
+
+These are enforced by the validation engine and storage backends:
+
+1. **Single parent.** Every component has exactly one parent. The tree is strict — no cycles, no shared children.
+2. **Three top-level children.** Every model version has exactly one Inputs, one Processing, one Outputs node.
+3. **Typed containment.** Inputs contain datasets, assumptions, feature sets. Processing contains algorithms, preprocessing steps, feature selection. Outputs contain scores, classifications, deployments.
+4. **Version isolation.** Each ModelVersion has its own tree. Modifying one version cannot affect another.
+5. **Publish immutability.** Published versions cannot be mutated. All changes require a new version.
+
+---
+
+## SDK
+
+### Inventory
+
+The main entry point. Backend-agnostic — pass any `InventoryBackend` implementation.
+
+```python
+from model_ledger import Inventory
+
+inv = Inventory("governance.db")
+
+# Register a model
+model = inv.register_model(
+    name="cCRR Global",
+    owner="Risk ML",
+    tier="high",
+    intended_purpose="Credit risk scoring for Square sellers",
+    developers=["alice", "bob"],
+    validator="carol",
+    model_type="ml_model",
+    actor="vignesh",
+)
+```
+
+### DraftVersion
+
+Context manager for building a version. Mutations happen on the draft. Auto-saves on exit, does not auto-publish.
+
+```python
+with inv.new_version("cCRR Global", version="2.0.0", actor="alice") as v:
+    # Build the component tree
+    v.add_component("Inputs/beacon_features", type="feature_set",
+                     metadata={"count": 497, "source": "Dumbo"})
+    v.add_component("Inputs/active_sellers_population", type="dataset",
+                     metadata={"source": "Snowflake", "query": "SELECT ..."})
+    v.add_component("Processing/xgboost_classifier", type="algorithm",
+                     metadata={"library": "xgboost", "features": 200})
+    v.add_component("Outputs/risk_score", type="probability_score",
+                     metadata={"range": [0, 1]})
+
+    # Attach governance documents
+    v.add_document(doc_type="system_design", title="cCRR v2 CSD",
+                   url="https://docs.google.com/document/d/...")
+    v.add_document(doc_type="validation_report", title="2025 Annual Validation")
+
+    # Set validation schedule
+    v.set_next_validation_due("2027-03-01")
+
+# Publish when ready (immutable after this)
+inv.publish_version("cCRR Global", "2.0.0", actor="carol")
+```
+
+### Assembly Flow (with adapters)
+
+For existing models, adapters read from source systems and populate the inventory:
+
+```python
+# Planned for v0.2 — Block-internal
+from model_ledger_block.adapters import YieldsAdapter, JiraCCMAdapter
+
+yields = YieldsAdapter(credentials=...)
+jira = JiraCCMAdapter(credentials=...)
+
+# Assemble from existing systems
+model_data = yields.fetch_model("cCRR Global")
+change_history = jira.fetch_changes("cCRR Global")
+
+# Normalize into model-ledger schema
+inv.register_model(**model_data)
+with inv.new_version("cCRR Global", version="2.0.0") as v:
+    yields.populate_tree(v)
+    jira.attach_findings(v, change_history)
+```
+
+---
+
+## Observations & Feedback
+
+Observations are first-class inventory objects — validation findings from any source.
 
 ### Observation
 
-A validation finding from any source.
+```python
+class Observation(BaseModel):
+    observation_id: str = Field(default_factory=_uuid)
+    content: str
+    priority: str | None = None
+    pillar: str | None = None           # "Conceptual Soundness", "Input Data Validation", etc.
 
-- `id`, `content`, `priority`, `pillar` — what was found
-- `source_type`: `human_reviewer` | `ai_agent` | `automated_tool` | `manual_entry`
-- `source_detail` — optional (e.g., "AutoValidator run 3", "Dan Smith during annual review")
-- `model_version_ref` — which model version this relates to
-- `status`: `draft` → `issued` | `removed`
-- Append-only lineage: every status change is recorded
+    source_type: str                    # "human_reviewer", "ai_agent", "automated_tool", "manual_entry"
+    source_detail: str | None = None    # "AutoValidator run 3", "Dan Smith during annual review"
+
+    model_version_ref: str              # model_name + version
+    status: str = "draft"               # draft → issued | removed
+```
 
 ### ValidationRun
 
 Groups observations from a single validation effort.
 
-- `run_id`, `timestamp`, `source_type`, `config_snapshot`
-- `observations` — list of Observation refs
-- `status`: `draft` | `superseded` | `final`
-- Multiple runs per model version — full history preserved, only one is `final`
+```python
+class ValidationRun(BaseModel):
+    run_id: str = Field(default_factory=_uuid)
+    timestamp: datetime = Field(default_factory=_now)
+    source_type: str                    # who ran this validation
+    config_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+    observations: list[str] = Field(default_factory=list)  # observation IDs
+    status: str = "draft"               # draft | superseded | final
+```
+
+Multiple runs can exist per model version. When a new run is marked `final`, the previous final run becomes `superseded`. Full history is always preserved.
 
 ### ValidationReport
 
-The "published" artifact.
+The "published" artifact — the final set of observations that were issued.
 
-- `model_version_ref`, `issued_observations` — the final set
-- `issued_at`, `issued_by` — clear audit moment
-- Immutable after issuance (mirrors `ModelVersion.publish()`)
+```python
+class ValidationReport(BaseModel):
+    model_version_ref: str
+    issued_observations: list[str]      # observation IDs — THE final set
+    issued_at: datetime
+    issued_by: str
+    # Immutable after issuance (mirrors ModelVersion.publish())
+```
 
 ### FeedbackEvent
 
-What happened to an observation and why.
+What happened to an observation and why. Append-only.
 
-- `observation_ref` — which observation
-- `verdict`: `keep` | `remove` | `modify`
-- `reason_code` — from taxonomy (`refuted_by_code`, `justified_by_design`, `wrong_scope`, `consolidated`, etc.)
-- `rationale` — free-text explanation
-- `stage` — when in workflow (`pipeline_filter`, `triage`, `stakeholder_review`)
-- `actor` — who made the decision (human name or tool identifier)
+```python
+class FeedbackEvent(BaseModel):
+    event_id: str = Field(default_factory=_uuid)
+    observation_ref: str
+    verdict: str                        # "keep", "remove", "modify"
+    reason_code: str                    # "refuted_by_code", "justified_by_design", "wrong_scope", etc.
+    rationale: str                      # free-text explanation
+    stage: str                          # "pipeline_filter", "triage", "stakeholder_review"
+    actor: str                          # human name or tool identifier
+    timestamp: datetime = Field(default_factory=_now)
+```
 
 ### FeedbackCorpus
 
-Aggregate query interface over feedback history.
+Aggregate query interface. Not a Pydantic model — a query API over the storage backend.
 
-- "Show me all removals for this observation type / model type / pillar"
-- Summary stats: acceptance rates, common reason codes
-- Any tool can query this to avoid repeating known mistakes
+```python
+corpus = inv.feedback_corpus()
+
+# What observations have been removed for this pillar?
+removed = corpus.query(
+    pillar="Conceptual Soundness",
+    verdict="remove",
+    model_type="ml_model",
+)
+
+# Acceptance rate by observation type
+stats = corpus.summary_stats(model_name="cCRR Global")
+```
 
 ### Schema Extension Points
 
-How the schema evolves without breaking stability.
+All major objects support `extra_metadata: dict[str, Any]` for agent-discovered patterns. If a field consistently appears across models, it can be promoted to a first-class field in a future version. Agents discover what's useful; humans decide when to formalize.
 
-- Core fields (I/P/O tree, regulatory fields) are fixed and auditable
-- `extra_metadata: dict[str, Any]` on Model, ModelVersion, ComponentNode, Observation
-- Promotion path: frequently-appearing extensions get formalized in future versions
-- Bitter Lesson applied to schema design: agents discover what's useful, humans decide when to formalize
+---
 
-## 8. Block Integration Layer — model-ledger-block
+## Validation Engine
 
-Internal adapter package (lives in `forge-block-mrm`, not the OSS repo).
+Profile-based compliance checking with a plugin registry.
 
-- Yields adapter — model metadata and status
-- Jira CCM adapter — change history and approvals
-- GDrive adapter — governance documents
-- Assembly engine — orchestrates adapters into unified Model objects
-- Contract boundary: adapters depend on model-ledger, never the reverse
+### Running Validation
+
+```python
+from model_ledger.validate import validate
+
+result = validate(model, version, profile="sr_11_7")
+print(result)
+# FAIL: cCRR Global [sr_11_7]
+#   Errors: 2
+#   [ERROR] has_ipo_structure: Component tree missing required sections: {'Outputs'}
+#   [ERROR] has_governance_document: No governance documents attached to this version.
+```
+
+### SR 11-7 Profile
+
+Six rules, each with severity and actionable suggestions:
+
+| Rule | Checks | Severity |
+|------|--------|----------|
+| `has_developers` | Model has at least one developer listed | error |
+| `has_validator` | Model has an independent validator assigned | error |
+| `validator_independence` | Validator is not also a developer | error |
+| `has_ipo_structure` | Version tree has Inputs, Processing, Outputs | error |
+| `has_governance_document` | At least one governance doc attached | error |
+| `has_validation_schedule` | Next validation date set (error for high-tier, warning otherwise) | error/warning |
+
+### Adding a New Profile
+
+Implement a class with a `validate` method and register it:
+
+```python
+from model_ledger.validate.engine import register_profile, ValidationResult, Violation
+
+@register_profile("eu_ai_act")
+class EUAIActProfile:
+    def validate(self, model, version) -> ValidationResult:
+        result = ValidationResult(model_name=model.name, profile="eu_ai_act")
+        # Check EU AI Act requirements...
+        if not model.affected_populations:
+            result.violations.append(Violation(
+                rule_id="affected_populations",
+                severity="error",
+                message="EU AI Act requires listing affected populations.",
+                suggestion="Set affected_populations=['...'] on the model.",
+            ))
+        return result
+```
+
+---
+
+## Storage Backends
+
+All backends implement the `InventoryBackend` protocol:
+
+```python
+@runtime_checkable
+class InventoryBackend(Protocol):
+    def save_model(self, model: Model) -> None: ...
+    def get_model(self, name: str) -> Model | None: ...
+    def list_models(self) -> list[Model]: ...
+    def save_version(self, model_name: str, version: ModelVersion) -> None: ...
+    def get_version(self, model_name: str, version: str) -> ModelVersion | None: ...
+    def append_audit_event(self, event: AuditEvent) -> None: ...
+    def get_audit_log(self, model_name: str, version: str | None = None) -> list[AuditEvent]: ...
+```
+
+### SQLiteBackend
+
+Default backend. Enforces immutability — writing to a published version raises `ImmutableVersionError`. Audit events are append-only.
+
+### MemoryBackend
+
+In-memory implementation for testing. Same invariants, no persistence.
+
+### Adding a Backend
+
+Implement the protocol. PostgreSQL, DynamoDB, or any storage system that can enforce the immutability and audit trail invariants.
+
+---
+
+## Export
+
+| Format | Status | Description |
+|--------|--------|-------------|
+| Audit packs | Planned (v0.2) | Examiner-ready bundles with model profile, findings, evidence |
+| Gap reports | Planned (v0.2) | Missing fields with severity and remediation hints |
+| AutoValidator configs | Planned (v0.2) | `ValidationRunConfig` contract for automated validation |
+| JSON-LD | Planned (v0.3) | Machine-readable semantic export with linked data context |
+| CycloneDX MBOM | Planned (v0.4) | Software supply chain integration for model components |
+
+The `export/` module is scaffolded but not yet implemented. This is the primary focus for v0.2 alongside the Block adapters.
+
+---
+
+## Block Integration Layer
+
+`model-ledger-block` is a separate internal package (planned for `forge-block-mrm`). It depends on `model-ledger`; the reverse is never true.
+
+### Adapters
+
+- **Yields adapter** — reads model identity, status, tier, ownership from the current inventory system
+- **Jira CCM adapter** — reads change history, approval records, and findings from CCM tickets
+- **GDrive adapter** — reads governance documents (CSDs, validation reports, model specs)
+- **Assembly engine** — orchestrates adapters into unified `Model` objects
 
 ### AutoValidator Integration
 
-Block-specific integration with AutoValidator.
+Block-specific wiring between model-ledger and AutoValidator:
 
-- **Ingest**: Reads `problems_registry.json` → creates Observation objects with `source_type: ai_agent`
-- **Context**: Provides model component tree + governance docs + prior feedback history as input
-- **Feedback retrieval**: Before generating observations, queries FeedbackCorpus for similar past removals
-- **Adaptation metrics**: Tracks whether removal reasons recur (not learning) or decline (improving)
-- This is one integration — the OSS schema supports any validation tool
+- **Ingest.** Reads `problems_registry.json` from completed AutoValidator runs, creates `Observation` objects with `source_type: "ai_agent"`.
+- **Context.** Provides model component tree, governance docs, and prior feedback history as inputs to validation runs — replacing manual context assembly.
+- **Feedback retrieval.** Before AutoValidator generates observations, queries the `FeedbackCorpus` for similar past removals on this model and pillar.
+- **Adaptation metrics.** Tracks whether the same removal reasons recur (tooling not improving) or decline (tooling learning from feedback).
 
-## 9. Design Rationale
+AutoValidator is one integration. The OSS schema supports any validation tool that can produce or consume observations.
 
-### Bitter Lesson Alignment
+---
 
-model-ledger is representation, not reasoning. The schema and validation rules are the minimum structure agents need — the floor, not the ceiling. The design deliberately avoids encoding governance intelligence (what to do about findings, how to prioritize risks, when a model is "good enough") and instead provides the structured data that lets agents discover those answers through computation. Hardcoded rules (SR 11-7 profile) are regulatory minimums — test suites, not decision engines.
+## Design Decisions
 
-### Other Design Decisions
+### Why Pydantic, not RDF
 
-- Why OWL/SHACL-inspired but Pydantic-implemented (rigor without RDF complexity)
-- Why strict I/P/O tree (SR 11-7 alignment, agent navigability, examiner expectations)
-- Why immutable published versions (audit integrity, regulatory defensibility)
-- Why assembler-first over SDK-first (immediate value for 44 existing models)
-- Why Apache-2.0 (Block standard, maximum adoption, patent protection)
-- Alternatives considered and rejected (ValidMind, custom platform, Yields extension)
+The data model is inspired by OWL ontology and SHACL constraints — the class hierarchy, structural invariants, and typed containment rules come from formal ontological design. But the implementation uses Pydantic, not RDF triplestores. Developers don't want to learn SPARQL to register a model. Pydantic gives us schema validation, JSON serialization, and Python IDE support with no additional dependencies beyond what most ML teams already have.
 
-## 10. What's Next
+### Why a strict I/P/O tree
 
-Contributor roadmap:
+SR 11-7 defines a model as having input, processing, and output components. This isn't a suggestion — it's what examiners expect to see and what validators need to assess. The strict tree structure makes this explicit and enforceable, and gives AI agents a navigable structure they can traverse programmatically.
 
-- v0.2: Block adapters (Yields, Jira, GDrive)
-- v0.3: CLI tooling, JSON-LD export
-- v0.4: Additional compliance profiles
+### Why immutable published versions
 
-Contributing guide pointer, DCO requirement, conventional commits.
+Regulatory defensibility. If a published version's tree can be silently modified, the audit trail is meaningless. Immutability means that when an examiner asks "what was the model structure at the time of validation?", the answer is unambiguous. All changes require a new version with a new audit event.
+
+### Why assembler-first, SDK-next
+
+Block has ~44 models already in production. An SDK-only approach would require every model team to adopt model-ledger before it provides value. The assembler approach provides immediate value by reading from existing systems (Yields, Jira, GDrive) — no workflow changes required. The SDK path follows for new models and teams that want to register governance metadata in code.
+
+### Why Apache-2.0
+
+Block's standard open-source license. Maximizes adoption (no copyleft concerns for enterprise users), includes patent protection, and aligns with the OSPO's existing processes and legal review.
+
+### Why representation, not reasoning
+
+model-ledger deliberately avoids encoding governance intelligence — it doesn't decide what observations mean, how to prioritize risks, or when a model is "good enough." It provides the structured data that lets agents discover those answers through computation. The validation rules (SR 11-7 profile) are regulatory minimums — the floor, not the ceiling. The real governance intelligence lives in agents and human reviewers who operate over the data model-ledger provides.
+
+### When NOT to use model-ledger
+
+- If you need a hosted platform with a dashboard UI out of the box — model-ledger is a library, not a platform.
+- If your inventory has fewer than 5 models and no compliance requirements — a spreadsheet is fine.
+- If you need real-time model monitoring or drift detection — model-ledger tracks governance metadata, not operational metrics.
+
+---
+
+## Contributing
+
+model-ledger follows Block's open-source contribution guidelines:
+
+- **DCO sign-off** on all commits (`git commit --signoff`)
+- **Conventional commits** for PR titles (`feat(sdk): add bulk registration`)
+- **Fork and branch** workflow
+- Python 3.10+, Pydantic 2.x, uv for package management, ruff for linting, pytest for testing
+
+See CONTRIBUTING.md for build, test, and development instructions.
+
+### Roadmap
+
+- **v0.2**: Block adapters (Yields, Jira, GDrive), export layer, AutoValidator integration
+- **v0.3**: CLI tooling, JSON-LD export, additional compliance profiles (`eu_ai_act`, `nist_ai_rmf`)
+- **v0.4**: CycloneDX MBOM export, contributor ecosystem growth

@@ -15,32 +15,32 @@ inv = Inventory()
 
 # Register a model
 model = inv.register_model(
-    name="cCRR Global",
-    owner="Risk ML",
+    name="Fraud Detection Model",
+    owner="ML Engineering",
     tier="high",
-    intended_purpose="Credit risk scoring for Square sellers",
+    intended_purpose="Credit risk scoring for loan applicants",
     developers=["alice", "bob"],
     validator="carol",
 )
 
 # Build a version with the I/P/O component tree
-with inv.new_version("cCRR Global", version="2.0.0", actor="alice") as v:
-    v.add_component("Inputs/beacon_features", type="feature_set",
-                     metadata={"count": 497, "source": "Dumbo"})
+with inv.new_version("Fraud Detection Model", version="2.0.0", actor="alice") as v:
+    v.add_component("Inputs/credit_features", type="feature_set",
+                     metadata={"count": 150, "source": "Feature Store"})
     v.add_component("Processing/xgboost_classifier", type="algorithm",
                      metadata={"library": "xgboost", "features": 200})
     v.add_component("Outputs/risk_score", type="probability_score",
                      metadata={"range": [0, 1]})
-    v.add_document(doc_type="system_design", title="cCRR v2 CSD")
+    v.add_document(doc_type="system_design", title="Fraud Detection v2 Design Doc")
 
 # Validate against SR 11-7
 from model_ledger.validate import validate
 
-result = validate(model, inv.get_version("cCRR Global", "2.0.0"), profile="sr_11_7")
+result = validate(model, inv.get_version("Fraud Detection Model", "2.0.0"), profile="sr_11_7")
 print(result)
 
 # Publish (immutable after this)
-inv.publish_version("cCRR Global", "2.0.0", actor="carol")
+inv.publish_version("Fraud Detection Model", "2.0.0", actor="carol")
 ```
 
 ## Install

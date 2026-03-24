@@ -41,10 +41,10 @@ def test_list_models(backend):
 def test_upsert_model(backend):
     model = _make_model()
     backend.save_model(model)
-    model.business_unit = "Square"
+    model.business_unit = "Lending"
     backend.save_model(model)
     loaded = backend.get_model("test_model")
-    assert loaded.business_unit == "Square"
+    assert loaded.business_unit == "Lending"
 
 
 def test_save_and_get_version(backend):

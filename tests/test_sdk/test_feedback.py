@@ -10,14 +10,14 @@ def _make_backend_with_feedback():
         content="Design weakness",
         pillar="Conceptual Soundness",
         source_type="ai_agent",
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     obs2 = Observation(
         observation_id="obs-2",
         content="Missing monitoring",
         pillar="Governance Review",
         source_type="ai_agent",
-        model_version_ref="cCRR/2.0.0",
+        model_version_ref="fraud_detection/2.0.0",
     )
     backend.save_observation(obs1)
     backend.save_observation(obs2)

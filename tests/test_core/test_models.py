@@ -38,16 +38,16 @@ def test_create_minimal_model():
 
 def test_create_model_with_all_fields():
     model = Model(
-        name="cCRR_global",
-        owner="roman",
-        developers=["wzhao", "roman"],
-        validator="vignesh",
+        name="fraud_detection",
+        owner="team_lead",
+        developers=["dev_a", "dev_b"],
+        validator="validator_1",
         tier=RiskTier.HIGH,
-        business_unit="Square",
-        intended_purpose="Rate ML/TF risk",
+        business_unit="Lending",
+        intended_purpose="Score transaction risk",
         jurisdictions=["US", "CA", "AU"],
     )
-    assert model.developers == ["wzhao", "roman"]
+    assert model.developers == ["dev_a", "dev_b"]
     assert model.jurisdictions == ["US", "CA", "AU"]
 
 
@@ -90,7 +90,7 @@ def test_audit_event():
     event = AuditEvent(
         actor="vignesh",
         action="published_version",
-        model_name="cCRR_global",
+        model_name="fraud_detection",
         version="1.0.0",
         details={"profile": "sr_11_7"},
     )
@@ -102,7 +102,7 @@ def test_audit_event():
 def test_model_artifact():
     artifact = ModelArtifact(
         artifact_type="pickle",
-        uri="gs://sq-fincrimes-ml/ccrr/model.pkl",
+        uri="gs://ml-models/fraud-detection/model.pkl",
         checksum="sha256:abc123",
     )
     assert artifact.uri.startswith("gs://")
@@ -111,7 +111,7 @@ def test_model_artifact():
 def test_deployment_record():
     record = DeploymentRecord(
         environment="prod",
-        endpoint="gondola/ccrr-global-v1",
+        endpoint="scoring-service/fraud-detection-v1",
         deployment_strategy="full",
     )
     assert record.environment == "prod"
@@ -124,7 +124,7 @@ def test_component_node_tree():
     feature = ComponentNode(
         name="customer_risk_score",
         node_type="Feature",
-        metadata={"source": "beacon"},
+        metadata={"source": "feature_store"},
     )
     inputs.children.append(feature)
     assert root.children[0].children[0].name == "customer_risk_score"
@@ -177,8 +177,8 @@ def test_governance_doc():
 def test_reference():
     ref = Reference(
         ref_type="jira",
-        identifier="CCM-1234",
-        metadata={"project": "CCM"},
+        identifier="CHG-1234",
+        metadata={"project": "MODEL_CHANGES"},
     )
     assert ref.ref_type == "jira"
 
@@ -188,7 +188,7 @@ def test_exception():
         exception_id="EX-001",
         description="Deferred annual validation",
         justification="Model retiring in Q2",
-        approved_by="krish",
+        approved_by="manager",
         approved_date=date(2026, 1, 15),
         expiration_date=date(2026, 6, 30),
         status="active",
@@ -200,7 +200,7 @@ def test_overlay():
     overlay = Overlay(
         description="Manual score adjustment for new market",
         justification="Model not trained on this segment",
-        applied_by="roman",
+        applied_by="analyst",
         applied_date=date(2026, 2, 1),
     )
-    assert overlay.applied_by == "roman"
+    assert overlay.applied_by == "analyst"

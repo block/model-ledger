@@ -30,7 +30,7 @@ This inventory must track model identity, ownership, purpose, risk tier, structu
 
 ### How the industry does it today
 
-Spreadsheets. At most of the financial industry. A model inventory is typically an Excel workbook or a SharePoint list maintained by the MRM team. It tracks 20-50 models with columns for name, owner, tier, status, last validation date.
+Spreadsheets. At most of the financial industry. A model inventory is typically an Excel workbook or a SharePoint list maintained by the model risk team. It tracks 20-50 models with columns for name, owner, tier, status, last validation date.
 
 This fails in predictable ways:
 
@@ -40,7 +40,7 @@ This fails in predictable ways:
 - **No machine consumption.** AI agents can't traverse a spreadsheet to understand model structure.
 - **No validation.** There's no way to run compliance checks against a spreadsheet — someone eyeballs it.
 
-Commercial tools exist. ValidMind, SAS Model Risk Management, and others offer hosted platforms with UIs, dashboards, and workflow engines. They're expensive, proprietary, not developer-friendly, and create vendor lock-in. None of them provide an open standard that the industry can build on.
+Commercial tools exist — hosted platforms with UIs, dashboards, and workflow engines. They're expensive, proprietary, not developer-friendly, and create vendor lock-in. None of them provide an open standard that the industry can build on.
 
 ### What's different now
 
@@ -63,11 +63,11 @@ The library is a formal inventory that tracks four first-class entities:
 A model is a versioned, hierarchical structure. Each version contains a component tree with three top-level branches — Inputs, Processing, and Outputs — per SR 11-7's three-component definition. This isn't just metadata; it's a structural decomposition that agents can traverse and validators can assess component by component.
 
 ```
-cCRR Global v2.0.0
+Fraud Detection Model v2.0.0
 ├── Inputs/
-│   ├── beacon_features [FeatureSet, 497 features from Dumbo]
-│   ├── feature_engine_signals [FeatureSet, from Feature Engine]
-│   ├── active_sellers_population [Dataset, Snowflake SQL]
+│   ├── credit_features [FeatureSet, 150 features from Feature Store]
+│   ├── behavioral_signals [FeatureSet, from Signal Pipeline]
+│   ├── active_customers [Dataset, SQL query]
 │   └── stationarity_assumption [Assumption, "risk patterns stable over 180 days"]
 ├── Processing/
 │   ├── fillna_imputation [Preprocessing, fillna_value=0]
@@ -75,8 +75,8 @@ cCRR Global v2.0.0
 │   └── xgboost_classifier [Algorithm, XGBClassifier, 200 features]
 └── Outputs/
     ├── risk_score [ProbabilityScore, 0-1]
-    ├── batch_score_table [Dataset, app_compliance.square.batch_score_prefect]
-    └── gondola_deployment [Deployment, daily batch via Prefect + Cascade]
+    ├── batch_score_table [Dataset, analytics.scoring.batch_results]
+    └── production_deployment [Deployment, daily batch via Orchestrator]
 ```
 
 Each model also carries ownership, risk tier, intended purpose, regulatory jurisdiction, vendor information, and lifecycle status — all typed, all validated.
@@ -133,7 +133,7 @@ The schema, SDK, validation engine, storage backends, feedback system, and expor
 
 ### Adapters (organization-specific)
 
-model-ledger's `InventoryBackend` protocol and adapter pattern are designed so that any organization can write adapters to read from their existing systems of record — Jira, ServiceNow, Google Drive, Snowflake, internal inventory platforms — and normalize data into model-ledger's schema. The core library never depends on any specific external system.
+model-ledger's `InventoryBackend` protocol and adapter pattern are designed so that any organization can write adapters to read from their existing systems of record and normalize data into model-ledger's schema. The core library never depends on any specific external system.
 
 ### Schema Extension Points
 
@@ -145,9 +145,9 @@ The core schema is designed for stability but not rigidity. An `extra_metadata` 
 
 model-ledger is not a replacement for commercial platforms — it's a different layer.
 
-**Commercial platforms** (ValidMind, SAS Model Risk Management, and similar) offer hosted model governance with dashboards, workflow engines, and compliance reporting. They are proprietary and expensive. model-ledger is not a hosted platform — it's a library. Organizations that need a UI can build one on top of model-ledger's schema and SDK. The value is in the open standard, not the hosting.
+**Commercial platforms** offer hosted model governance with dashboards, workflow engines, and compliance reporting. They are proprietary and expensive. model-ledger is not a hosted platform — it's a library. Organizations that need a UI can build one on top of model-ledger's schema and SDK. The value is in the open standard, not the hosting.
 
-**Existing inventory systems** (Yields.io, ServiceNow, internal databases) can serve as data sources. model-ledger's adapter pattern lets you ingest from these systems, adding the structural decomposition, validation engine, observation tracking, and agent-consumable exports they were not designed for.
+**Existing inventory systems** can serve as data sources. model-ledger's adapter pattern lets you ingest from your current tools, adding the structural decomposition, validation engine, observation tracking, and agent-consumable exports they were not designed for.
 
 **AI validation agents** produce observations that model-ledger captures with full lifecycle tracking. model-ledger provides the structured model context these agents consume as input — model-ledger is the filing cabinet; the agent is the analyst.
 

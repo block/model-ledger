@@ -2,7 +2,7 @@
 
 A formal, open-source model inventory and governance framework for the AI era.
 
-**Author**: Vignesh Narayanaswamy, Block MRM
+**Author**: Vignesh Narayanaswamy
 **Date**: March 2026
 **License**: Apache-2.0
 
@@ -30,23 +30,23 @@ This inventory must track model identity, ownership, purpose, risk tier, structu
 
 ### How the industry does it today
 
-Spreadsheets. At Block, at JPMorgan, at most of the financial industry. A model inventory is typically an Excel workbook or a SharePoint list maintained by the MRM team. It tracks 20-50 models with columns for name, owner, tier, status, last validation date.
+Spreadsheets. At most of the financial industry. A model inventory is typically an Excel workbook or a SharePoint list maintained by the MRM team. It tracks 20-50 models with columns for name, owner, tier, status, last validation date.
 
 This fails in predictable ways:
 
 - **Stale data.** The spreadsheet drifts from reality within weeks. Nobody's workflow includes "update the inventory spreadsheet."
 - **No audit trail.** When did the tier change? Who approved it? The spreadsheet doesn't know.
 - **Flat structure.** SR 11-7 defines a model as having input, processing, and output components. A spreadsheet row can't represent a hierarchical decomposition.
-- **No machine consumption.** AI agents (like Block's AutoValidator) can't traverse a spreadsheet to understand model structure.
+- **No machine consumption.** AI agents can't traverse a spreadsheet to understand model structure.
 - **No validation.** There's no way to run compliance checks against a spreadsheet — someone eyeballs it.
 
-Commercial tools exist. Yields.io, ValidMind, SAS Model Risk Management, and others offer hosted platforms with UIs, dashboards, and workflow engines. They're expensive, proprietary, not developer-friendly, and create vendor lock-in. None of them provide an open standard that the industry can build on.
+Commercial tools exist. ValidMind, SAS Model Risk Management, and others offer hosted platforms with UIs, dashboards, and workflow engines. They're expensive, proprietary, not developer-friendly, and create vendor lock-in. None of them provide an open standard that the industry can build on.
 
 ### What's different now
 
 Two things have changed that make a new approach viable:
 
-**1. AI agents are doing governance work.** Block's AutoValidator generates validation reports from model artifacts — compressing multi-day manual work into sub-hour generation. Other institutions are building similar tools. These agents need machine-readable governance data as input, not spreadsheets and PDFs.
+**1. AI agents are doing governance work.** Organizations are building AI agents that generate validation reports from model artifacts — compressing multi-day manual work into sub-hour generation. These agents need machine-readable governance data as input, not spreadsheets and PDFs.
 
 **2. The Bitter Lesson applies to governance.** Rich Sutton's observation — that general methods leveraging computation always outperform hand-encoded human knowledge — is playing out in model risk management. The bottleneck isn't "smarter rules" or "better checklists." It's structured data that agents can compute over. More data, better agents, less manual work. The alternative is encoding more human judgment into more rigid workflows, which is exactly the approach that plateaus.
 
@@ -103,7 +103,7 @@ Executable compliance profiles — starting with SR 11-7 — that check models a
 
 ### Export
 
-Audit packs (examiner-ready bundles), gap reports (missing fields with severity and remediation hints), and agent-consumable configs (the `ValidationRunConfig` contract that AutoValidator and similar tools consume).
+Audit packs (examiner-ready bundles), gap reports (missing fields with severity and remediation hints), and agent-consumable configs (structured inputs that AI validation tools can consume directly).
 
 ---
 
@@ -111,7 +111,7 @@ Audit packs (examiner-ready bundles), gap reports (missing fields with severity 
 
 The most common question about AI-assisted governance: "How does it get better over time?"
 
-Today, validation observations get triaged in spreadsheets. A reviewer removes an observation because the AutoValidator cross-contaminated findings between two models, or because it flagged an intentional design choice. That correction is lost. The next validation cycle makes the same mistake.
+Today, validation observations get triaged in spreadsheets. A reviewer removes an observation because an AI agent cross-contaminated findings between two models, or because it flagged an intentional design choice. That correction is lost. The next validation cycle makes the same mistake.
 
 model-ledger captures these corrections as structured data — not as spreadsheet edits that nobody will ever read again. Over validation cycles and across models, this feedback accumulates into a dataset of governance judgment: what was flagged, what survived triage, what was removed and why.
 
@@ -127,15 +127,13 @@ The design principle: the core schema (I/P/O tree, regulatory fields, structural
 
 ## Architecture
 
-### Open-source core (`model-ledger`, PyPI)
+### Core library (`model-ledger`, PyPI)
 
-The schema, SDK, validation engine, storage backends, feedback system, and export layer. Any organization can use this — no Block-specific dependencies. Apache-2.0 licensed.
+The schema, SDK, validation engine, storage backends, feedback system, and export layer. Apache-2.0 licensed.
 
-### Internal adapters (`model-ledger-block`, Block-internal)
+### Adapters (organization-specific)
 
-Adapters that read from Block's existing systems of record — Yields, Jira CCM, Google Drive, Gondola — and normalize data into model-ledger's schema. Also includes the AutoValidator integration: generating `ValidationRunConfig` inputs from the inventory and ingesting observation outputs back.
-
-This separation is deliberate. The open-source core never depends on Block-specific systems. The internal package is where Block gets immediate operational value — context assembly that currently takes hours becomes a repeatable, command-driven operation.
+model-ledger's `InventoryBackend` protocol and adapter pattern are designed so that any organization can write adapters to read from their existing systems of record — Jira, ServiceNow, Google Drive, Snowflake, internal inventory platforms — and normalize data into model-ledger's schema. The core library never depends on any specific external system.
 
 ### Schema Extension Points
 
@@ -145,25 +143,13 @@ The core schema is designed for stability but not rigidity. An `extra_metadata` 
 
 ## Relationship with Existing Tools
 
-model-ledger stands on the shoulders of the tools that came before it.
+model-ledger is not a replacement for commercial platforms — it's a different layer.
 
-**Yields.io** is Block's current model inventory system of record. It tracks model identity, status, and ownership through a web UI that MRM and model teams use today. model-ledger can ingest from Yields as a data source, providing the structural decomposition, validation engine, observation tracking, and agent-consumable exports that Yields was not designed for. In the short term, Yields remains the UI and entry point that teams are comfortable with. Over time, as model-ledger gains its own interfaces and teams interact with it directly, it progressively becomes the primary governance layer — a vendor-neutral, open-source alternative to commercial inventory platforms.
+**Commercial platforms** (ValidMind, SAS Model Risk Management, and similar) offer hosted model governance with dashboards, workflow engines, and compliance reporting. They are proprietary and expensive. model-ledger is not a hosted platform — it's a library. Organizations that need a UI can build one on top of model-ledger's schema and SDK. The value is in the open standard, not the hosting.
 
-**ValidMind** and **SAS Model Risk Management** are commercial platforms that offer hosted model governance with dashboards, workflow engines, and compliance reporting. They are expensive and proprietary. model-ledger is not a hosted platform — it's a library. Organizations that need a UI can build one on top of model-ledger's schema and SDK. The value is in the open standard, not the hosting.
+**Existing inventory systems** (Yields.io, ServiceNow, internal databases) can serve as data sources. model-ledger's adapter pattern lets you ingest from these systems, adding the structural decomposition, validation engine, observation tracking, and agent-consumable exports they were not designed for.
 
-**AutoValidator** (Block-internal) is an AI agent that generates validation reports from model artifacts. model-ledger provides the structured model context that AutoValidator consumes as input, and captures AutoValidator's observation outputs with full lifecycle tracking. model-ledger is the filing cabinet; AutoValidator is the analyst. They are complementary systems with a clean interface boundary.
-
----
-
-## Open Source at Block
-
-model-ledger follows Block's established open-source program:
-
-- **OSPO Prototype track.** Repository created immediately under `github.com/block/model-ledger`. Three-month evaluation window, then graduation to Incubation.
-- **Apache-2.0 license.** Block's standard for open-source projects. Maximum adoption, patent protection.
-- **Template and governance.** Built from `block/oss-project-template` with GOVERNANCE.md, CONTRIBUTING.md (DCO sign-off, conventional commits), and CODEOWNERS.
-- **Maturity model.** Prototype → Incubation → Core, per `go/open-source-maturity`. model-ledger targets Incubation within the first 90 days.
-- **OSPO contacts.** Manik Surtani (Head of OSPO), Nidhi Nahar (Head of Patents & OSS), `#opensource` Slack channel.
+**AI validation agents** produce observations that model-ledger captures with full lifecycle tracking. model-ledger provides the structured model context these agents consume as input — model-ledger is the filing cabinet; the agent is the analyst.
 
 ---
 
@@ -172,21 +158,6 @@ model-ledger follows Block's established open-source program:
 | Phase | Scope | Timeline |
 |-------|-------|----------|
 | v0.1 | Core schema, SDK, SR 11-7 profile, storage backends, observation lifecycle, feedback corpus | Built (95 tests passing) |
-| v0.2 | Block adapters (Yields, Jira CCM, GDrive), AutoValidator integration | Q2 2026 |
-| v0.3 | CLI tooling, JSON-LD export, additional compliance profiles | Q3 2026 |
-| v0.4 | CycloneDX MBOM export, contributor ecosystem, first external adopter | Q4 2026 |
-
-### Success Metrics
-
-- Context assembly time reduced from manual multi-hour effort to ≤30 minutes in pilot
-- 25 internal models represented in unified schema within 90 days
-- 3 internal teams actively using (MRM, Risk ML, UCML) within 90 days
-- First non-Block adopter within 6 months of public release
-
----
-
-## Decision Request
-
-1. Approve repository creation under `github.com/block` with Apache-2.0 licensing.
-2. Approve OSPO Prototype submission via `go/new-open-source`.
-3. Approve a 90-day pilot with MRM, Risk ML, and UCML.
+| v0.2 | Export layer, CLI tooling, adapter examples | Q2 2026 |
+| v0.3 | JSON-LD export, additional compliance profiles (EU AI Act, NIST AI RMF) | Q3 2026 |
+| v0.4 | CycloneDX MBOM export, contributor ecosystem | Q4 2026 |

@@ -1,6 +1,6 @@
 # model-ledger
 
-A formal, open-source model inventory and governance framework for the AI era.
+An open-source model inventory and governance framework.
 
 **Author**: Vignesh Narayanaswamy
 **Date**: March 2026
@@ -12,7 +12,7 @@ A formal, open-source model inventory and governance framework for the AI era.
 
 model-ledger is a Python library that provides a typed, version-controlled, machine-readable inventory for model risk management. It implements the structural requirements of SR 11-7 and related regulatory frameworks as executable code — not as checklists, spreadsheets, or commercial platforms.
 
-The library is designed so that AI agents can consume, traverse, validate, and act on governance metadata — not just humans. This is the core architectural principle: governance infrastructure should be structured for computation, because computation scales and manual processes don't.
+The library is designed so that both humans and AI agents can consume, traverse, validate, and act on governance metadata.
 
 ```
 pip install model-ledger
@@ -115,7 +115,7 @@ This is valuable for three reasons:
 2. **Process visibility.** Leadership can see acceptance rates by observation type, model, and pillar. If the same removal reasons keep recurring, the tooling isn't learning.
 3. **Regulatory defensibility.** The full triage history — including what was removed and why — is structured, immutable, and auditable. Examiners can see that the process is rigorous even when observations are removed.
 
-The design principle: the core schema (I/P/O tree, regulatory fields, structural invariants) is fixed — this is the auditable floor that regulators expect. The feedback layer is the learning surface that improves governance quality with each cycle. Stability where governance demands it; adaptability where computation can improve it.
+The core schema (I/P/O tree, regulatory fields, structural invariants) is fixed — the auditable floor that regulators expect. The feedback layer improves governance quality with each cycle.
 
 ---
 
@@ -143,7 +143,7 @@ model-ledger is not a replacement for commercial platforms — it's a different 
 
 **Existing inventory systems** can serve as data sources. model-ledger's adapter pattern lets you ingest from your current tools, adding the structural decomposition, validation engine, observation tracking, and agent-consumable exports they were not designed for.
 
-**AI validation agents** produce observations that model-ledger captures with full lifecycle tracking. model-ledger provides the structured model context these agents consume as input — model-ledger is the filing cabinet; the agent is the analyst.
+**AI validation agents** produce observations that model-ledger captures with full lifecycle tracking. model-ledger provides the structured model context these agents consume as input.
 
 ---
 

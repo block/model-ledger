@@ -209,3 +209,35 @@ def test_standalone_introspect():
     result = ml_introspect({"_type": "fake_model"})
     assert result.algorithm == "FakeAlgo"
     reset_registry()
+
+
+def test_new_version_explicit_version_string(inv):
+    """Test that explicit version parameter is used as-is."""
+    inv.register_model(
+        name="test-explicit",
+        owner="tester",
+        tier="low",
+        intended_purpose="testing",
+    )
+    with inv.new_version("test-explicit", version="3.0.0") as v:
+        pass
+    assert v.version_str == "3.0.0"
+    stored = inv.get_version("test-explicit", "3.0.0")
+    assert stored is not None
+    assert stored.version == "3.0.0"
+
+
+def test_new_version_explicit_preserves_auto_increment(inv):
+    """Explicit version doesn't break auto-increment for subsequent versions."""
+    inv.register_model(
+        name="test-mixed",
+        owner="tester",
+        tier="low",
+        intended_purpose="testing",
+    )
+    with inv.new_version("test-mixed", version="3.0.0") as v1:
+        pass
+    with inv.new_version("test-mixed") as v2:
+        pass
+    assert v1.version_str == "3.0.0"
+    assert v2.version_str == "0.1.0"  # auto-increment starts fresh

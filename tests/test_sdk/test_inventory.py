@@ -3,9 +3,9 @@
 import pytest
 
 from model_ledger import Inventory
+from model_ledger.backends.memory import InMemoryBackend
 from model_ledger.core.enums import RiskTier, VersionStatus
 from model_ledger.core.exceptions import (
-    ImmutableVersionError,
     ModelNotFoundError,
     VersionNotFoundError,
 )
@@ -112,9 +112,7 @@ def test_deprecate_version(inv):
 
 
 def test_audit_trail(inv):
-    inv.register_model(
-        name="m", owner="a", tier="low", intended_purpose="Test", actor="vignesh"
-    )
+    inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test", actor="vignesh")
     log = inv.get_audit_log("m")
     assert len(log) >= 1
     assert log[0].action == "registered_model"
@@ -148,3 +146,66 @@ def test_version_not_found_on_publish(inv):
     inv.register_model(name="m", owner="a", tier="low", intended_purpose="Test")
     with pytest.raises(VersionNotFoundError):
         inv.publish("m", "99.0.0")
+
+
+def test_draft_version_introspect():
+    from model_ledger.introspect.models import FeatureInfo, IntrospectionResult
+    from model_ledger.introspect.registry import get_registry, reset_registry
+
+    class FakeIntrospector:
+        name = "fake"
+
+        def can_handle(self, obj):
+            return isinstance(obj, dict) and obj.get("_type") == "fake_model"
+
+        def introspect(self, obj):
+            return IntrospectionResult(
+                introspector="fake",
+                framework="fake-framework",
+                algorithm="FakeAlgorithm",
+                features=[FeatureInfo(name="f1"), FeatureInfo(name="f2")],
+            )
+
+    reset_registry()
+    get_registry().register(FakeIntrospector())
+
+    inv = Inventory(backend=InMemoryBackend())
+    inv.register_model(name="test-model", owner="tester", tier="low", intended_purpose="testing")
+    with inv.new_version("test-model") as v:
+        result = v.introspect({"_type": "fake_model"})
+
+    assert isinstance(result, IntrospectionResult)
+    assert result.algorithm == "FakeAlgorithm"
+    version = inv.get_version("test-model", v.version_str)
+    assert version.methodology_approach == "FakeAlgorithm"
+    reset_registry()
+
+
+def test_standalone_introspect():
+    # Import the function directly to avoid subpackage shadowing
+    import importlib
+
+    import model_ledger as _ml
+
+    # Reload to restore the function attribute after subpackage import
+    importlib.reload(_ml)
+    ml_introspect = _ml.introspect
+
+    from model_ledger.introspect.models import IntrospectionResult
+    from model_ledger.introspect.registry import get_registry, reset_registry
+
+    class FakeIntrospector:
+        name = "fake"
+
+        def can_handle(self, obj):
+            return isinstance(obj, dict) and obj.get("_type") == "fake_model"
+
+        def introspect(self, obj):
+            return IntrospectionResult(introspector="fake", algorithm="FakeAlgo")
+
+    reset_registry()
+    get_registry().register(FakeIntrospector())
+
+    result = ml_introspect({"_type": "fake_model"})
+    assert result.algorithm == "FakeAlgo"
+    reset_registry()

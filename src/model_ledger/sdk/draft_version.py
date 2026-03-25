@@ -48,9 +48,7 @@ class DraftVersion:
         parts = path.split("/")
         parent = self._version.tree
         for part in parts[:-1]:
-            found = next(
-                (c for c in parent.children if c.name.lower() == part.lower()), None
-            )
+            found = next((c for c in parent.children if c.name.lower() == part.lower()), None)
             if found is None:
                 found = ComponentNode(name=part, node_type="category")
                 parent.children.append(found)
@@ -64,12 +62,8 @@ class DraftVersion:
             )
         )
 
-    def add_document(
-        self, *, doc_type: str, title: str, url: str | None = None
-    ) -> None:
-        self._version.documents.append(
-            GovernanceDoc(doc_type=doc_type, title=title, url=url)
-        )
+    def add_document(self, *, doc_type: str, title: str, url: str | None = None) -> None:
+        self._version.documents.append(GovernanceDoc(doc_type=doc_type, title=title, url=url))
 
     def add_reference(
         self,
@@ -96,14 +90,10 @@ class DraftVersion:
         artifact_uri: str | None = None,
     ) -> None:
         self._version.evidence.append(
-            Evidence(
-                evidence_type=evidence_type, title=title, artifact_uri=artifact_uri
-            )
+            Evidence(evidence_type=evidence_type, title=title, artifact_uri=artifact_uri)
         )
 
-    def add_artifact(
-        self, *, artifact_type: str, uri: str, checksum: str | None = None
-    ) -> None:
+    def add_artifact(self, *, artifact_type: str, uri: str, checksum: str | None = None) -> None:
         self._version.artifacts.append(
             ModelArtifact(artifact_type=artifact_type, uri=uri, checksum=checksum)
         )
@@ -118,6 +108,61 @@ class DraftVersion:
         if isinstance(due_date, str):
             due_date = date.fromisoformat(due_date)
         self._version.next_validation_due = due_date
+
+    def introspect(self, obj: Any, *, introspector: str | None = None) -> Any:
+        """Introspect a model object and apply extracted metadata to this version.
+
+        Auto-detects the appropriate introspector plugin, extracts metadata
+        (algorithm, features, hyperparameters, data sources), and maps it
+        onto the version's fields and component tree.
+
+        Args:
+            obj: A fitted model object or config to introspect.
+            introspector: Optional name of a specific introspector to use.
+
+        Returns:
+            IntrospectionResult with all extracted metadata.
+        """
+        from model_ledger.introspect.registry import get_registry
+
+        registry = get_registry()
+        intro = registry.get_by_name(introspector) if introspector else registry.find(obj)
+        result = intro.introspect(obj)
+        self._apply_result(result)
+        return result
+
+    def _apply_result(self, result: Any) -> None:
+        """Map IntrospectionResult onto version fields and component tree."""
+        if result.algorithm:
+            self._version.methodology_approach = result.algorithm
+        if result.features:
+            self.add_component(
+                "Inputs/features",
+                type="feature_set",
+                metadata={
+                    "count": len(result.features),
+                    "features": [f.model_dump() for f in result.features],
+                },
+            )
+        if result.thresholds:
+            self.add_component(
+                "Processing/thresholds",
+                type="threshold_set",
+                metadata={"thresholds": [t.model_dump() for t in result.thresholds]},
+            )
+        if result.data_sources:
+            for ds in result.data_sources:
+                self.add_component(
+                    f"Inputs/{ds.name}", type="data_source", metadata=ds.model_dump()
+                )
+        if result.execution_schedule:
+            self.set_run_frequency(result.execution_schedule)
+        self._version.artifacts.append(
+            ModelArtifact(
+                artifact_type="introspection_result",
+                uri=f"introspect://{result.introspector}",
+            )
+        )
 
     def validate(self, profile: str = "sr_11_7"):
         from model_ledger.validate.engine import validate

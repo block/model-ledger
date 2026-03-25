@@ -15,6 +15,21 @@ from model_ledger.sdk.draft_version import DraftVersion
 
 
 class Inventory:
+    """The main entry point for model-ledger.
+
+    Register models, create versions, introspect ML artifacts, validate
+    against compliance profiles, and manage the full governance lifecycle.
+
+    Example:
+        >>> inv = Inventory()  # SQLite backend, auto-creates inventory.db
+        >>> inv.register_model(name="fraud-detector", owner="ml-team",
+        ...                    tier="high", intended_purpose="Credit risk scoring")
+        >>> with inv.new_version("fraud-detector") as v:
+        ...     v.introspect(fitted_model)
+        ...     v.add_document(doc_type="model_spec", title="Fraud Detector Spec")
+        >>> inv.publish("fraud-detector", "0.1.0")
+    """
+
     def __init__(
         self,
         db_path: str = "inventory.db",
@@ -121,9 +136,7 @@ class Inventory:
     def get_version(self, model_name: str, version: str) -> ModelVersion | None:
         return self._backend.get_version(model_name, version)
 
-    def publish(
-        self, model_name: str, version: str, actor: str = "system"
-    ) -> None:
+    def publish(self, model_name: str, version: str, actor: str = "system") -> None:
         v = self._backend.get_version(model_name, version)
         if v is None:
             raise VersionNotFoundError(model_name, version)
@@ -141,9 +154,7 @@ class Inventory:
             )
         )
 
-    def deprecate(
-        self, model_name: str, version: str, actor: str = "system"
-    ) -> None:
+    def deprecate(self, model_name: str, version: str, actor: str = "system") -> None:
         v = self._backend.get_version(model_name, version)
         if v is None:
             raise VersionNotFoundError(model_name, version)
@@ -159,7 +170,5 @@ class Inventory:
             )
         )
 
-    def get_audit_log(
-        self, model_name: str, version: str | None = None
-    ) -> list[AuditEvent]:
+    def get_audit_log(self, model_name: str, version: str | None = None) -> list[AuditEvent]:
         return self._backend.get_audit_log(model_name, version)

@@ -19,3 +19,6 @@ htmlcov/
 .env
 .env.local
 .DS_Store
+
+# Internal design docs (contain org-specific context)
+docs/superpowers/

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 
 from model_ledger.core.enums import VersionStatus
@@ -45,9 +44,7 @@ class SQLiteBackend:
         self._conn.commit()
 
     def get_model(self, name: str) -> Model | None:
-        row = self._conn.execute(
-            "SELECT data FROM models WHERE name = ?", (name,)
-        ).fetchone()
+        row = self._conn.execute("SELECT data FROM models WHERE name = ?", (name,)).fetchone()
         if row is None:
             return None
         return Model.model_validate_json(row[0])
@@ -85,6 +82,13 @@ class SQLiteBackend:
             return None
         return ModelVersion.model_validate_json(row[0])
 
+    def list_versions(self, model_name: str) -> list[ModelVersion]:
+        rows = self._conn.execute(
+            "SELECT data FROM versions WHERE model_name = ? ORDER BY version",
+            (model_name,),
+        ).fetchall()
+        return [ModelVersion.model_validate_json(row[0]) for row in rows]
+
     def append_audit_event(self, event: AuditEvent) -> None:
         self._conn.execute(
             "INSERT INTO audit_log (model_name, version, data) VALUES (?, ?, ?)",
@@ -92,9 +96,7 @@ class SQLiteBackend:
         )
         self._conn.commit()
 
-    def get_audit_log(
-        self, model_name: str, version: str | None = None
-    ) -> list[AuditEvent]:
+    def get_audit_log(self, model_name: str, version: str | None = None) -> list[AuditEvent]:
         if version is not None:
             rows = self._conn.execute(
                 "SELECT data FROM audit_log WHERE model_name = ? AND version = ? ORDER BY id",

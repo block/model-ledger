@@ -94,10 +94,25 @@ class Inventory:
         self,
         model_name: str,
         base: str | None = None,
+        version: str | None = None,
         actor: str = "system",
     ) -> DraftVersion:
+        """Create a new draft version for a model.
+
+        Args:
+            model_name: Name of the registered model.
+            base: Copy content from this existing version (increments minor version).
+            version: Explicit version string (e.g., "3.0.0"). When provided,
+                uses this exact string instead of auto-incrementing.
+                Auto-increments when omitted.
+            actor: Who is creating this version.
+        """
         self.get_model(model_name)
-        if base:
+        if version:
+            # Explicit version — use as-is
+            new_ver_str = version
+            ver = ModelVersion(version=new_ver_str)
+        elif base:
             base_version = self._backend.get_version(model_name, base)
             if base_version is None:
                 raise VersionNotFoundError(model_name, base)
@@ -105,10 +120,10 @@ class Inventory:
             parts[1] = str(int(parts[1]) + 1)
             parts[2] = "0"
             new_ver_str = ".".join(parts)
-            version = base_version.model_copy(deep=True)
-            version.version = new_ver_str
-            version.status = VersionStatus.DRAFT
-            version.release_date = None
+            ver = base_version.model_copy(deep=True)
+            ver.version = new_ver_str
+            ver.status = VersionStatus.DRAFT
+            ver.release_date = None
         else:
             new_ver_str = "0.1.0"
             existing = self._backend.get_version(model_name, new_ver_str)
@@ -119,9 +134,9 @@ class Inventory:
                     counter += 1
                     new_ver_str = f"0.{counter}.0"
                     existing = self._backend.get_version(model_name, new_ver_str)
-            version = ModelVersion(version=new_ver_str)
+            ver = ModelVersion(version=new_ver_str)
 
-        self._backend.save_version(model_name, version)
+        self._backend.save_version(model_name, ver)
         self._backend.append_audit_event(
             AuditEvent(
                 actor=actor,
@@ -131,7 +146,7 @@ class Inventory:
                 details={"base": base},
             )
         )
-        return DraftVersion(self, model_name, version, actor=actor)
+        return DraftVersion(self, model_name, ver, actor=actor)
 
     def get_version(self, model_name: str, version: str) -> ModelVersion | None:
         return self._backend.get_version(model_name, version)

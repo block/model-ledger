@@ -1,6 +1,6 @@
 """Tests for core enums with case-insensitive coercion."""
 
-from model_ledger.core.enums import ModelType, RiskTier, ModelStatus, VersionStatus
+from model_ledger.core.enums import ModelStatus, ModelType, RiskTier, VersionStatus
 
 
 def test_model_type_values():

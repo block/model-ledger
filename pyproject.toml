@@ -1,6 +1,6 @@
 [project]
 name = "model-ledger"
-version = "0.1.0"
+version = "0.2.0"
 description = "Developer-first model inventory and governance framework for SR 11-7, EU AI Act, and NIST AI RMF compliance"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,6 +30,9 @@ dependencies = [
 [project.optional-dependencies]
 cli = ["typer>=0.9", "rich>=13.0"]
 excel = ["openpyxl>=3.1"]
+introspect-sklearn = ["scikit-learn>=1.0"]
+introspect-xgboost = ["xgboost>=1.7"]
+introspect-lightgbm = ["lightgbm>=3.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -39,6 +42,11 @@ dev = [
 
 [project.scripts]
 model-ledger = "model_ledger.cli:app"
+
+[project.entry-points."model_ledger.introspectors"]
+lightgbm = "model_ledger.introspect.lightgbm:LightGBMIntrospector"
+sklearn = "model_ledger.introspect.sklearn:SklearnIntrospector"
+xgboost = "model_ledger.introspect.xgboost:XGBoostIntrospector"
 
 [project.urls]
 Homepage = "https://github.com/block/model-ledger"

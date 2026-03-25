@@ -48,14 +48,8 @@ class SR117Profile:
                 )
             )
 
-    def _check_validator_independence(
-        self, model: Model, result: ValidationResult
-    ) -> None:
-        if (
-            model.validator
-            and model.developers
-            and model.validator in model.developers
-        ):
+    def _check_validator_independence(self, model: Model, result: ValidationResult) -> None:
+        if model.validator and model.developers and model.validator in model.developers:
             result.violations.append(
                 Violation(
                     rule_id="validator_independence",
@@ -66,9 +60,7 @@ class SR117Profile:
                 )
             )
 
-    def _check_has_ipo_structure(
-        self, version: ModelVersion, result: ValidationResult
-    ) -> None:
+    def _check_has_ipo_structure(self, version: ModelVersion, result: ValidationResult) -> None:
         top_names = {c.name for c in version.tree.children}
         required = {"Inputs", "Processing", "Outputs"}
         missing = required - top_names
@@ -107,7 +99,11 @@ class SR117Profile:
                     rule_id="has_validation_schedule",
                     severity=severity,
                     message="No next validation date set."
-                    + (" High-tier models require a validation schedule." if severity == "error" else ""),
+                    + (
+                        " High-tier models require a validation schedule."
+                        if severity == "error"
+                        else ""
+                    ),
                     suggestion="Use v.set_next_validation_due('2027-01-01') to set the date.",
                 )
             )

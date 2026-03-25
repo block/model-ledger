@@ -1,25 +1,22 @@
 """Tests for core Pydantic data models."""
 
-import pytest
-from datetime import datetime, date
+from datetime import date
 
+from model_ledger.core.enums import ModelStatus, ModelType, RiskTier, VersionStatus
 from model_ledger.core.models import (
-    Model,
-    ModelVersion,
-    ComponentNode,
-    Stakeholder,
-    GovernanceDoc,
-    Reference,
-    Evidence,
-    Finding,
-    Exception_,
-    Overlay,
-    ModelRiskRating,
     AuditEvent,
-    ModelArtifact,
+    ComponentNode,
     DeploymentRecord,
+    Exception_,
+    Finding,
+    GovernanceDoc,
+    Model,
+    ModelArtifact,
+    ModelRiskRating,
+    ModelVersion,
+    Overlay,
+    Reference,
 )
-from model_ledger.core.enums import ModelType, RiskTier, ModelStatus, VersionStatus
 
 
 def test_create_minimal_model():

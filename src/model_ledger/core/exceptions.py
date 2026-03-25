@@ -39,3 +39,12 @@ class ValidationError(ModelInventoryError):
 
 class StorageError(ModelInventoryError):
     """Raised when the storage backend encounters an error."""
+
+
+class NoIntrospectorError(ModelInventoryError):
+    """Raised when no introspector can handle the given object."""
+
+    def __init__(self, target: type | str) -> None:
+        self.target = target
+        label = target.__name__ if isinstance(target, type) else target
+        super().__init__(f"No introspector found for {label}")

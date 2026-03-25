@@ -23,16 +23,20 @@ def test_save_and_get_observation():
 def test_list_observations_by_model_version():
     backend = InMemoryBackend()
     for i in range(3):
-        backend.save_observation(Observation(
-            content=f"Finding {i}",
-            source_type="ai_agent",
-            model_version_ref="fraud_detection/2.0.0",
-        ))
-    backend.save_observation(Observation(
-        content="Other model finding",
-        source_type="human_reviewer",
-        model_version_ref="credit_model/1.0.0",
-    ))
+        backend.save_observation(
+            Observation(
+                content=f"Finding {i}",
+                source_type="ai_agent",
+                model_version_ref="fraud_detection/2.0.0",
+            )
+        )
+    backend.save_observation(
+        Observation(
+            content="Other model finding",
+            source_type="human_reviewer",
+            model_version_ref="credit_model/1.0.0",
+        )
+    )
     results = backend.list_observations(model_version_ref="fraud_detection/2.0.0")
     assert len(results) == 3
 

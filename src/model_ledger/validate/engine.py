@@ -57,19 +57,18 @@ def register_profile(name: str):
     def decorator(cls):
         _PROFILES[name] = cls
         return cls
+
     return decorator
 
 
-def validate(
-    model: Model, version: ModelVersion, *, profile: str = "sr_11_7"
-) -> ValidationResult:
+def validate(model: Model, version: ModelVersion, *, profile: str = "sr_11_7") -> ValidationResult:
     if profile not in _PROFILES:
-        raise ValueError(
-            f"Unknown profile '{profile}'. Available: {list(_PROFILES.keys())}"
-        )
+        raise ValueError(f"Unknown profile '{profile}'. Available: {list(_PROFILES.keys())}")
     checker = _PROFILES[profile]()
     return checker.validate(model, version)
 
 
 # Import profiles to trigger registration
+from model_ledger.validate.profiles import eu_ai_act as _eu_ai_act  # noqa: E402, F401
+from model_ledger.validate.profiles import nist_ai_rmf as _nist_ai_rmf  # noqa: E402, F401
 from model_ledger.validate.profiles import sr_11_7 as _sr_11_7  # noqa: E402, F401

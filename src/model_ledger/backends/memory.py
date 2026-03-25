@@ -45,12 +45,13 @@ class InMemoryBackend:
     def get_version(self, model_name: str, version: str) -> ModelVersion | None:
         return self._versions.get(model_name, {}).get(version)
 
+    def list_versions(self, model_name: str) -> list[ModelVersion]:
+        return list(self._versions.get(model_name, {}).values())
+
     def append_audit_event(self, event: AuditEvent) -> None:
         self._audit_log.append(event)
 
-    def get_audit_log(
-        self, model_name: str, version: str | None = None
-    ) -> list[AuditEvent]:
+    def get_audit_log(self, model_name: str, version: str | None = None) -> list[AuditEvent]:
         events = [e for e in self._audit_log if e.model_name == model_name]
         if version is not None:
             events = [e for e in events if e.version == version]

@@ -1,14 +1,28 @@
 """Tests for core exception hierarchy with actionable messages."""
 
 import pytest
+
 from model_ledger.core.exceptions import (
+    ImmutableVersionError,
     ModelInventoryError,
     ModelNotFoundError,
-    VersionNotFoundError,
-    ImmutableVersionError,
-    ValidationError,
+    NoIntrospectorError,
     StorageError,
+    ValidationError,
+    VersionNotFoundError,
 )
+
+
+def test_no_introspector_error_with_type():
+    err = NoIntrospectorError(int)
+    assert "int" in str(err)
+    assert err.target is int
+
+
+def test_no_introspector_error_with_name():
+    err = NoIntrospectorError("custom_plugin")
+    assert "custom_plugin" in str(err)
+    assert err.target == "custom_plugin"
 
 
 def test_all_exceptions_inherit_from_base():

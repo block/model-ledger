@@ -2,11 +2,11 @@
 
 import pytest
 
-from model_ledger.core.models import Model, ModelVersion, AuditEvent
+from model_ledger.backends.memory import InMemoryBackend
+from model_ledger.backends.sqlite import SQLiteBackend
 from model_ledger.core.enums import RiskTier, VersionStatus
 from model_ledger.core.exceptions import ImmutableVersionError
-from model_ledger.backends.sqlite import SQLiteBackend
-from model_ledger.backends.memory import InMemoryBackend
+from model_ledger.core.models import AuditEvent, Model, ModelVersion
 
 
 @pytest.fixture(params=["sqlite", "memory"])
@@ -128,3 +128,17 @@ def test_audit_log_filtered_by_version(backend):
 def test_get_nonexistent_version(backend):
     backend.save_model(_make_model())
     assert backend.get_version("test_model", "99.0.0") is None
+
+
+def test_list_versions(backend):
+    """Test that list_versions returns all versions for a model."""
+    model = Model(name="test-lv", owner="tester", tier=RiskTier.LOW, intended_purpose="testing")
+    backend.save_model(model)
+    v1 = ModelVersion(version="0.1.0")
+    v2 = ModelVersion(version="0.2.0")
+    backend.save_version("test-lv", v1)
+    backend.save_version("test-lv", v2)
+    versions = backend.list_versions("test-lv")
+    version_strs = [v.version for v in versions]
+    assert "0.1.0" in version_strs
+    assert "0.2.0" in version_strs

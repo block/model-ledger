@@ -1,11 +1,12 @@
 """Tests for SR 11-7 validation engine."""
 
-import pytest
 from datetime import date
 
-from model_ledger.core.enums import RiskTier, VersionStatus
-from model_ledger.core.models import Model, ModelVersion, GovernanceDoc
-from model_ledger.validate.engine import validate, ValidationResult
+import pytest
+
+from model_ledger.core.enums import RiskTier
+from model_ledger.core.models import GovernanceDoc, Model, ModelVersion
+from model_ledger.validate.engine import validate
 
 
 def _make_model(**kwargs):
@@ -147,7 +148,8 @@ class TestSR117Profile:
         # Default tree has I/P/O — should pass structural check
         result = validate(model, version, profile="sr_11_7")
         structural_errors = [
-            v for v in result.violations
+            v
+            for v in result.violations
             if v.rule_id == "has_ipo_structure" and v.severity == "error"
         ]
         assert len(structural_errors) == 0

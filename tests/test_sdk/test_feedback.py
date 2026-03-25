@@ -21,22 +21,26 @@ def _make_backend_with_feedback():
     )
     backend.save_observation(obs1)
     backend.save_observation(obs2)
-    backend.append_feedback_event(FeedbackEvent(
-        observation_ref="obs-1",
-        verdict="remove",
-        reason_code="justified_by_design",
-        rationale="Intentional 60-day window",
-        stage="triage",
-        actor="vignesh",
-    ))
-    backend.append_feedback_event(FeedbackEvent(
-        observation_ref="obs-2",
-        verdict="keep",
-        reason_code="valid_finding",
-        rationale="Confirmed no monitoring in place",
-        stage="triage",
-        actor="vignesh",
-    ))
+    backend.append_feedback_event(
+        FeedbackEvent(
+            observation_ref="obs-1",
+            verdict="remove",
+            reason_code="justified_by_design",
+            rationale="Intentional 60-day window",
+            stage="triage",
+            actor="vignesh",
+        )
+    )
+    backend.append_feedback_event(
+        FeedbackEvent(
+            observation_ref="obs-2",
+            verdict="keep",
+            reason_code="valid_finding",
+            rationale="Confirmed no monitoring in place",
+            stage="triage",
+            actor="vignesh",
+        )
+    )
     return backend
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
+from model_ledger.core.ledger_models import ModelRef
 from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.scanner.report import ScanReport
 from model_ledger.sdk.ledger import Ledger, ModelNotFoundError
@@ -47,6 +48,8 @@ class InventoryScanner:
         new_count = 0
         updated_count = 0
 
+        found_names = {c.name for c in candidates}
+
         for candidate in candidates:
             result = self._register_candidate(candidate, scan_run_id)
             if result == "new":
@@ -54,14 +57,37 @@ class InventoryScanner:
             elif result == "updated":
                 updated_count += 1
 
+        # Record not_found for models previously discovered on this platform
+        not_found_count = 0
+        for model in self._ledger.list():
+            if model.name in found_names:
+                continue
+            if self._was_discovered_by(model, scanner.name):
+                self._ledger.record(
+                    model,
+                    event="not_found",
+                    source=scanner.name,
+                    payload={"scan_run_id": scan_run_id},
+                    actor=f"scanner:{scanner.name}",
+                )
+                not_found_count += 1
+
         return ScanReport(
             platform=scanner.name,
             scan_run_id=scan_run_id,
             total_found=len(candidates),
             new_models=new_count,
             updated_models=updated_count,
-            not_found_models=0,
+            not_found_models=not_found_count,
             candidates=candidates,
+        )
+
+    def _was_discovered_by(self, model: ModelRef, scanner_name: str) -> bool:
+        snaps = self._ledger.history(model)
+        return any(
+            s.source == scanner_name
+            and s.event_type in ("discovered", "scan_confirmed")
+            for s in snaps
         )
 
     def _register_candidate(self, candidate: ModelCandidate, scan_run_id: str) -> str:

@@ -1,14 +1,12 @@
-"""model-ledger: Developer-first model inventory and governance framework.
+"""model-ledger: Open-source model governance framework.
 
-Register models, introspect ML artifacts, validate against compliance
-profiles (SR 11-7, EU AI Act, NIST AI RMF), and export audit packs.
+Register models, track changes, discover dependencies, and validate
+against compliance profiles (SR 11-7, EU AI Act, NIST AI RMF).
 
-    >>> from model_ledger import Inventory
-    >>> inv = Inventory()
-    >>> inv.register_model(name="my-model", owner="alice", tier="high",
-    ...                    intended_purpose="Fraud detection")
-    >>> with inv.new_version("my-model") as v:
-    ...     v.introspect(fitted_model)
+    >>> from model_ledger import Ledger
+    >>> ledger = Ledger()
+    >>> ledger.register(name="my-model", owner="alice", model_type="ml_model",
+    ...                 tier="high", purpose="Fraud detection")
 """
 
 from __future__ import annotations
@@ -25,15 +23,25 @@ from model_ledger.core.exceptions import (
     ValidationError,
     VersionNotFoundError,
 )
+from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 from model_ledger.core.models import ComponentNode, Model, ModelVersion
+from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.sdk.inventory import Inventory
+from model_ledger.sdk.ledger import Ledger
 
 if TYPE_CHECKING:
     from model_ledger.introspect.models import IntrospectionResult
     from model_ledger.introspect.protocol import Introspector
 
 __all__ = [
-    # Core
+    # v0.3.0 — primary API
+    "Ledger",
+    "ModelRef",
+    "Snapshot",
+    "Tag",
+    "ModelCandidate",
+    "Scanner",
+    # v0.2.0 — legacy
     "Inventory",
     "Model",
     "ModelVersion",
@@ -56,7 +64,7 @@ __all__ = [
     "register_introspector",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

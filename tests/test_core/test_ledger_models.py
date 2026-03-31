@@ -47,6 +47,21 @@ class TestModelRef:
         )
         assert len(model.model_hash) == 32
 
+    def test_model_origin_defaults_to_internal(self):
+        model = ModelRef(
+            name="test", owner="owner", model_type="ml",
+            tier="high", purpose="testing",
+        )
+        assert model.model_origin == "internal"
+
+    def test_model_origin_can_be_set(self):
+        model = ModelRef(
+            name="vendor-model", owner="vendor-team", model_type="vendor",
+            tier="high", purpose="Credit scoring",
+            model_origin="vendor",
+        )
+        assert model.model_origin == "vendor"
+
 
 class TestSnapshot:
     def test_create_snapshot(self):

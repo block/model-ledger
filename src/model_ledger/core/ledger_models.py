@@ -31,6 +31,7 @@ class ModelRef(BaseModel):
     name: str
     owner: str
     model_type: str
+    model_origin: str = "internal"
     tier: str
     purpose: str
     status: str = "active"

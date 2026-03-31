@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.scanner.report import ScanReport
 from model_ledger.sdk.ledger import Ledger, ModelNotFoundError
 
 
 class InventoryScanner:
-    def __init__(self, ledger: Ledger, scanners: list[Scanner]) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        scanners: list[Scanner],
+        filter_fn: Callable[[ModelCandidate], bool] | None = None,
+    ) -> None:
         self._ledger = ledger
         self._scanners = {s.name: s for s in scanners}
+        self._filter_fn = filter_fn
 
     def discover_all(self) -> list[ScanReport]:
         reports = []
@@ -27,6 +35,8 @@ class InventoryScanner:
 
     def _run_scanner(self, scanner: Scanner) -> ScanReport:
         candidates = scanner.scan()
+        if self._filter_fn:
+            candidates = [c for c in candidates if self._filter_fn(c)]
         new_count = 0
         updated_count = 0
 

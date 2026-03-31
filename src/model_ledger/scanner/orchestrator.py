@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable
 
 from model_ledger.core.ledger_models import ModelRef
-from model_ledger.scanner.protocol import ModelCandidate, Scanner
+from model_ledger.scanner.protocol import EnrichableScanner, ModelCandidate, Scanner
 from model_ledger.scanner.report import ScanReport
 from model_ledger.sdk.ledger import Ledger, ModelNotFoundError
 
@@ -39,7 +39,29 @@ class InventoryScanner:
             raise ValueError(f"Unknown platform: {platform}")
         return self._run_scanner(scanner)
 
+    def _get_last_scan_time(self, scanner_name: str) -> datetime | None:
+        for model in self._ledger.list():
+            snaps: list = self._ledger.history(model)  # type: ignore[assignment]
+            for s in snaps:
+                if s.source == scanner_name:
+                    ts: datetime = s.timestamp
+                    return ts
+        return None
+
     def _run_scanner(self, scanner: Scanner) -> ScanReport:
+        # Check has_changed before running full scan
+        last_scan = self._get_last_scan_time(scanner.name)
+        if last_scan is not None and not scanner.has_changed(last_scan):
+            return ScanReport(
+                platform=scanner.name,
+                scan_run_id=f"{scanner.name}:{_now().isoformat()}",
+                total_found=0,
+                new_models=0,
+                updated_models=0,
+                not_found_models=0,
+                candidates=[],
+            )
+
         candidates = scanner.scan()
         if self._filter_fn:
             candidates = [c for c in candidates if self._filter_fn(c)]
@@ -56,6 +78,18 @@ class InventoryScanner:
                 new_count += 1
             elif result == "updated":
                 updated_count += 1
+
+            # Enrich if scanner supports it
+            if isinstance(scanner, EnrichableScanner):
+                enrichment = scanner.enrich(candidate)
+                if enrichment:
+                    self._ledger.record(
+                        candidate.name,
+                        event="enriched",
+                        source=scanner.name,
+                        payload={**enrichment, "scan_run_id": scan_run_id},
+                        actor=f"scanner:{scanner.name}",
+                    )
 
         # Record not_found for models previously discovered on this platform
         not_found_count = 0

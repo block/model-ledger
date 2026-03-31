@@ -1,10 +1,10 @@
 # model-ledger
 
-**The first open-source, developer-first model inventory framework for regulatory compliance.**
+**Open-source model governance framework. Register, track, and audit every model and rule in your organization.**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-174%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-264%20passing-brightgreen.svg)]()
 
 ---
 
@@ -14,9 +14,9 @@ Every bank, fintech, and insurer subject to model risk regulation needs a model 
 
 - **56% of financial institutions have NO dedicated MRM technology** (PwC 2022)
 - **90% use spreadsheets** for model governance (RMA 2024)
-- **No Apache-2.0 tool exists** that bridges Model Cards, Model Registry, and Model Inventory
+- **No Apache-2.0 tool exists** that treats model governance as code
 
-model-ledger changes this. It's governance as code.
+model-ledger changes this. It's an append-only ledger for every model, rule, and signal in your organization — with point-in-time reconstruction, dependency tracking, and multi-framework compliance validation.
 
 ## Quick Start
 
@@ -25,158 +25,238 @@ pip install model-ledger
 ```
 
 ```python
-from model_ledger import Inventory
+from model_ledger import Ledger
 
-inv = Inventory()
+ledger = Ledger()
 
 # Register a model
-inv.register_model(
+model = ledger.register(
     name="fraud-detector",
     owner="ml-team",
+    model_type="ml_model",
     tier="high",
-    intended_purpose="Real-time fraud detection for payment transactions",
-    developers=["alice", "bob"],
-    validator="carol",
+    purpose="Real-time fraud detection for payment transactions",
 )
 
-# Build a version — introspect, document, validate
-with inv.new_version("fraud-detector") as v:
-    v.introspect(fitted_model)  # auto-extract algorithm, features, hyperparams
-    v.add_document(doc_type="system_design", title="Fraud Detection v2 Design Doc")
-    v.set_next_validation_due("2027-01-01")
-    result = v.validate(profile="sr_11_7")  # compliance check
-    print(result)  # PASS or FAIL with specific violations
+# Record observations over time
+ledger.record(model, event="deployed", actor="ci-pipeline",
+              payload={"environment": "production", "version": "3.1.0"})
 
-# Export audit pack — one self-contained HTML file
-from model_ledger.export import export_audit_pack
-export_audit_pack(inventory=inv, model_name="fraud-detector",
-                  format="html", output_path="audit-pack.html")
+ledger.record(model, event="validated", actor="carol",
+              payload={"result": "pass", "profile": "sr_11_7"})
+
+# Track dependencies
+ledger.register(name="velocity-signal", owner="feature-team",
+                model_type="signal", tier="unclassified",
+                purpose="30-day transaction velocity")
+
+ledger.link_dependency("velocity-signal", "fraud-detector",
+                       relationship="consumes", actor="scanner:ml-platform")
+
+# Query the dependency graph
+deps = ledger.dependencies("fraud-detector", direction="upstream")
+# [{"model": ModelRef(name="velocity-signal"), "relationship": "consumes", ...}]
+
+# Point-in-time reconstruction
+from datetime import datetime, timezone
+inventory = ledger.inventory_at(datetime(2026, 3, 15, tzinfo=timezone.utc))
 ```
 
-## Try It Now — Built-in Sample Data
+## Architecture
 
-Like `sklearn.datasets`, model-ledger ships with ready-to-use sample models:
+```mermaid
+graph TB
+    subgraph "Core"
+        MR[ModelRef<br/><i>regulatory identity</i>]
+        SN[Snapshot<br/><i>immutable observation</i>]
+        TG[Tag<br/><i>mutable pointer</i>]
+    end
 
-```python
-from model_ledger.datasets import load_sample_inventory, make_fraud_detector
+    subgraph "SDK"
+        L[Ledger<br/><i>register, record, tag<br/>link_dependency, inventory_at</i>]
+    end
 
-# Pre-built inventory with 3 financial services models
-inv = load_sample_inventory()
-for m in inv.list_models():
-    print(f"{m.name}: {m.tier.value} tier, {m.model_type.value}")
+    subgraph "Scanner"
+        SP[Scanner Protocol]
+        MC[ModelCandidate]
+        IS[InventoryScanner<br/><i>orchestrate, dedup, filter</i>]
+        SR[ScannerRegistry<br/><i>entry_points discovery</i>]
+    end
 
-# Create a real fitted XGBoost model for introspection
-data = make_fraud_detector()  # returns fitted XGBClassifier + 16 features
+    subgraph "Backends"
+        BP[LedgerBackend Protocol]
+        IM[InMemory]
+        SQ[SQLite]
+        CU[Your Backend]
+    end
+
+    subgraph "Compliance"
+        VP[Validation Profiles]
+        S1[SR 11-7]
+        EA[EU AI Act]
+        NI[NIST AI RMF]
+    end
+
+    subgraph "Your Organization"
+        GS[Your Scanners<br/><i>implement Scanner protocol</i>]
+        GB[Your Backend<br/><i>implement LedgerBackend</i>]
+    end
+
+    L --> BP
+    L --> MR
+    L --> SN
+    L --> TG
+    IS --> SP
+    IS --> L
+    SP --> MC
+    SR --> SP
+    BP --> IM
+    BP --> SQ
+    BP --> CU
+    GS -.-> SP
+    GB -.-> BP
+    VP --> S1
+    VP --> EA
+    VP --> NI
+```
+
+## How It Works
+
+model-ledger is an **event log**, not a table. Models are identities. Everything else is timestamped, immutable snapshots.
+
+```mermaid
+sequenceDiagram
+    participant S as Scanner
+    participant O as InventoryScanner
+    participant L as Ledger
+    participant B as Backend
+
+    S->>O: scan() → [ModelCandidate, ...]
+    O->>O: filter, dedup
+    O->>L: register(name, owner, ...)
+    L->>B: save_model(ModelRef)
+    L->>B: append_snapshot("registered")
+    O->>L: record("discovered", payload={...})
+    L->>B: append_snapshot("discovered")
+
+    Note over O: Next scan run...
+    S->>O: scan() → [candidates]
+    O->>O: Compare with known models
+    O->>L: record("scan_confirmed") for found
+    O->>L: record("not_found") for missing
 ```
 
 ## Features
 
-### Introspection — auto-extract metadata from any model
+### Multi-platform scanning
 
-Plugin-based system that extracts algorithm, hyperparameters, features, and structure from fitted models. Ships with sklearn, XGBoost, and LightGBM. Extensible via entry points for any framework.
+Discover models across your deployment platforms automatically. The Scanner protocol is the only interface — implement `scan()` and `has_changed()` for any platform.
 
 ```python
-from model_ledger.datasets import make_fraud_detector
-from model_ledger.introspect.registry import get_registry
+from model_ledger import Ledger
+from model_ledger.scanner import InventoryScanner
 
-data = make_fraud_detector()
-intro = get_registry().find(data["model"])
-result = intro.introspect(data["model"])
+ledger = Ledger()
+scanner = InventoryScanner(
+    ledger,
+    scanners=[your_ml_scanner, your_rules_scanner],
+    filter_fn=lambda c: c.metadata.get("risk_relevant", True),
+)
 
+reports = scanner.discover_all()
+for r in reports:
+    print(f"{r.platform}: {r.new_models} new, {r.not_found_models} removed")
+```
+
+Scanners are discovered automatically via `entry_points` — install a scanner package and it registers itself.
+
+### Dependency tracking
+
+Track model-to-model and model-to-signal dependencies. Features and signals are registered as entities alongside models — the dependency graph grows organically through discovery.
+
+```python
+# "Which models break if this signal changes?"
+deps = ledger.dependencies("customer-velocity-30d", direction="downstream")
+
+# "What does this model depend on?"
+deps = ledger.dependencies("fraud-detector", direction="upstream")
+```
+
+### Point-in-time inventory
+
+Reconstruct the exact state of your inventory at any past date. The append-only Snapshot log means nothing is ever lost.
+
+```python
+# "What did our inventory look like during the last audit?"
+inventory = ledger.inventory_at(audit_date)
+
+# "What was on platform X specifically?"
+inventory = ledger.inventory_at(audit_date, platform="ml-platform")
+```
+
+### Three compliance profiles
+
+| Profile | Regulation | What It Checks |
+|---------|-----------|----------------|
+| `sr_11_7` | US Federal Reserve SR 11-7 | Validator independence, I/P/O structure, governance docs, validation schedule |
+| `eu_ai_act` | EU AI Act (2024/1689) | Risk assessment, data governance, transparency, human oversight |
+| `nist_ai_rmf` | NIST AI RMF 1.0 | GOVERN, MAP, MEASURE, MANAGE functions |
+
+### Model introspection
+
+Plugin-based system that extracts algorithm, hyperparameters, features, and structure from fitted models. Ships with sklearn, XGBoost, and LightGBM. Extensible via entry points.
+
+```python
+from model_ledger import introspect
+
+result = introspect(fitted_model)
 print(result.algorithm)        # "XGBClassifier"
 print(len(result.features))    # 16
 print(result.hyperparameters)  # {"n_estimators": 50, "max_depth": 4, ...}
 ```
 
-### Three compliance profiles — validate against real regulations
+### Pluggable storage
 
-| Profile | Regulation | What It Checks |
-|---------|-----------|----------------|
-| `sr_11_7` | US Federal Reserve SR 11-7 | Validator independence, I/P/O structure, governance docs, validation schedule |
-| `eu_ai_act` | EU AI Act (2024/1689) | Risk assessment, data governance, transparency, human oversight, affected populations |
-| `nist_ai_rmf` | NIST AI RMF 1.0 | GOVERN, MAP, MEASURE, MANAGE — accountability, bias, monitoring, incident response |
+Implement the `LedgerBackend` protocol for any database — Postgres, Snowflake, BigQuery, DynamoDB.
 
 ```python
-from model_ledger.validate.engine import validate
-
-result = validate(model, version, profile="eu_ai_act")
-print(result)  # FAIL: eu_risk_assessment, eu_data_governance, ...
-```
-
-### CLI — governance from the command line
-
-```bash
-model-ledger list                                 # List all models
-model-ledger show my-model --version 0.1.0        # Model details
-model-ledger validate my-model --profile sr_11_7  # Compliance check (exit 1 on fail)
-model-ledger validate my-model --format json      # Machine-readable for CI/CD
-model-ledger audit-log my-model                   # Full audit trail
-model-ledger export my-model --format html        # Audit pack
-```
-
-### Audit pack export — self-contained compliance artifacts
-
-Single-file HTML with executive summary, component tree, validation results, and full audit trail. No external dependencies. Share via email, attach to regulatory filings, or embed in wikis.
-
-Formats: **HTML** (primary), **JSON** (machine-readable), **Markdown** (version-controllable).
-
-### Pluggable storage — bring your own backend
-
-SQLite (default), InMemory (testing), or implement `InventoryBackend` for Postgres, Snowflake, DynamoDB, or any database.
-
-```python
-inv = Inventory()                              # SQLite, auto-creates inventory.db
-inv = Inventory(backend=InMemoryBackend())     # In-memory for testing
-inv = Inventory(backend=MyCustomBackend())     # Your own backend
+ledger = Ledger()                                # InMemory (default)
+ledger = Ledger(backend=MySnowflakeBackend())    # Your backend
 ```
 
 ## Install
 
 ```bash
-pip install model-ledger                          # Core
+pip install model-ledger                          # Core (pydantic only)
 pip install model-ledger[cli]                     # + CLI
 pip install model-ledger[introspect-sklearn]      # + sklearn introspector
 pip install model-ledger[introspect-xgboost]      # + XGBoost introspector
 pip install model-ledger[introspect-lightgbm]     # + LightGBM introspector
 ```
 
-## Architecture
-
-```
-model-ledger
-├── Core       — Pydantic data models, enums, typed exceptions
-├── SDK        — Inventory, DraftVersion (fluent context manager API)
-├── Introspect — Plugin protocol + sklearn/XGBoost/LightGBM
-├── Validate   — SR 11-7, EU AI Act, NIST AI RMF profiles
-├── Export     — HTML/JSON/Markdown audit packs
-├── CLI        — Typer (list, show, validate, introspect, export)
-├── Datasets   — Built-in sample models (like sklearn.datasets)
-└── Backends   — SQLite, InMemory, protocol for custom
-```
-
 ## Design Principles
 
-- **Version-centric**: `with inv.new_version("model") as v:` — all mutations happen on a draft
-- **Append-only audit trail**: Every mutation records who, what, when, and why
-- **Immutable after publish**: Published versions cannot be modified — regulatory requirement
-- **Typed contracts**: `IntrospectionResult` is the universal output for all introspectors
-- **Plugin discovery**: Register introspectors via entry points — no code changes needed
+- **Event log, not a table** — never mutate, always append. Every change is a Snapshot.
+- **Protocol-first** — all extension points use `@runtime_checkable` Protocol. No base classes.
+- **Agent-friendly** — every SDK method is tool-shaped: clear inputs, JSON-serializable outputs.
+- **Schema-free payloads** — new model types, new regulations, new platforms. None require core changes.
+- **Plugin discovery** — scanners and introspectors register via `entry_points`. Install a package, it works.
 
 ## For Organizations
 
-model-ledger is designed to be extended with organization-specific integrations:
+model-ledger is designed to be extended:
 
-- **Custom introspectors** for internal ML platforms (SageMaker, Vertex AI, custom serving)
-- **Custom backends** for your data warehouse (Snowflake, BigQuery, Postgres)
-- **Custom validation profiles** for your regulatory framework (OSFI E-23, PRA SS1/23)
-- **Config generators** for your validation pipelines
+- **Custom scanners** for your ML platforms, rules engines, and model registries
+- **Custom backends** for your data warehouse
+- **Custom validation profiles** for your regulatory framework (OSFI E-23, PRA SS1/23, MAS AIRG)
+- **Dependency tracking** across your model ecosystem
 
-The OSS core handles the schema, SDK, and compliance logic. Your internal package adds the adapters.
+The OSS core handles the data model, SDK, and compliance logic. Your internal package adds the platform-specific scanners and backends.
 
 ## Documentation
 
-- [What & Why](docs/what-and-why.md) — Motivation, architecture, and strategic context
-- [Technical Design](docs/technical-design.md) — Data model, SDK, validation engine
+- [What & Why](docs/what-and-why.md) — Motivation and strategic context
+- [Technical Design](docs/technical-design.md) — Data model, SDK, and scanner architecture
 
 ## Contributing
 

@@ -193,3 +193,78 @@ class TestScanRunId:
         snaps = ledger.history("m1")
         discovered = [s for s in snaps if s.event_type == "discovered"]
         assert discovered[0].payload["scan_run_id"] == scan_run_id
+
+
+class TestNotFoundTracking:
+    def test_not_found_recorded_for_missing_model(self, ledger):
+        scanner = FakeScanner("gondola", [
+            ModelCandidate(
+                name="model-a", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        inv.discover_all()
+
+        # Second scan: model-a is gone
+        scanner._candidates = []
+        reports = inv.discover_all()
+        assert reports[0].not_found_models == 1
+
+        snaps = ledger.history("model-a")
+        not_found = [s for s in snaps if s.event_type == "not_found"]
+        assert len(not_found) == 1
+
+    def test_not_found_only_for_same_platform(self, ledger):
+        s1 = FakeScanner("gondola", [
+            ModelCandidate(
+                name="model-a", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ])
+        s2 = FakeScanner("squarewave", [
+            ModelCandidate(
+                name="rule-b", owner="t", model_type="heuristic",
+                platform="squarewave", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [s1, s2])
+        inv.discover_all()
+
+        # model-a disappears from gondola — rule-b should NOT get not_found
+        s1._candidates = []
+        reports = inv.discover_all()
+        gondola_report = [r for r in reports if r.platform == "gondola"][0]
+        assert gondola_report.not_found_models == 1
+
+        snaps = ledger.history("rule-b")
+        not_found = [s for s in snaps if s.event_type == "not_found"]
+        assert len(not_found) == 0
+
+    def test_rediscovered_model_gets_confirmed(self, ledger):
+        scanner = FakeScanner("gondola", [
+            ModelCandidate(
+                name="model-a", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        inv.discover_all()
+
+        # Disappear
+        scanner._candidates = []
+        inv.discover_all()
+
+        # Reappear
+        scanner._candidates = [
+            ModelCandidate(
+                name="model-a", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ]
+        inv.discover_all()
+
+        snaps = ledger.history("model-a")
+        events = [s.event_type for s in snaps]
+        assert "not_found" in events
+        assert "scan_confirmed" in events

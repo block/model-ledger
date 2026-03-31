@@ -129,3 +129,75 @@ class Ledger:
     ) -> Snapshot | None:
         ref = self._resolve_model(model)
         return self._backend.latest_snapshot(ref.model_hash, tag=tag)
+
+    def link_dependency(
+        self,
+        upstream: ModelRef | str,
+        downstream: ModelRef | str,
+        *,
+        relationship: str = "depends_on",
+        actor: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[Snapshot, Snapshot]:
+        up_ref = self._resolve_model(upstream)
+        down_ref = self._resolve_model(downstream)
+        up_snap = self.record(
+            up_ref,
+            event="has_dependent",
+            payload={
+                "downstream": down_ref.name,
+                "downstream_hash": down_ref.model_hash,
+                "relationship": relationship,
+                **(metadata or {}),
+            },
+            actor=actor,
+        )
+        down_snap = self.record(
+            down_ref,
+            event="depends_on",
+            payload={
+                "upstream": up_ref.name,
+                "upstream_hash": up_ref.model_hash,
+                "relationship": relationship,
+                **(metadata or {}),
+            },
+            actor=actor,
+        )
+        return up_snap, down_snap
+
+    def dependencies(
+        self,
+        model: ModelRef | str,
+        direction: str = "both",
+    ) -> list[dict[str, Any]]:
+        ref = self._resolve_model(model)
+        snaps = self._backend.list_snapshots(ref.model_hash)
+        result: list[dict[str, Any]] = []
+
+        if direction in ("upstream", "both"):
+            for s in snaps:
+                if s.event_type == "depends_on":
+                    try:
+                        upstream = self.get(s.payload["upstream_hash"])
+                    except ModelNotFoundError:
+                        continue
+                    result.append({
+                        "model": upstream,
+                        "relationship": s.payload.get("relationship", "depends_on"),
+                        "direction": "upstream",
+                    })
+
+        if direction in ("downstream", "both"):
+            for s in snaps:
+                if s.event_type == "has_dependent":
+                    try:
+                        downstream = self.get(s.payload["downstream_hash"])
+                    except ModelNotFoundError:
+                        continue
+                    result.append({
+                        "model": downstream,
+                        "relationship": s.payload.get("relationship", "depends_on"),
+                        "direction": "downstream",
+                    })
+
+        return result

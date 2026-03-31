@@ -153,3 +153,78 @@ class TestHistory:
         )
         latest = ledger.latest(model)
         assert latest.event_type == "v2"
+
+
+class TestDependencies:
+    def test_link_dependency_creates_two_snapshots(self, ledger):
+        ledger.register(
+            name="feature-a", owner="team", model_type="signal",
+            tier="unclassified", purpose="velocity feature",
+        )
+        ledger.register(
+            name="fraud-model", owner="team", model_type="ml_model",
+            tier="high", purpose="Detect fraud",
+        )
+        up_snap, down_snap = ledger.link_dependency(
+            "feature-a", "fraud-model",
+            relationship="consumes", actor="scanner:gondola",
+        )
+        assert up_snap.event_type == "has_dependent"
+        assert up_snap.payload["downstream"] == "fraud-model"
+        assert up_snap.payload["relationship"] == "consumes"
+        assert down_snap.event_type == "depends_on"
+        assert down_snap.payload["upstream"] == "feature-a"
+
+    def test_dependencies_upstream(self, ledger):
+        ledger.register(
+            name="signal-x", owner="t", model_type="signal",
+            tier="unclassified", purpose="x",
+        )
+        ledger.register(
+            name="model-a", owner="t", model_type="ml_model",
+            tier="high", purpose="x",
+        )
+        ledger.link_dependency(
+            "signal-x", "model-a",
+            relationship="consumes", actor="test",
+        )
+        deps = ledger.dependencies("model-a", direction="upstream")
+        assert len(deps) == 1
+        assert deps[0]["model"].name == "signal-x"
+        assert deps[0]["relationship"] == "consumes"
+        assert deps[0]["direction"] == "upstream"
+
+    def test_dependencies_downstream(self, ledger):
+        ledger.register(
+            name="signal-x", owner="t", model_type="signal",
+            tier="unclassified", purpose="x",
+        )
+        ledger.register(
+            name="model-a", owner="t", model_type="ml_model",
+            tier="high", purpose="x",
+        )
+        ledger.link_dependency(
+            "signal-x", "model-a",
+            relationship="consumes", actor="test",
+        )
+        deps = ledger.dependencies("signal-x", direction="downstream")
+        assert len(deps) == 1
+        assert deps[0]["model"].name == "model-a"
+
+    def test_dependencies_both_directions(self, ledger):
+        ledger.register(
+            name="signal-x", owner="t", model_type="signal",
+            tier="unclassified", purpose="x",
+        )
+        ledger.register(
+            name="model-a", owner="t", model_type="ml_model",
+            tier="high", purpose="x",
+        )
+        ledger.register(
+            name="rule-b", owner="t", model_type="heuristic",
+            tier="medium", purpose="x",
+        )
+        ledger.link_dependency("signal-x", "model-a", actor="test")
+        ledger.link_dependency("model-a", "rule-b", actor="test")
+        deps = ledger.dependencies("model-a", direction="both")
+        assert len(deps) == 2

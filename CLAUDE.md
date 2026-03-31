@@ -14,13 +14,21 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 ## Architecture
 
-- `src/model_ledger/core/` — Pydantic data models, enums, exceptions
-- `src/model_ledger/sdk/` — Inventory, DraftVersion (context manager API)
-- `src/model_ledger/backends/` — InventoryBackend protocol + SQLite/InMemory implementations
-- `src/model_ledger/validate/` — SR 11-7 validation engine with profile system
-- `src/model_ledger/introspect/` — Plugin-based model introspection (v0.2.0)
-- `src/model_ledger/cli/` — Typer CLI (v0.2.0)
-- `src/model_ledger/export/` — Audit pack export (v0.2.0)
+### v0.3.0 (current — event-log paradigm)
+- `src/model_ledger/core/ledger_models.py` — ModelRef, Snapshot, Tag
+- `src/model_ledger/sdk/ledger.py` — Ledger SDK (register, record, tag, link_dependency, dependencies, inventory_at)
+- `src/model_ledger/backends/ledger_protocol.py` — LedgerBackend protocol
+- `src/model_ledger/backends/ledger_memory.py` — InMemory backend
+- `src/model_ledger/scanner/` — Scanner protocol, ModelCandidate, InventoryScanner orchestrator, ScannerRegistry, DBConnection protocol
+
+### v0.2.0 (legacy — retained for reference)
+- `src/model_ledger/core/models.py` — Model, ModelVersion, ComponentNode
+- `src/model_ledger/sdk/inventory.py` — Inventory, DraftVersion (context manager API)
+- `src/model_ledger/backends/` — InventoryBackend protocol + SQLite/InMemory
+- `src/model_ledger/validate/` — SR 11-7, EU AI Act, NIST AI RMF validation profiles
+- `src/model_ledger/introspect/` — Plugin-based model introspection
+- `src/model_ledger/cli/` — Typer CLI
+- `src/model_ledger/export/` — Audit pack export
 
 ## Boundary Rules
 
@@ -28,13 +36,13 @@ This is an Apache-2.0 open-source project.
 
 - **NO** Block-specific code, imports, or references
 - **NO** dependencies on internal systems (Snowflake auth, snowflake-connector, Prefect, Jira, GCS)
-- Block-specific introspectors and backends go in `forge-internal-mrm/projects/model_ledger_block`
-- **Rule: "If it needs a Block import, it goes in forge. If it's useful to any org, it goes in OSS."**
+- Organization-specific scanners and backends go in separate packages
+- **Rule: "If it needs an internal import, it goes in a separate package. If it's useful to any org, it goes in OSS."**
 
 ## Key Patterns
 
-- Version-centric fluent API: `with inv.new_version("model") as v:`
+- Event-log paradigm: models are identities (ModelRef), everything else is immutable Snapshots
+- Protocol-first: all extension points use `@runtime_checkable` Protocol (no ABCs)
+- Tool-shaped SDK: every Ledger method works as an agent tool call
 - Append-only audit trail on every mutation
-- Backend-level immutability for published versions
-- Case-insensitive enums for developer convenience
 - Plugin discovery via `importlib.metadata.entry_points()`

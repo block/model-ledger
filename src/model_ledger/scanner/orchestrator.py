@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Callable
 
 from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.scanner.report import ScanReport
 from model_ledger.sdk.ledger import Ledger, ModelNotFoundError
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class InventoryScanner:
@@ -37,11 +42,13 @@ class InventoryScanner:
         candidates = scanner.scan()
         if self._filter_fn:
             candidates = [c for c in candidates if self._filter_fn(c)]
+
+        scan_run_id = f"{scanner.name}:{_now().isoformat()}"
         new_count = 0
         updated_count = 0
 
         for candidate in candidates:
-            result = self._register_candidate(candidate)
+            result = self._register_candidate(candidate, scan_run_id)
             if result == "new":
                 new_count += 1
             elif result == "updated":
@@ -49,6 +56,7 @@ class InventoryScanner:
 
         return ScanReport(
             platform=scanner.name,
+            scan_run_id=scan_run_id,
             total_found=len(candidates),
             new_models=new_count,
             updated_models=updated_count,
@@ -56,11 +64,17 @@ class InventoryScanner:
             candidates=candidates,
         )
 
-    def _register_candidate(self, candidate: ModelCandidate) -> str:
+    def _register_candidate(self, candidate: ModelCandidate, scan_run_id: str) -> str:
         try:
             existing = self._ledger.get(candidate.name)
         except ModelNotFoundError:
             existing = None
+
+        payload = {
+            "platform_id": candidate.platform_id,
+            "scan_run_id": scan_run_id,
+            **candidate.metadata,
+        }
 
         if existing is None:
             self._ledger.register(
@@ -75,10 +89,7 @@ class InventoryScanner:
                 candidate.name,
                 event="discovered",
                 source=candidate.platform,
-                payload={
-                    "platform_id": candidate.platform_id,
-                    **candidate.metadata,
-                },
+                payload=payload,
                 actor=f"scanner:{candidate.platform}",
             )
             return "new"
@@ -87,10 +98,7 @@ class InventoryScanner:
                 existing,
                 event="scan_confirmed",
                 source=candidate.platform,
-                payload={
-                    "platform_id": candidate.platform_id,
-                    **candidate.metadata,
-                },
+                payload=payload,
                 actor=f"scanner:{candidate.platform}",
             )
             return "updated"

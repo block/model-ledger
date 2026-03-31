@@ -17,6 +17,7 @@ class ScanReport(BaseModel):
     """Summary of what a scanner found."""
 
     platform: str
+    scan_run_id: str = ""
     timestamp: datetime = Field(default_factory=_now)
     total_found: int
     new_models: int

@@ -126,3 +126,41 @@ class TestScanPlatform:
         inv = InventoryScanner(ledger, [])
         with pytest.raises(ValueError, match="Unknown platform"):
             inv.scan_platform("nonexistent")
+
+
+class TestFilterFn:
+    def test_filter_excludes_candidates(self, ledger):
+        scanner = FakeScanner("etl_engine", [
+            ModelCandidate(
+                name="risk-job", owner="t", model_type="heuristic",
+                platform="etl_engine", metadata={"subject_area": "Risk"},
+            ),
+            ModelCandidate(
+                name="hr-job", owner="t", model_type="heuristic",
+                platform="etl_engine", metadata={"subject_area": "HR"},
+            ),
+        ])
+
+        def risk_only(c: ModelCandidate) -> bool:
+            return c.metadata.get("subject_area") == "Risk"
+
+        inv = InventoryScanner(ledger, [scanner], filter_fn=risk_only)
+        reports = inv.discover_all()
+        assert reports[0].total_found == 1
+        assert len(ledger.list()) == 1
+        assert ledger.get("risk-job").name == "risk-job"
+
+    def test_no_filter_registers_all(self, ledger):
+        scanner = FakeScanner("p", [
+            ModelCandidate(
+                name="a", owner="t", model_type="ml",
+                platform="p", metadata={},
+            ),
+            ModelCandidate(
+                name="b", owner="t", model_type="ml",
+                platform="p", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        inv.discover_all()
+        assert len(ledger.list()) == 2

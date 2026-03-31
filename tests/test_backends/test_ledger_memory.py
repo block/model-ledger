@@ -129,3 +129,66 @@ class TestTagOperations:
         backend.set_tag(Tag(name="active", model_hash=sample_model.model_hash, snapshot_hash="s1"))
         tags = backend.list_tags(sample_model.model_hash)
         assert len(tags) == 2
+
+
+class TestListSnapshotsBefore:
+    def test_filters_by_timestamp(self):
+        backend = InMemoryLedgerBackend()
+        model = ModelRef(
+            name="m", owner="o", model_type="ml", tier="h", purpose="p",
+        )
+        backend.save_model(model)
+
+        s1 = Snapshot(
+            model_hash=model.model_hash, actor="x", event_type="registered",
+            payload={}, timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        s2 = Snapshot(
+            model_hash=model.model_hash, actor="x", event_type="scan_confirmed",
+            payload={}, timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        )
+        s3 = Snapshot(
+            model_hash=model.model_hash, actor="x", event_type="scan_confirmed",
+            payload={}, timestamp=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        )
+        backend.append_snapshot(s1)
+        backend.append_snapshot(s2)
+        backend.append_snapshot(s3)
+
+        result = backend.list_snapshots_before(
+            model.model_hash, datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        assert len(result) == 2
+
+    def test_filters_by_event_type(self):
+        backend = InMemoryLedgerBackend()
+        model = ModelRef(
+            name="m", owner="o", model_type="ml", tier="h", purpose="p",
+        )
+        backend.save_model(model)
+
+        s1 = Snapshot(
+            model_hash=model.model_hash, actor="x", event_type="registered",
+            payload={}, timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        s2 = Snapshot(
+            model_hash=model.model_hash, actor="x", event_type="not_found",
+            payload={}, timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        )
+        backend.append_snapshot(s1)
+        backend.append_snapshot(s2)
+
+        result = backend.list_snapshots_before(
+            model.model_hash,
+            datetime(2026, 6, 1, tzinfo=timezone.utc),
+            event_type="not_found",
+        )
+        assert len(result) == 1
+        assert result[0].event_type == "not_found"
+
+    def test_empty_when_no_snapshots_before(self):
+        backend = InMemoryLedgerBackend()
+        result = backend.list_snapshots_before(
+            "nonexistent", datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        assert result == []

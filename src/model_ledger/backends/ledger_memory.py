@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
 
@@ -57,6 +59,18 @@ class InMemoryLedgerBackend:
         if not snaps:
             return None
         return max(snaps, key=lambda s: s.timestamp)
+
+    def list_snapshots_before(
+        self, model_hash: str, before: datetime,
+        event_type: str | None = None,
+    ) -> list[Snapshot]:
+        results = [
+            s for s in self._snapshots
+            if s.model_hash == model_hash and s.timestamp < before
+        ]
+        if event_type is not None:
+            results = [s for s in results if s.event_type == event_type]
+        return results
 
     def set_tag(self, tag: Tag) -> None:
         self._tags[(tag.model_hash, tag.name)] = tag

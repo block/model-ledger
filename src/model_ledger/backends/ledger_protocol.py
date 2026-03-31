@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
@@ -19,6 +20,11 @@ class LedgerBackend(Protocol):
     def get_snapshot(self, snapshot_hash: str) -> Snapshot | None: ...
     def list_snapshots(self, model_hash: str, **filters: str) -> list[Snapshot]: ...
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None: ...
+
+    def list_snapshots_before(
+        self, model_hash: str, before: datetime,
+        event_type: str | None = None,
+    ) -> list[Snapshot]: ...
 
     def set_tag(self, tag: Tag) -> None: ...
     def get_tag(self, model_hash: str, name: str) -> Tag | None: ...

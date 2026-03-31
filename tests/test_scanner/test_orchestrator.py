@@ -23,6 +23,35 @@ class FakeScanner:
         return True
 
 
+class FakeChangelessScanner:
+    def __init__(self, name: str, candidates: list[ModelCandidate]):
+        self.name = name
+        self.platform_type = "test"
+        self._candidates = candidates
+
+    def scan(self) -> list[ModelCandidate]:
+        return self._candidates
+
+    def has_changed(self, last_scan: datetime) -> bool:
+        return False
+
+
+class FakeEnrichableScanner:
+    def __init__(self, name: str, candidates: list[ModelCandidate]):
+        self.name = name
+        self.platform_type = "test"
+        self._candidates = candidates
+
+    def scan(self) -> list[ModelCandidate]:
+        return self._candidates
+
+    def has_changed(self, last_scan: datetime) -> bool:
+        return True
+
+    def enrich(self, candidate: ModelCandidate) -> dict:
+        return {"enriched": True, "features": ["f1", "f2"]}
+
+
 @pytest.fixture
 def ledger():
     return Ledger(backend=InMemoryLedgerBackend())
@@ -268,3 +297,58 @@ class TestNotFoundTracking:
         events = [s.event_type for s in snaps]
         assert "not_found" in events
         assert "scan_confirmed" in events
+
+
+class TestHasChanged:
+    def test_skips_scanner_when_not_changed(self, ledger):
+        # First scan to establish last_scan time
+        first_scanner = FakeScanner("ml_platform", [
+            ModelCandidate(
+                name="existing", owner="t", model_type="ml",
+                platform="ml_platform", metadata={},
+            ),
+        ])
+        inv1 = InventoryScanner(ledger, [first_scanner])
+        inv1.discover_all()
+        assert len(ledger.list()) == 1
+
+        # Second scan with changeless scanner — should be skipped
+        changeless = FakeChangelessScanner("ml_platform", [
+            ModelCandidate(
+                name="new-model", owner="t", model_type="ml",
+                platform="ml_platform", metadata={},
+            ),
+        ])
+        inv2 = InventoryScanner(ledger, [changeless])
+        reports = inv2.discover_all()
+        assert reports[0].total_found == 0
+        # new-model should NOT have been registered
+        assert len(ledger.list()) == 1
+
+    def test_runs_scanner_when_changed(self, ledger):
+        scanner = FakeScanner("ml_platform", [
+            ModelCandidate(
+                name="m1", owner="t", model_type="ml",
+                platform="ml_platform", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        reports = inv.discover_all()
+        assert reports[0].total_found == 1
+
+
+class TestEnrichment:
+    def test_enrichable_scanner_creates_enriched_snapshot(self, ledger):
+        scanner = FakeEnrichableScanner("ml_platform", [
+            ModelCandidate(
+                name="m1", owner="t", model_type="ml",
+                platform="ml_platform", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        inv.discover_all()
+
+        snaps = ledger.history("m1")
+        enriched = [s for s in snaps if s.event_type == "enriched"]
+        assert len(enriched) == 1
+        assert enriched[0].payload["features"] == ["f1", "f2"]

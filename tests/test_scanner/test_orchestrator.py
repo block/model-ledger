@@ -164,3 +164,32 @@ class TestFilterFn:
         inv = InventoryScanner(ledger, [scanner])
         inv.discover_all()
         assert len(ledger.list()) == 2
+
+
+class TestScanRunId:
+    def test_scan_run_id_in_report(self, ledger):
+        scanner = FakeScanner("gondola", [
+            ModelCandidate(
+                name="m1", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        reports = inv.discover_all()
+        assert reports[0].scan_run_id is not None
+        assert reports[0].scan_run_id.startswith("gondola:")
+
+    def test_scan_run_id_in_snapshot_payloads(self, ledger):
+        scanner = FakeScanner("gondola", [
+            ModelCandidate(
+                name="m1", owner="t", model_type="ml",
+                platform="gondola", metadata={},
+            ),
+        ])
+        inv = InventoryScanner(ledger, [scanner])
+        reports = inv.discover_all()
+        scan_run_id = reports[0].scan_run_id
+
+        snaps = ledger.history("m1")
+        discovered = [s for s in snaps if s.event_type == "discovered"]
+        assert discovered[0].payload["scan_run_id"] == scan_run_id

@@ -42,6 +42,7 @@ class Ledger:
         model_type: str,
         tier: str,
         purpose: str,
+        model_origin: str = "internal",
         status: str = "active",
         actor: str = "system",
     ) -> ModelRef:
@@ -50,6 +51,7 @@ class Ledger:
             return existing
         model = ModelRef(
             name=name, owner=owner, model_type=model_type,
+            model_origin=model_origin,
             tier=tier, purpose=purpose, status=status,
         )
         self._backend.save_model(model)
@@ -59,6 +61,7 @@ class Ledger:
             payload={
                 "name": name, "owner": owner,
                 "tier": tier, "purpose": purpose,
+                "model_origin": model_origin,
             },
         ))
         return model

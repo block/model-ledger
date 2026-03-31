@@ -16,6 +16,8 @@ class ModelCandidate(BaseModel):
     model_type: str
     platform: str
     platform_id: str | None = None
+    parent_name: str | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

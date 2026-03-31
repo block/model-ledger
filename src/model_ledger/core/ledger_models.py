@@ -16,12 +16,12 @@ def _now() -> datetime:
 
 def _compute_model_hash(name: str, owner: str, created_at: datetime) -> str:
     raw = f"{name}:{owner}:{created_at.isoformat()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 def _compute_snapshot_hash(model_hash: str, timestamp: datetime, payload: dict) -> str:
     raw = f"{model_hash}:{timestamp.isoformat()}:{json.dumps(payload, sort_keys=True, default=str)}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 class ModelRef(BaseModel):

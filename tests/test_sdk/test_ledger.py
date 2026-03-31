@@ -40,6 +40,14 @@ class TestRegister:
         assert len(snaps) == 1
         assert snaps[0].event_type == "registered"
 
+    def test_register_with_model_origin(self, ledger):
+        model = ledger.register(
+            name="vendor-model", owner="vendor-co",
+            model_type="vendor", tier="high",
+            purpose="Credit scoring", model_origin="vendor",
+        )
+        assert model.model_origin == "vendor"
+
 
 class TestRecord:
     def test_record_snapshot(self, ledger):

@@ -27,6 +27,37 @@ class TestModelCandidate:
         )
         assert c.owner is None
 
+    def test_parent_name(self):
+        c = ModelCandidate(
+            name="ruleset-1", owner="risk-team",
+            model_type="ruleset", platform="risk-arbiter",
+            parent_name="TD-85",
+        )
+        assert c.parent_name == "TD-85"
+
+    def test_parent_name_defaults_none(self):
+        c = ModelCandidate(
+            name="model-1", model_type="ml",
+            platform="gondola", metadata={},
+        )
+        assert c.parent_name is None
+
+    def test_external_ids(self):
+        c = ModelCandidate(
+            name="arr-v3", model_type="ml_model",
+            platform="gondola",
+            external_ids={"gondola": "arr_v3", "risk_arbiter": "TD-85"},
+            metadata={},
+        )
+        assert c.external_ids["gondola"] == "arr_v3"
+
+    def test_external_ids_defaults_empty(self):
+        c = ModelCandidate(
+            name="model-1", model_type="ml",
+            platform="gondola", metadata={},
+        )
+        assert c.external_ids == {}
+
 
 class FakeScanner:
     name = "fake"

@@ -165,6 +165,27 @@ class Ledger:
         )
         return up_snap, down_snap
 
+    def inventory_at(
+        self,
+        date: datetime,
+        platform: str | None = None,
+    ) -> list[ModelRef]:
+        all_models = self._backend.list_models()
+        result = []
+        for model in all_models:
+            if model.created_at > date:
+                continue
+            snaps = self._backend.list_snapshots_before(model.model_hash, date)
+            if platform is not None:
+                snaps = [s for s in snaps if s.source == platform]
+            if not snaps:
+                continue
+            latest = max(snaps, key=lambda s: s.timestamp)
+            if latest.event_type == "not_found":
+                continue
+            result.append(model)
+        return result
+
     def dependencies(
         self,
         model: ModelRef | str,

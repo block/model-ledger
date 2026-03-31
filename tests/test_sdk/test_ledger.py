@@ -1,6 +1,6 @@
 """Tests for Ledger SDK — tool-shaped API for v0.3.0."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -228,3 +228,54 @@ class TestDependencies:
         ledger.link_dependency("model-a", "rule-b", actor="test")
         deps = ledger.dependencies("model-a", direction="both")
         assert len(deps) == 2
+
+
+class TestInventoryAt:
+    def test_returns_models_created_before_date(self, ledger):
+        ledger.register(
+            name="early", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        snaps = ledger.history("early")
+        early_time = snaps[0].timestamp
+
+        result = ledger.inventory_at(early_time + timedelta(seconds=1))
+        assert len(result) == 1
+        assert result[0].name == "early"
+
+    def test_excludes_models_created_after_date(self, ledger):
+        ledger.register(
+            name="early", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        # inventory_at far future should include it
+        result_now = ledger.inventory_at(datetime(2099, 1, 1, tzinfo=timezone.utc))
+        assert any(m.name == "early" for m in result_now)
+
+    def test_excludes_not_found_models(self, ledger):
+        model = ledger.register(
+            name="gone", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.record(
+            model, event="not_found", source="gondola",
+            payload={}, actor="scanner:gondola",
+        )
+        result = ledger.inventory_at(
+            datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert not any(m.name == "gone" for m in result)
+
+    def test_not_found_then_rediscovered(self, ledger):
+        model = ledger.register(
+            name="back", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.record(
+            model, event="not_found", source="gondola",
+            payload={}, actor="scanner:gondola",
+        )
+        ledger.record(
+            model, event="scan_confirmed", source="gondola",
+            payload={}, actor="scanner:gondola",
+        )
+        result = ledger.inventory_at(
+            datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert any(m.name == "back" for m in result)

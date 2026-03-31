@@ -40,6 +40,13 @@ class TestModelRef:
         roundtrip = ModelRef.model_validate(data)
         assert roundtrip.model_hash == model.model_hash
 
+    def test_hash_length_is_32(self):
+        model = ModelRef(
+            name="test", owner="owner", model_type="ml",
+            tier="high", purpose="testing",
+        )
+        assert len(model.model_hash) == 32
+
 
 class TestSnapshot:
     def test_create_snapshot(self):
@@ -78,6 +85,13 @@ class TestSnapshot:
         assert isinstance(data["payload"], dict)
         roundtrip = Snapshot.model_validate(data)
         assert roundtrip.snapshot_hash == snapshot.snapshot_hash
+
+    def test_snapshot_hash_length_is_32(self):
+        snapshot = Snapshot(
+            model_hash="a" * 32, actor="test",
+            event_type="registered", payload={"x": 1},
+        )
+        assert len(snapshot.snapshot_hash) == 32
 
 
 class TestTag:

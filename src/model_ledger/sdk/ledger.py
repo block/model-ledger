@@ -233,11 +233,11 @@ class Ledger:
         for node in nodes:
             self.register(
                 name=node.name,
-                owner=node.metadata.get("owner", "unknown"),
-                model_type=node.metadata.get("node_type", "unknown"),
-                tier=node.metadata.get("tier", "unclassified"),
-                purpose=node.metadata.get("purpose", ""),
-                model_origin=node.metadata.get("model_origin", "internal"),
+                owner=node.metadata.get("owner") or "unknown",
+                model_type=node.metadata.get("node_type") or "unknown",
+                tier=node.metadata.get("tier") or "unclassified",
+                purpose=node.metadata.get("purpose") or "",
+                model_origin=node.metadata.get("model_origin") or "internal",
                 actor=f"connector:{node.platform}" if node.platform else "system",
             )
             self.record(

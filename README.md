@@ -25,37 +25,57 @@ pip install model-ledger
 ```
 
 ```python
-from model_ledger import Ledger
+from model_ledger import Ledger, DataNode, DataPort
 
 ledger = Ledger()
 
-# Register a model
-model = ledger.register(
-    name="fraud-detector",
-    owner="ml-team",
-    model_type="ml_model",
-    tier="high",
-    purpose="Real-time fraud detection for payment transactions",
-)
+# Define your pipeline as DataNodes with inputs and outputs
+segmentation = DataNode("segmentation", platform="batch",
+    outputs=["segments_table"])
 
-# Record observations over time
-ledger.record(model, event="deployed", actor="ci-pipeline",
-              payload={"environment": "production", "version": "3.1.0"})
+scoring = DataNode("fraud_scorer", platform="ml-serving",
+    inputs=["segments_table", "velocity_30d"],
+    outputs=["fraud_scores"])
 
-ledger.record(model, event="validated", actor="carol",
-              payload={"result": "pass", "profile": "sr_11_7"})
+alerting = DataNode("fraud_alerts", platform="alerting",
+    inputs=["fraud_scores"],
+    outputs=["alert_queue"])
 
-# Track dependencies
-ledger.register(name="velocity-signal", owner="feature-team",
-                model_type="signal", tier="unclassified",
-                purpose="30-day transaction velocity")
-
-ledger.link_dependency("velocity-signal", "fraud-detector",
-                       relationship="consumes", actor="scanner:ml-platform")
+# Add nodes and connect — edges build automatically from port matching
+ledger.add([segmentation, scoring, alerting])
+ledger.connect()
 
 # Query the dependency graph
-deps = ledger.dependencies("fraud-detector", direction="upstream")
-# [{"model": ModelRef(name="velocity-signal"), "relationship": "consumes", ...}]
+ledger.trace("fraud_alerts")
+# → ['segmentation', 'fraud_scorer', 'fraud_alerts']
+
+ledger.upstream("fraud_alerts")
+# → ['segmentation', 'fraud_scorer']
+```
+
+For shared tables with multiple producers, use `DataPort` for precision:
+
+```python
+# SquareWave writes alerts with a model_name discriminator
+DataNode("check_deposit_rules", platform="squarewave",
+    outputs=[DataPort("alert_table", model_name="check_deposits")])
+
+# Snoop reads the same table, same discriminator — edge created automatically
+DataNode("check_deposit_queue", platform="snoop",
+    inputs=[DataPort("alert_table", model_name="check_deposits")])
+```
+
+### Existing v0.3.0 API (still works)
+
+```python
+# Register models manually
+model = ledger.register(name="fraud-detector", owner="ml-team",
+    model_type="ml_model", tier="high",
+    purpose="Real-time fraud detection")
+
+# Record events over time
+ledger.record(model, event="validated", actor="carol",
+    payload={"result": "pass", "profile": "sr_11_7"})
 
 # Point-in-time reconstruction
 from datetime import datetime, timezone

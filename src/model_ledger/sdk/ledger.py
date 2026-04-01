@@ -222,3 +222,129 @@ class Ledger:
                     })
 
         return result
+
+    # --- Graph methods (v0.4.0) ---
+
+    def add(self, nodes):
+        """Register DataNodes. Each becomes a ModelRef + discovered Snapshot."""
+        from model_ledger.graph.models import DataNode, DataPort
+        if isinstance(nodes, DataNode):
+            nodes = [nodes]
+        for node in nodes:
+            self.register(
+                name=node.name,
+                owner=node.metadata.get("owner", "unknown"),
+                model_type=node.metadata.get("node_type", "unknown"),
+                tier=node.metadata.get("tier", "unclassified"),
+                purpose=node.metadata.get("purpose", ""),
+                model_origin=node.metadata.get("model_origin", "internal"),
+                actor=f"connector:{node.platform}" if node.platform else "system",
+            )
+            self.record(
+                node.name,
+                event="discovered",
+                payload={
+                    "platform": node.platform,
+                    "inputs": [{"identifier": p.identifier, **p.schema} for p in node.inputs],
+                    "outputs": [{"identifier": p.identifier, **p.schema} for p in node.outputs],
+                    **{k: v for k, v in node.metadata.items()
+                       if k not in ("owner", "node_type", "tier", "purpose", "model_origin")},
+                },
+                actor=f"connector:{node.platform}" if node.platform else "system",
+            )
+
+    def connect(self):
+        """Match output ports to input ports. Write dependency links."""
+        from collections import defaultdict
+        from model_ledger.graph.models import DataNode, DataPort
+        nodes = self._load_discovered_nodes()
+        output_index = defaultdict(list)
+        for node in nodes:
+            for port in node.outputs:
+                output_index[port.identifier].append((node, port))
+        links_created = 0
+        seen = set()
+        for node in nodes:
+            for in_port in node.inputs:
+                for upstream_node, out_port in output_index.get(in_port.identifier, []):
+                    if upstream_node.name == node.name:
+                        continue
+                    if not (out_port == in_port):
+                        continue
+                    key = (upstream_node.name, node.name)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    try:
+                        self.link_dependency(
+                            upstream=upstream_node.name,
+                            downstream=node.name,
+                            relationship="data_flow",
+                            actor="graph_builder",
+                            metadata={"via": in_port.identifier, "via_schema": in_port.schema if in_port.schema else None},
+                        )
+                        links_created += 1
+                    except ModelNotFoundError:
+                        continue
+        return {"links_created": links_created}
+
+    def trace(self, name):
+        """Topological path from sources to this node."""
+        self._resolve_model(name)
+        visited = set()
+        order = []
+        def _walk(n):
+            if n in visited:
+                return
+            visited.add(n)
+            for dep in self.dependencies(n, direction="upstream"):
+                _walk(dep["model"].name)
+            order.append(n)
+        _walk(name)
+        return order
+
+    def upstream(self, name):
+        """All models this one depends on (transitive)."""
+        path = self.trace(name)
+        return [n for n in path if n != name]
+
+    def downstream(self, name):
+        """All models that depend on this one (transitive)."""
+        self._resolve_model(name)
+        visited = set()
+        result = []
+        def _walk(n):
+            for dep in self.dependencies(n, direction="downstream"):
+                child = dep["model"].name
+                if child not in visited:
+                    visited.add(child)
+                    result.append(child)
+                    _walk(child)
+        _walk(name)
+        return result
+
+    def _load_discovered_nodes(self):
+        """Rebuild DataNodes from stored discovery snapshots."""
+        from model_ledger.graph.models import DataNode, DataPort
+        nodes = []
+        for model in self._backend.list_models():
+            snaps = self._backend.list_snapshots(model.model_hash)
+            discovered = [s for s in snaps if s.event_type == "discovered"]
+            if not discovered:
+                continue
+            latest = max(discovered, key=lambda s: s.timestamp)
+            payload = latest.payload
+            inputs = [
+                DataPort(p["identifier"], **{k: v for k, v in p.items() if k != "identifier"})
+                for p in payload.get("inputs", [])
+            ]
+            outputs = [
+                DataPort(p["identifier"], **{k: v for k, v in p.items() if k != "identifier"})
+                for p in payload.get("outputs", [])
+            ]
+            nodes.append(DataNode(
+                name=model.name, platform=payload.get("platform", ""),
+                inputs=inputs, outputs=outputs,
+                metadata={k: v for k, v in payload.items() if k not in ("platform", "inputs", "outputs")},
+            ))
+        return nodes

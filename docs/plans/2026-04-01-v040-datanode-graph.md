@@ -131,7 +131,7 @@ class TestDataNode:
         assert node.metadata == {}
 
     def test_metadata(self):
-        node = DataNode("scorer", platform="gondola",
+        node = DataNode("scorer", platform="ml-serving",
             metadata={"owner": "ml-team", "version": "v3"})
         assert node.metadata["owner"] == "ml-team"
 ```
@@ -225,7 +225,7 @@ class DataNode:
     or DataPort objects (for shared-table discriminators).
 
     Example:
-        >>> node = DataNode("fraud_scorer", platform="gondola",
+        >>> node = DataNode("fraud_scorer", platform="ml-serving",
         ...     inputs=["features", "segments"],
         ...     outputs=["scores"])
     """
@@ -340,7 +340,7 @@ def ledger():
 
 class TestAdd:
     def test_add_single_node(self, ledger):
-        node = DataNode("scorer", platform="gondola",
+        node = DataNode("scorer", platform="ml-serving",
             inputs=["features"], outputs=["scores"])
         ledger.add(node)
         model = ledger.get("scorer")
@@ -355,7 +355,7 @@ class TestAdd:
         assert len(ledger.list()) == 2
 
     def test_add_creates_discovered_snapshot(self, ledger):
-        node = DataNode("scorer", platform="gondola",
+        node = DataNode("scorer", platform="ml-serving",
             inputs=["features"], outputs=["scores"],
             metadata={"owner": "ml-team"})
         ledger.add(node)
@@ -363,11 +363,11 @@ class TestAdd:
         assert len(snaps) >= 1
         discovered = [s for s in snaps if s.event_type == "discovered"]
         assert len(discovered) == 1
-        assert discovered[0].payload["platform"] == "gondola"
+        assert discovered[0].payload["platform"] == "ml-serving"
         assert discovered[0].payload["inputs"] == [{"identifier": "features"}]
 
     def test_add_idempotent(self, ledger):
-        node = DataNode("scorer", platform="gondola", outputs=["scores"])
+        node = DataNode("scorer", platform="ml-serving", outputs=["scores"])
         ledger.add(node)
         ledger.add(node)
         assert len(ledger.list()) == 1

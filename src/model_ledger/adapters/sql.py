@@ -88,10 +88,10 @@ def strip_template_vars(sql: str | None) -> str:
     """Strip {{var}} template wrappers from SQL.
 
     Converts {{schema}}.{{table}} → schema.table.
-    Common in SquareWave and other ETL platforms.
+    Common in ETL platforms that use template variables in SQL.
 
     Example:
-        >>> strip_template_vars("SELECT * FROM {{app_compliance}}.{{cash}}.table")
+        >>> strip_template_vars("SELECT * FROM {{schema}}.{{table_name}}")
         'SELECT * FROM app_compliance.cash.table'
     """
     if not sql:

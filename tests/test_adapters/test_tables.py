@@ -11,7 +11,8 @@ class FakeConnection:
         return self._rows
 
 
-def test_discovers_pipelines():
+def test_discovers_pipelines_uppercase_keys():
+    """Snowflake returns UPPERCASE column names."""
     conn = FakeConnection([
         {"NAME": "fraud_v3", "FIRST_OUTPUT": "2024-01-01", "LAST_OUTPUT": "2026-03-16", "TOTAL_ROWS": 1000000},
         {"NAME": "aml_v2", "FIRST_OUTPUT": "2024-06-01", "LAST_OUTPUT": "2026-03-16", "TOTAL_ROWS": 500000},
@@ -21,6 +22,17 @@ def test_discovers_pipelines():
     assert nodes[0].name == "pipeline:fraud_v3"
     assert nodes[0].outputs[0].identifier == "scores_archive"
     assert nodes[0].outputs[0].schema == {"model_name": "fraud_v3"}
+    assert nodes[0].metadata["total_rows"] == 1000000
+
+
+def test_discovers_pipelines_lowercase_keys():
+    """Postgres/BigQuery return lowercase column names."""
+    conn = FakeConnection([
+        {"name": "fraud_v3", "first_output": "2024-01-01", "last_output": "2026-03-16", "total_rows": 1000000},
+    ])
+    nodes = discover_pipelines_from_table(conn, "scores_archive", "model_name", "run_date")
+    assert len(nodes) == 1
+    assert nodes[0].name == "pipeline:fraud_v3"
     assert nodes[0].metadata["total_rows"] == 1000000
 
 
@@ -38,10 +50,8 @@ def test_custom_platform():
 def test_output_port_has_discriminator():
     conn = FakeConnection([{"NAME": "my_model", "FIRST_OUTPUT": "", "LAST_OUTPUT": "", "TOTAL_ROWS": 1}])
     nodes = discover_pipelines_from_table(conn, "scores", "MODEL_NAME", "ts")
-    port = nodes[0].outputs[0]
-    assert port.schema["model_name"] == "my_model"
+    assert nodes[0].outputs[0].schema["model_name"] == "my_model"
 
 
 def test_implements_dbconnection():
-    conn = FakeConnection([])
-    assert isinstance(conn, DBConnection)
+    assert isinstance(FakeConnection([]), DBConnection)

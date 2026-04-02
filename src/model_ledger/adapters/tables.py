@@ -69,20 +69,23 @@ def discover_pipelines_from_table(
     except Exception:
         return []
 
+    # Normalize column keys to lowercase (Snowflake returns UPPER, Postgres returns lower)
+    normalized = [{k.lower(): v for k, v in row.items()} for row in rows]
+
     return [
         DataNode(
-            name=f"pipeline:{row['NAME']}",
+            name=f"pipeline:{row['name']}",
             platform=platform,
             inputs=[],
-            outputs=[DataPort(table.lower(), **{name_column.lower(): row["NAME"]})],
+            outputs=[DataPort(table.lower(), **{name_column.lower(): row["name"]})],
             metadata={
-                "pipeline_name": row["NAME"],
+                "pipeline_name": row["name"],
                 "source_table": table,
-                "first_output_date": str(row.get("FIRST_OUTPUT", "")),
-                "last_output_date": str(row.get("LAST_OUTPUT", "")),
-                "total_rows": row.get("TOTAL_ROWS", 0),
+                "first_output_date": str(row.get("first_output", "")),
+                "last_output_date": str(row.get("last_output", "")),
+                "total_rows": row.get("total_rows", 0),
                 "node_type": node_type,
             },
         )
-        for row in rows
+        for row in normalized
     ]

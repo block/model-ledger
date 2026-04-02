@@ -26,6 +26,8 @@ from model_ledger.core.exceptions import (
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 from model_ledger.core.models import ComponentNode, Model, ModelVersion
 from model_ledger.scanner.protocol import ModelCandidate, Scanner
+from model_ledger.graph.models import DataNode, DataPort
+from model_ledger.graph.protocol import SourceConnector
 from model_ledger.sdk.inventory import Inventory
 from model_ledger.sdk.ledger import Ledger
 
@@ -41,6 +43,10 @@ __all__ = [
     "Tag",
     "ModelCandidate",
     "Scanner",
+    # v0.4.0 — graph
+    "DataNode",
+    "DataPort",
+    "SourceConnector",
     # v0.2.0 — legacy
     "Inventory",
     "Model",
@@ -64,7 +70,7 @@ __all__ = [
     "register_introspector",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

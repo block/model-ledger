@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    permissions:
+      id-token: write
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Pull current version from pyproject.toml
+        id: get_version
+        run: |
+          echo "VERSION=$(grep -m 1 'version =' "pyproject.toml" | awk -F'"' '{print $2}')" >> $GITHUB_ENV
+
+      - name: Extract tag version
+        id: extract_tag
+        run: |
+          TAG_VERSION=$(echo "${{ github.event.release.tag_name }}" | sed -E 's/v(.*)/\1/')
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
+
+      - name: Confirm tag matches version from pyproject.toml
+        id: check_tag
+        run: |
+          if [ "${{ env.TAG_VERSION }}" != "${{ env.VERSION }}" ]; then
+            echo "::error::Tag version (${{ env.TAG_VERSION }}) does not match version in pyproject.toml (${{ env.VERSION }})."
+            exit 1
+          fi
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Build Package
+        run: uv build
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} dist/*
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1

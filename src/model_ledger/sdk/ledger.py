@@ -25,6 +25,7 @@ class Ledger:
         self._backend = backend or InMemoryLedgerBackend()
         self._name_cache: dict[str, ModelRef] = {}
         self._cache_complete = False  # True after bulk preload — skip individual lookups
+        self._node_cache: list = []  # DataNodes from add() — reused by connect()
 
     def _resolve_model(self, model: ModelRef | str) -> ModelRef:
         if isinstance(model, ModelRef):
@@ -247,6 +248,7 @@ class Ledger:
 
         if isinstance(nodes, DataNode):
             nodes = [nodes]
+        self._node_cache.extend(nodes)
 
         # Bulk preload — one query for all models, one for all snapshot hashes
         if not self._cache_complete:
@@ -305,15 +307,36 @@ class Ledger:
         return {"added": added, "skipped": skipped}
 
     def connect(self):
-        """Match output ports to input ports. Write dependency links."""
+        """Match output ports to input ports. Write only new dependency links.
+
+        Uses cached nodes from add() if available (avoids re-reading from backend).
+        Preloads existing edges to skip duplicates.
+        """
         from collections import defaultdict
         from model_ledger.graph.models import DataNode, DataPort
-        nodes = self._load_discovered_nodes()
+
+        # Use cached nodes from add() if available, otherwise load from backend
+        nodes = self._node_cache if self._node_cache else self._load_discovered_nodes()
+
+        # Build output port index
         output_index = defaultdict(list)
         for node in nodes:
             for port in node.outputs:
                 output_index[port.identifier].append((node, port))
+
+        # Preload existing edges to skip duplicates
+        existing_edges: set[tuple[str, str]] = set()
+        if hasattr(self._backend, "list_all_snapshots"):
+            hash_to_name = {ref.model_hash: name for name, ref in self._name_cache.items()}
+            for s in self._backend.list_all_snapshots(event_type="depends_on"):
+                upstream = s.payload.get("upstream")
+                downstream = hash_to_name.get(s.model_hash)
+                if upstream and downstream:
+                    existing_edges.add((upstream, downstream))
+
+        # Match ports and write only new edges
         links_created = 0
+        links_skipped = 0
         seen = set()
         for node in nodes:
             for in_port in node.inputs:
@@ -326,6 +349,9 @@ class Ledger:
                     if key in seen:
                         continue
                     seen.add(key)
+                    if key in existing_edges:
+                        links_skipped += 1
+                        continue
                     try:
                         self.link_dependency(
                             upstream=upstream_node.name,
@@ -337,7 +363,7 @@ class Ledger:
                         links_created += 1
                     except ModelNotFoundError:
                         continue
-        return {"links_created": links_created}
+        return {"links_created": links_created, "links_skipped": links_skipped}
 
     def trace(self, name):
         """Topological path from sources to this node."""

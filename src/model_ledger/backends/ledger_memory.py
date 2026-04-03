@@ -49,6 +49,11 @@ class InMemoryLedgerBackend:
             results = [s for s in results if getattr(s, key, None) == value]
         return results
 
+    def list_all_snapshots(self, event_type: str | None = None) -> list[Snapshot]:
+        if event_type:
+            return [s for s in self._snapshots if s.event_type == event_type]
+        return list(self._snapshots)
+
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None:
         if tag:
             t = self.get_tag(model_hash, tag)

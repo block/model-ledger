@@ -234,12 +234,36 @@ class Ledger:
     # --- Graph methods (v0.4.0) ---
 
     def add(self, nodes):
-        """Register DataNodes. Each becomes a ModelRef + discovered Snapshot."""
+        """Register DataNodes. Each becomes a ModelRef + discovered Snapshot.
+
+        Skips writing if the discovered payload is identical to the last snapshot
+        (content-hash dedup). Preloads existing models in bulk to avoid per-node queries.
+        """
+        import hashlib
+        import json
         from model_ledger.graph.models import DataNode, DataPort
+
         if isinstance(nodes, DataNode):
             nodes = [nodes]
+
+        # Preload name cache if backend supports bulk listing
+        if not self._name_cache and hasattr(self._backend, "list_models"):
+            for m in self._backend.list_models():
+                self._name_cache[m.name] = m
+
+        # Preload last discovered snapshot hashes for dedup
+        existing_hashes: dict[str, str] = {}
+        if hasattr(self._backend, "list_all_snapshots"):
+            for s in self._backend.list_all_snapshots(event_type="discovered"):
+                # Keep the latest per model_hash
+                existing_hashes[s.model_hash] = hashlib.sha256(
+                    json.dumps(s.payload, sort_keys=True, default=str).encode()
+                ).hexdigest()
+
+        added = 0
+        skipped = 0
         for node in nodes:
-            self.register(
+            ref = self.register(
                 name=node.name,
                 owner=node.metadata.get("owner") or "unknown",
                 model_type=node.metadata.get("node_type") or "unknown",
@@ -248,18 +272,31 @@ class Ledger:
                 model_origin=node.metadata.get("model_origin") or "internal",
                 actor=f"connector:{node.platform}" if node.platform else "system",
             )
+            payload = {
+                "platform": node.platform,
+                "inputs": [{"identifier": p.identifier, **p.schema} for p in node.inputs],
+                "outputs": [{"identifier": p.identifier, **p.schema} for p in node.outputs],
+                **{k: v for k, v in node.metadata.items()
+                   if k not in ("owner", "node_type", "tier", "purpose", "model_origin")},
+            }
+
+            # Content-hash dedup: skip if payload unchanged
+            payload_hash = hashlib.sha256(
+                json.dumps(payload, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            if existing_hashes.get(ref.model_hash) == payload_hash:
+                skipped += 1
+                continue
+
             self.record(
-                node.name,
+                ref,
                 event="discovered",
-                payload={
-                    "platform": node.platform,
-                    "inputs": [{"identifier": p.identifier, **p.schema} for p in node.inputs],
-                    "outputs": [{"identifier": p.identifier, **p.schema} for p in node.outputs],
-                    **{k: v for k, v in node.metadata.items()
-                       if k not in ("owner", "node_type", "tier", "purpose", "model_origin")},
-                },
+                payload=payload,
                 actor=f"connector:{node.platform}" if node.platform else "system",
             )
+            added += 1
+
+        return {"added": added, "skipped": skipped}
 
     def connect(self):
         """Match output ports to input ports. Write dependency links."""

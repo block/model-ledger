@@ -324,15 +324,36 @@ class Ledger:
         return result
 
     def _load_discovered_nodes(self):
-        """Rebuild DataNodes from stored discovery snapshots."""
+        """Rebuild DataNodes from stored discovery snapshots.
+
+        Uses bulk loading if the backend supports it (1 query instead of N).
+        """
+        from collections import defaultdict
         from model_ledger.graph.models import DataNode, DataPort
+
+        models = self._backend.list_models()
+        model_by_hash = {m.model_hash: m for m in models}
+
+        # Bulk load: one query for all discovered snapshots
+        if hasattr(self._backend, "list_all_snapshots"):
+            all_snaps = self._backend.list_all_snapshots(event_type="discovered")
+        else:
+            # Fallback: per-model queries
+            all_snaps = []
+            for model in models:
+                all_snaps.extend(self._backend.list_snapshots(model.model_hash, event_type="discovered"))
+
+        # Group by model and take latest
+        by_model: dict[str, list] = defaultdict(list)
+        for s in all_snaps:
+            by_model[s.model_hash].append(s)
+
         nodes = []
-        for model in self._backend.list_models():
-            snaps = self._backend.list_snapshots(model.model_hash)
-            discovered = [s for s in snaps if s.event_type == "discovered"]
-            if not discovered:
+        for model_hash, snaps in by_model.items():
+            model = model_by_hash.get(model_hash)
+            if not model:
                 continue
-            latest = max(discovered, key=lambda s: s.timestamp)
+            latest = max(snaps, key=lambda s: s.timestamp)
             payload = latest.payload
             inputs = [
                 DataPort(p["identifier"], **{k: v for k, v in p.items() if k != "identifier"})

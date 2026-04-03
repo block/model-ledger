@@ -24,6 +24,7 @@ class Ledger:
     def __init__(self, backend: LedgerBackend | None = None) -> None:
         self._backend = backend or InMemoryLedgerBackend()
         self._name_cache: dict[str, ModelRef] = {}
+        self._cache_complete = False  # True after bulk preload — skip individual lookups
 
     def _resolve_model(self, model: ModelRef | str) -> ModelRef:
         if isinstance(model, ModelRef):
@@ -52,10 +53,11 @@ class Ledger:
     ) -> ModelRef:
         if name in self._name_cache:
             return self._name_cache[name]
-        existing = self._backend.get_model_by_name(name)
-        if existing is not None:
-            self._name_cache[name] = existing
-            return existing
+        if not self._cache_complete:
+            existing = self._backend.get_model_by_name(name)
+            if existing is not None:
+                self._name_cache[name] = existing
+                return existing
         model = ModelRef(
             name=name, owner=owner, model_type=model_type,
             model_origin=model_origin,
@@ -246,19 +248,22 @@ class Ledger:
         if isinstance(nodes, DataNode):
             nodes = [nodes]
 
-        # Preload name cache if backend supports bulk listing
-        if not self._name_cache and hasattr(self._backend, "list_models"):
+        # Bulk preload — one query for all models, one for all snapshot hashes
+        if not self._cache_complete:
             for m in self._backend.list_models():
                 self._name_cache[m.name] = m
+            self._cache_complete = True
 
-        # Preload last discovered snapshot hashes for dedup
+        # Preload last discovered snapshot content hashes for dedup.
+        # We store _content_hash in the payload itself, so we can read just that field.
         existing_hashes: dict[str, str] = {}
-        if hasattr(self._backend, "list_all_snapshots"):
+        if hasattr(self._backend, "list_snapshot_content_hashes"):
+            existing_hashes = self._backend.list_snapshot_content_hashes(event_type="discovered")
+        elif hasattr(self._backend, "list_all_snapshots"):
             for s in self._backend.list_all_snapshots(event_type="discovered"):
-                # Keep the latest per model_hash
-                existing_hashes[s.model_hash] = hashlib.sha256(
-                    json.dumps(s.payload, sort_keys=True, default=str).encode()
-                ).hexdigest()
+                h = s.payload.get("_content_hash")
+                if h:
+                    existing_hashes[s.model_hash] = h
 
         added = 0
         skipped = 0
@@ -281,13 +286,14 @@ class Ledger:
             }
 
             # Content-hash dedup: skip if payload unchanged
-            payload_hash = hashlib.sha256(
+            content_hash = hashlib.sha256(
                 json.dumps(payload, sort_keys=True, default=str).encode()
             ).hexdigest()
-            if existing_hashes.get(ref.model_hash) == payload_hash:
+            if existing_hashes.get(ref.model_hash) == content_hash:
                 skipped += 1
                 continue
 
+            payload["_content_hash"] = content_hash
             self.record(
                 ref,
                 event="discovered",

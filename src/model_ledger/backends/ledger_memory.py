@@ -54,6 +54,16 @@ class InMemoryLedgerBackend:
             return [s for s in self._snapshots if s.event_type == event_type]
         return list(self._snapshots)
 
+    def list_snapshot_content_hashes(self, event_type: str | None = None) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for s in self._snapshots:
+            if event_type and s.event_type != event_type:
+                continue
+            h = s.payload.get("_content_hash")
+            if h:
+                result[s.model_hash] = h
+        return result
+
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None:
         if tag:
             t = self.get_tag(model_hash, tag)

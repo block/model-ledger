@@ -23,15 +23,19 @@ class Ledger:
 
     def __init__(self, backend: LedgerBackend | None = None) -> None:
         self._backend = backend or InMemoryLedgerBackend()
+        self._name_cache: dict[str, ModelRef] = {}
 
     def _resolve_model(self, model: ModelRef | str) -> ModelRef:
         if isinstance(model, ModelRef):
             return model
+        if model in self._name_cache:
+            return self._name_cache[model]
         result = self._backend.get_model_by_name(model)
         if result is None:
             result = self._backend.get_model(model)
         if result is None:
             raise ModelNotFoundError(f"Model not found: {model}")
+        self._name_cache[model] = result
         return result
 
     def register(
@@ -46,8 +50,11 @@ class Ledger:
         status: str = "active",
         actor: str = "system",
     ) -> ModelRef:
+        if name in self._name_cache:
+            return self._name_cache[name]
         existing = self._backend.get_model_by_name(name)
         if existing is not None:
+            self._name_cache[name] = existing
             return existing
         model = ModelRef(
             name=name, owner=owner, model_type=model_type,
@@ -64,6 +71,7 @@ class Ledger:
                 "model_origin": model_origin,
             },
         ))
+        self._name_cache[name] = model
         return model
 
     def record(

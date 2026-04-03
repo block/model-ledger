@@ -287,9 +287,13 @@ class Ledger:
                    if k not in ("owner", "node_type", "tier", "purpose", "model_origin")},
             }
 
-            # Content-hash dedup: skip if payload unchanged
+            # Content-hash dedup: skip if payload unchanged.
+            # Exclude volatile fields (timestamps change between runs without
+            # the model actually changing).
+            _VOLATILE = {"created_at", "updated_at", "_content_hash"}
+            stable_payload = {k: v for k, v in payload.items() if k not in _VOLATILE}
             content_hash = hashlib.sha256(
-                json.dumps(payload, sort_keys=True, default=str).encode()
+                json.dumps(stable_payload, sort_keys=True, default=str).encode()
             ).hexdigest()
             if existing_hashes.get(ref.model_hash) == content_hash:
                 skipped += 1

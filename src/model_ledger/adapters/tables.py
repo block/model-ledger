@@ -76,7 +76,7 @@ def discover_pipelines_from_table(
         DataNode(
             name=f"pipeline:{row['name']}",
             platform=platform,
-            inputs=[],
+            inputs=[DataPort(table.lower(), **{name_column.lower(): row["name"]})],
             outputs=[DataPort(table.lower(), **{name_column.lower(): row["name"]})],
             metadata={
                 "pipeline_name": row["name"],

@@ -1,6 +1,6 @@
 [project]
 name = "model-ledger"
-version = "0.4.3"
+version = "0.4.4"
 description = "Developer-first model inventory and governance framework for SR 11-7, EU AI Act, and NIST AI RMF compliance"
 readme = "README.md"
 requires-python = ">=3.10"

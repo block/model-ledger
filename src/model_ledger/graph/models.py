@@ -20,9 +20,15 @@ class DataPort:
             return NotImplemented
         if self.identifier != other.identifier:
             return False
-        for key in set(self.schema) & set(other.schema):
-            if not _value_matches(self.schema[key], other.schema[key]):
-                return False
+        # If either side has schema constraints, the other must satisfy them.
+        # A port with model_name="X" should NOT match a bare port.
+        if self.schema or other.schema:
+            all_keys = set(self.schema) | set(other.schema)
+            for key in all_keys:
+                if key not in self.schema or key not in other.schema:
+                    return False
+                if not _value_matches(self.schema[key], other.schema[key]):
+                    return False
         return True
 
     def __hash__(self) -> int:

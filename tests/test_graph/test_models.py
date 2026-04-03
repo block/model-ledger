@@ -27,7 +27,8 @@ class TestDataPort:
         assert DataPort("t", model_name="a") != DataPort("t", model_name="b")
 
     def test_one_no_schema(self):
-        assert DataPort("t", model_name="a") == DataPort("t")
+        # A port with schema must NOT match a bare port — prevents false edges
+        assert DataPort("t", model_name="a") != DataPort("t")
 
     def test_like_pattern(self):
         assert DataPort("s", model_name="tm-%") == DataPort("s", model_name="tm-m2o")

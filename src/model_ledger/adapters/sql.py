@@ -62,25 +62,44 @@ def extract_write_tables(sql: str | None) -> list[str]:
 
 
 def extract_model_name_filters(sql: str | None) -> list[str]:
-    """Extract model_name filter values from SQL WHERE clauses.
+    """Extract model_name values from SQL — filters, aliases, and literals.
 
-    Handles = 'value', LIKE 'pattern', and IN ('v1', 'v2', ...).
+    Handles:
+        WHERE model_name = 'value'
+        WHERE model_name LIKE 'pattern'
+        WHERE model_name IN ('v1', 'v2')
+        'value' AS model_name  (column alias in SELECT/INSERT)
 
     Example:
         >>> extract_model_name_filters("WHERE model_name = 'fraud_v3'")
         ['fraud_v3']
-        >>> extract_model_name_filters("WHERE model_name LIKE 'tm-%'")
-        ['tm-%']
+        >>> extract_model_name_filters("SELECT 'tm_checks' AS model_name")
+        ['tm_checks']
     """
     if not sql:
         return []
     results: list[str] = []
-    for match in re.finditer(r"model_name\s*=\s*'([^']+)'", sql, re.IGNORECASE):
-        results.append(match.group(1))
-    for match in re.finditer(r"model_name\s+LIKE\s+'([^']+)'", sql, re.IGNORECASE):
-        results.append(match.group(1))
+    seen: set[str] = set()
+
+    patterns = [
+        r"model_name\s*=\s*'([^']+)'",           # WHERE model_name = 'X'
+        r"model_name\s+LIKE\s+'([^']+)'",         # WHERE model_name LIKE 'X%'
+        r"'([^']+)'\s+AS\s+model_name",           # 'X' AS model_name
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, sql, re.IGNORECASE):
+            val = match.group(1)
+            if val not in seen:
+                seen.add(val)
+                results.append(val)
+
+    # IN (...) lists
     for match in re.finditer(r"model_name\s+IN\s*\(([^)]+)\)", sql, re.IGNORECASE):
-        results.extend(re.findall(r"'([^']+)'", match.group(1)))
+        for val in re.findall(r"'([^']+)'", match.group(1)):
+            if val not in seen:
+                seen.add(val)
+                results.append(val)
+
     return results
 
 

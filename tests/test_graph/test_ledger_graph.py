@@ -28,6 +28,21 @@ class TestAdd:
         ledger.add(DataNode("scorer", outputs=["s"]))
         assert len(ledger.list()) == 1
 
+    def test_add_content_hash_dedup_counters(self, ledger):
+        node = DataNode("scorer", platform="ml_platform", outputs=["scores"])
+        r1 = ledger.add(node)
+        assert r1["added"] == 1
+        assert r1["skipped"] == 0
+        r2 = ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        assert r2["added"] == 0
+        assert r2["skipped"] == 1
+
+    def test_add_detects_payload_change(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores_v1"]))
+        r2 = ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores_v2"]))
+        assert r2["added"] == 1
+        assert r2["skipped"] == 0
+
 class TestConnect:
     def test_matching_ports(self, ledger):
         ledger.add([DataNode("writer", outputs=["shared"]), DataNode("reader", inputs=["shared"])])
@@ -54,6 +69,14 @@ class TestConnect:
         ups = [d["model"].name for d in ledger.dependencies("r_a", direction="upstream")]
         assert "w_a" in ups
         assert "w_b" not in ups
+
+    def test_connect_skips_existing_edges(self, ledger):
+        ledger.add([DataNode("writer", outputs=["t"]), DataNode("reader", inputs=["t"])])
+        r1 = ledger.connect()
+        assert r1["links_created"] >= 1
+        r2 = ledger.connect()
+        assert r2["links_created"] == 0
+        assert r2["links_skipped"] >= 1
 
     def test_pipeline(self, ledger):
         ledger.add([

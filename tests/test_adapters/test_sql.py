@@ -55,6 +55,9 @@ class TestExtractModelNameFilters:
         result = extract_model_name_filters("WHERE model_name IN ('a', 'b', 'c')")
         assert result == ["a", "b", "c"]
 
+    def test_as_alias(self):
+        assert extract_model_name_filters("SELECT 'tm_checks' AS model_name") == ["tm_checks"]
+
     def test_none(self):
         assert extract_model_name_filters("WHERE id = 1") == []
 

@@ -70,7 +70,7 @@ __all__ = [
     "register_introspector",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.4.8"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

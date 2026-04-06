@@ -103,6 +103,52 @@ def extract_model_name_filters(sql: str | None) -> list[str]:
     return results
 
 
+def extract_lookback_from_sql(sql: str | None) -> str | None:
+    """Extract lookback window from SQL.
+
+    Detects common patterns: lookback=N, DATEADD(day, -N, ...), INTERVAL 'N days'.
+
+    Example:
+        >>> extract_lookback_from_sql("WHERE date >= DATEADD(day, -30, CURRENT_DATE())")
+        '30 days'
+        >>> extract_lookback_from_sql("SELECT 1")
+    """
+    if not sql:
+        return None
+    match = re.search(r"lookback\s*=\s*(\d+)", sql, re.IGNORECASE)
+    if match:
+        return f"{match.group(1)} days"
+    match = re.search(r"DATEADD\s*\(\s*day\s*,\s*-(\d+)", sql, re.IGNORECASE)
+    if match:
+        return f"{match.group(1)} days"
+    match = re.search(r"INTERVAL\s+'?(\d+)\s*(?:days?)'?", sql, re.IGNORECASE)
+    if match:
+        return f"{match.group(1)} days"
+    return None
+
+
+def extract_comment_tags(sql: str | None, prefix: str = "@") -> dict[str, str]:
+    """Extract structured tags from SQL comments.
+
+    Parses lines like `-- @key: value` and returns a dict.
+    The prefix defaults to "@" but can be customized.
+
+    Example:
+        >>> extract_comment_tags("-- @owner: compliance\\n-- @tier: high\\nSELECT 1")
+        {'owner': 'compliance', 'tier': 'high'}
+    """
+    if not sql:
+        return {}
+    tags: dict[str, str] = {}
+    for line in sql.split("\n"):
+        line = line.strip()
+        if line.startswith(f"-- {prefix}"):
+            parts = line[len(f"-- {prefix}"):].split(":", 1)
+            if len(parts) == 2:
+                tags[parts[0].strip()] = parts[1].strip()
+    return tags
+
+
 def strip_template_vars(sql: str | None) -> str:
     """Strip {{var}} template wrappers from SQL.
 

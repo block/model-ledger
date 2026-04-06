@@ -14,12 +14,19 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 ## Architecture
 
-### v0.3.0 (current — event-log paradigm)
+### v0.4.x (current — DataNode graph)
 - `src/model_ledger/core/ledger_models.py` — ModelRef, Snapshot, Tag
-- `src/model_ledger/sdk/ledger.py` — Ledger SDK (register, record, tag, link_dependency, dependencies, inventory_at)
+- `src/model_ledger/sdk/ledger.py` — Ledger SDK (register, record, tag, add, connect, trace, upstream, downstream)
+- `src/model_ledger/graph/models.py` — DataNode, DataPort (with schema discriminators)
+- `src/model_ledger/graph/protocol.py` — SourceConnector protocol
 - `src/model_ledger/backends/ledger_protocol.py` — LedgerBackend protocol
 - `src/model_ledger/backends/ledger_memory.py` — InMemory backend
-- `src/model_ledger/scanner/` — Scanner protocol, ModelCandidate, InventoryScanner orchestrator, ScannerRegistry, DBConnection protocol
+- `src/model_ledger/adapters/sql.py` — SQL parsing (extract_tables, write_tables, model_name_filters)
+- `src/model_ledger/adapters/tables.py` — Table-based pipeline discovery
+- `src/model_ledger/adapters/cron.py` — Cron expression translation
+
+### v0.3.0 (event-log paradigm)
+- `src/model_ledger/scanner/` — Scanner protocol, ModelCandidate, InventoryScanner, ScannerRegistry
 
 ### v0.2.0 (legacy — retained for reference)
 - `src/model_ledger/core/models.py` — Model, ModelVersion, ComponentNode

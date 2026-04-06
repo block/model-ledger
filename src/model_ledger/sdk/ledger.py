@@ -7,11 +7,8 @@ from typing import Any
 
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 from model_ledger.backends.ledger_protocol import LedgerBackend
+from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
-
-
-class ModelNotFoundError(Exception):
-    pass
 
 
 class Ledger:
@@ -36,7 +33,7 @@ class Ledger:
         if result is None:
             result = self._backend.get_model(model)
         if result is None:
-            raise ModelNotFoundError(f"Model not found: {model}")
+            raise ModelNotFoundError(model)
         self._name_cache[model] = result
         return result
 
@@ -109,7 +106,7 @@ class Ledger:
         ref = self._resolve_model(model)
         latest = self._backend.latest_snapshot(ref.model_hash)
         if latest is None:
-            raise ModelNotFoundError(f"No snapshots for model: {ref.name}")
+            raise ModelNotFoundError(ref.name)
         tag = Tag(
             name=name, model_hash=ref.model_hash,
             snapshot_hash=latest.snapshot_hash,
@@ -122,7 +119,7 @@ class Ledger:
         if result is None:
             result = self._backend.get_model(name_or_hash)
         if result is None:
-            raise ModelNotFoundError(f"Model not found: {name_or_hash}")
+            raise ModelNotFoundError(name_or_hash)
         return result
 
     def list(self, **filters: str) -> list[ModelRef]:

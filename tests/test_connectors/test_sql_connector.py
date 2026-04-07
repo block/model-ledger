@@ -111,6 +111,50 @@ def test_explicit_metadata_columns():
     assert "junk" not in nodes[0].metadata
 
 
+def test_input_port_config():
+    conn = MockConnection([
+        {"slug": "my_queue", "display": "My Queue"},
+    ])
+    c = sql_connector(name="case_mgmt", connection=conn,
+                      query="SELECT slug, display FROM queues",
+                      name_column="slug", name_prefix="queue:",
+                      input_port={"column": "slug", "kind": "alert_queue"})
+    nodes = c.discover()
+    assert nodes[0].inputs[0].identifier == "my_queue"
+    assert nodes[0].inputs[0].schema.get("kind") == "alert_queue"
+
+
+def test_shared_table_patterns_custom():
+    conn = MockConnection([
+        {"name": "my_rule", "query_sql": "SELECT * FROM my_schema.my_scores WHERE model_name = 'fraud_v3'"},
+    ])
+    c = sql_connector(name="rules", connection=conn,
+                      query="SELECT name, query_sql FROM algorithms",
+                      name_column="name",
+                      sql_column="query_sql",
+                      shared_table_patterns=["my_scores"])
+    nodes = c.discover()
+    # my_scores matches the pattern, so it gets model_name discriminator
+    scored_inputs = [p for p in nodes[0].inputs if p.schema.get("model_name")]
+    assert len(scored_inputs) == 1
+    assert scored_inputs[0].schema["model_name"] == "fraud_v3"
+
+
+def test_shared_table_patterns_empty():
+    conn = MockConnection([
+        {"name": "my_rule", "query_sql": "SELECT * FROM schema.alerts WHERE model_name = 'fraud_v3'"},
+    ])
+    c = sql_connector(name="rules", connection=conn,
+                      query="SELECT name, query_sql FROM algorithms",
+                      name_column="name",
+                      sql_column="query_sql",
+                      shared_table_patterns=[])
+    nodes = c.discover()
+    # No patterns → no model_name discriminators on inputs
+    scored_inputs = [p for p in nodes[0].inputs if p.schema.get("model_name")]
+    assert len(scored_inputs) == 0
+
+
 def test_empty_result():
     conn = MockConnection([])
     c = sql_connector(name="test", connection=conn, query="SELECT 1", name_column="name")

@@ -22,3 +22,4 @@ htmlcov/
 
 # Internal design docs (contain org-specific context)
 docs/superpowers/
+.gitleaks.toml

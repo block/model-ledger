@@ -47,12 +47,7 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 ## Boundary Rules
 
-This is an Apache-2.0 open-source project.
-
-- **NO** Block-specific code, imports, or references
-- **NO** dependencies on internal systems (Snowflake auth, snowflake-connector, Prefect, Jira, GCS)
-- Organization-specific scanners and backends go in separate packages
-- **Rule: "If it needs an internal import, it goes in a separate package. If it's useful to any org, it goes in OSS."**
+This is an Apache-2.0 open-source project. All code must be generic and useful to any organization. Organization-specific connectors, auth, and backends go in separate packages.
 
 ## Key Patterns
 

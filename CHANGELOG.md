@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.0
+
+- feat: `Ledger.from_sqlite(path)` — persistent SQLite backend, zero dependencies
+- feat: `Ledger.from_snowflake(conn, schema)` — Snowflake backend (upstreamed from Block)
+- feat: `sql_connector()` — config-driven SQL-based model discovery
+- feat: `rest_connector()` — config-driven REST API model discovery
+- feat: `github_connector()` — discover models from config files in GitHub repos
+- feat: Connector factories return `SourceConnector` instances for composability
+
 ## Unreleased
 
 - fix: deduplicate `ModelNotFoundError` — use canonical class from `core.exceptions`

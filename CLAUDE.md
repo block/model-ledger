@@ -14,7 +14,15 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 ## Architecture
 
-### v0.4.x (current — DataNode graph)
+### v0.5.0 (current — production backends + connector factories)
+- `src/model_ledger/backends/sqlite_ledger.py` — SQLiteLedgerBackend (persistent, zero-dep)
+- `src/model_ledger/backends/snowflake.py` — SnowflakeLedgerBackend (upstreamed from Block)
+- `src/model_ledger/connectors/sql.py` — sql_connector() factory
+- `src/model_ledger/connectors/rest.py` — rest_connector() factory
+- `src/model_ledger/connectors/github.py` — github_connector() factory
+- `src/model_ledger/sdk/ledger.py` — Ledger.from_sqlite(), Ledger.from_snowflake()
+
+### v0.4.x (DataNode graph)
 - `src/model_ledger/core/ledger_models.py` — ModelRef, Snapshot, Tag
 - `src/model_ledger/sdk/ledger.py` — Ledger SDK (register, record, tag, add, connect, trace, upstream, downstream)
 - `src/model_ledger/graph/models.py` — DataNode, DataPort (with schema discriminators)

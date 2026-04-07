@@ -1,24 +1,41 @@
 # model-ledger
 
-**Open-source model governance framework for financial services. Auto-discover models, trace dependencies, validate compliance.**
+**The model inventory your regulator actually wants. Auto-discovered, dependency-traced, audit-ready.**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![v0.5.0](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 
 ---
 
-## Why model-ledger?
+## What It Does
 
-Regulators require financial institutions to maintain a complete inventory of their models. Most teams track this in spreadsheets that are outdated the moment they're written. model-ledger automates it:
+model-ledger automatically discovers every model, rule, pipeline, and queue across your systems — then builds the dependency graph between them. No spreadsheets. No manual registration. Point it at your databases and APIs, and it maps your entire model risk ecosystem.
 
-- **Auto-discover** models from your databases, APIs, and code repos
-- **Build dependency graphs** automatically from data flow (no manual linking)
-- **Trace lineage** end-to-end: from raw data through scoring to alerting
-- **Validate compliance** against SR 11-7, EU AI Act, and NIST AI RMF
-- **Persist an audit trail** as an immutable event log
+```python
+from model_ledger import Ledger, DataNode
 
-Unlike MLflow or model registries that track ML models only, model-ledger tracks *everything* in the model risk ecosystem: ETL pipelines, heuristic rules, scoring jobs, alert queues, and ML models as a single connected graph.
+ledger = Ledger.from_sqlite("./inventory.db")
+
+ledger.add([
+    DataNode("segmentation",  outputs=["customer_segments"]),
+    DataNode("fraud_scorer",  inputs=["customer_segments"], outputs=["risk_scores"]),
+    DataNode("fraud_alerts",  inputs=["risk_scores"]),
+])
+ledger.connect()
+
+ledger.trace("fraud_alerts")
+# ['segmentation', 'fraud_scorer', 'fraud_alerts']
+```
+
+```mermaid
+graph LR
+    A["segmentation"] --> B["fraud_scorer"] --> C["fraud_alerts"]
+    style A fill:#607D8B,color:#fff
+    style B fill:#4CAF50,color:#fff
+    style C fill:#FF9800,color:#fff
+```
+
+Unlike model registries that track ML models only, model-ledger tracks *everything in the model risk ecosystem* — ETL pipelines, heuristic rules, scoring jobs, alert queues, and ML models — as one connected graph with a full audit trail.
 
 ## Install
 
@@ -30,48 +47,39 @@ pip install model-ledger[github]              # + GitHub connector
 pip install model-ledger[all]                 # Everything
 ```
 
-## Quick Start
+## The Core Idea
 
-```python
-from model_ledger import Ledger, DataNode
+Everything is a **DataNode** with typed input and output ports. The dependency graph builds itself from port matching — no manual linking.
 
-# Persistent inventory — one line, zero infrastructure
-ledger = Ledger.from_sqlite("./inventory.db")
+```
+                    ┌──────────────┐
+  inputs            │   DataNode   │            outputs
+ ───────────────>   │              │   ───────────────>
+  DataPort("scores")│  "scorer"    │   DataPort("alerts")
+                    └──────────────┘
 
-# Define models with inputs and outputs
-segmentation = DataNode("segmentation", outputs=["customer_segments"])
-scorer = DataNode("fraud_scorer", inputs=["customer_segments"], outputs=["risk_scores"])
-alerting = DataNode("fraud_alerts", inputs=["risk_scores"])
-
-# Add and connect — dependencies build automatically from port matching
-ledger.add([segmentation, scorer, alerting])
-ledger.connect()
-
-# Trace the full pipeline
-ledger.trace("fraud_alerts")
-# ['segmentation', 'fraud_scorer', 'fraud_alerts']
-
-ledger.upstream("fraud_alerts")
-# ['segmentation', 'fraud_scorer']
-
-ledger.downstream("segmentation")
-# ['fraud_scorer', 'fraud_alerts']
+  When an output port matches an input port, connect() creates the edge.
 ```
 
-Data persists across sessions. Reopen the same file and your inventory is there.
+Under the hood, the Ledger maintains three things:
+- **ModelRef** — the regulatory identity (name, owner, type, tier)
+- **Snapshots** — immutable, timestamped observations (append-only event log)
+- **Tags** — mutable pointers to snapshots (e.g., "production", "latest")
+
+Every mutation is recorded. Nothing is deleted. You get a complete audit trail and point-in-time inventory reconstruction for any date.
 
 ## Discover Models From Your Systems
 
-Most model discovery is "query a system, map rows to models." Connector factories handle this without writing classes.
-
 ### SQL databases
+
+Most discovery is "query a table, map rows to models." The `sql_connector` factory handles this without writing classes:
 
 ```python
 from model_ledger import Ledger, sql_connector
 
 ledger = Ledger.from_sqlite("./inventory.db")
 
-# Simple: discover models from a registry table
+# Simple: discover from a registry table
 models = sql_connector(
     name="model_registry",
     connection=my_db,
@@ -79,13 +87,13 @@ models = sql_connector(
     name_column="name",
 )
 
-# Advanced: parse SQL to auto-extract input/output table dependencies
+# Advanced: auto-parse SQL to extract table dependencies
 etl_jobs = sql_connector(
     name="etl_scheduler",
     connection=my_db,
     query="SELECT job_name, raw_sql, cron FROM scheduled_jobs",
     name_column="job_name",
-    sql_column="raw_sql",  # extracts FROM/JOIN tables as inputs, INSERT/CREATE as outputs
+    sql_column="raw_sql",  # extracts FROM/JOIN as inputs, INSERT/CREATE as outputs
 )
 
 ledger.add(models.discover())
@@ -126,7 +134,7 @@ pipelines = github_connector(
 
 ### Custom connectors
 
-For anything the factories don't cover, implement the `SourceConnector` protocol directly:
+For anything the factories don't cover, implement the `SourceConnector` protocol:
 
 ```python
 class SageMakerConnector:
@@ -147,17 +155,10 @@ class SageMakerConnector:
 ```python
 from model_ledger import Ledger
 
-# SQLite — batteries included, zero infrastructure
-ledger = Ledger.from_sqlite("./inventory.db")
-
-# Snowflake — production scale
-ledger = Ledger.from_snowflake(connection, schema="ANALYTICS.MODEL_LEDGER")
-
-# In-memory — for testing
-ledger = Ledger()
-
-# Custom — implement the LedgerBackend protocol
-ledger = Ledger(my_postgres_backend)
+ledger = Ledger.from_sqlite("./inventory.db")                        # SQLite — zero infrastructure
+ledger = Ledger.from_snowflake(connection, schema="DB.MODEL_LEDGER") # Snowflake — production scale
+ledger = Ledger()                                                     # In-memory — testing
+ledger = Ledger(my_custom_backend)                                    # Custom — LedgerBackend protocol
 ```
 
 ## Key Capabilities
@@ -180,7 +181,7 @@ from model_ledger import DataPort, DataNode
 
 # Two models write to the same alert table with different model_name values
 DataNode("check_rules", outputs=[DataPort("alerts", model_name="checks")])
-DataNode("card_rules", outputs=[DataPort("alerts", model_name="cards")])
+DataNode("card_rules",  outputs=[DataPort("alerts", model_name="cards")])
 
 # This reader only connects to check_rules — model_name must match
 DataNode("check_queue", inputs=[DataPort("alerts", model_name="checks")])
@@ -191,7 +192,7 @@ DataNode("check_queue", inputs=[DataPort("alerts", model_name="checks")])
 ```python
 from datetime import datetime
 inventory = ledger.inventory_at(datetime(2025, 12, 31))
-# Returns all models that were active on that date
+# Every model that was active on that date
 ```
 
 ### Compliance validation
@@ -206,7 +207,7 @@ Built-in profiles for major model risk regulations:
 
 ### Model introspection
 
-Extract metadata from fitted ML models automatically:
+Extract metadata from fitted ML models:
 
 ```python
 from model_ledger import introspect
@@ -218,17 +219,6 @@ result.hyperparameters  # {"n_estimators": 50, "max_depth": 4}
 ```
 
 Ships with sklearn, XGBoost, and LightGBM support. Add your own via the `Introspector` protocol.
-
-## How It Works
-
-Every model, rule, pipeline, and queue is a **DataNode** with typed input and output ports. The Ledger matches ports to build the dependency graph automatically.
-
-Under the hood, the Ledger maintains:
-- **ModelRef** — the regulatory identity (name, owner, type, tier)
-- **Snapshots** — immutable, timestamped observations (discovered, depends_on, validated)
-- **Tags** — mutable pointers to snapshots (e.g., "production", "latest")
-
-Every mutation is an append-only event. Nothing is deleted. This gives you a complete audit trail and point-in-time reconstruction for any date.
 
 ## Architecture
 
@@ -250,7 +240,7 @@ model-ledger
 - **Schema-agnostic metadata** — `Snapshot.payload` is `dict[str, Any]`. The framework stores whatever your connectors discover.
 - **Append-only audit trail** — every change is an immutable Snapshot. Full history, point-in-time queries.
 - **Factory for the 80%, protocol for the 20%** — config-driven factories for common patterns, open protocols for anything custom.
-- **Batteries included** — `pip install model-ledger` gives you persistence, discovery, graph building, and compliance with zero infrastructure.
+- **Batteries included** — persistence, discovery, graph building, and compliance with zero infrastructure.
 
 ## For Organizations
 

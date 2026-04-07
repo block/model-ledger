@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- feat: `register_group()` — register governed model groups with member linking
+- feat: `members()` — list all models that belong to a group
+- feat: `groups()` — find all groups a model belongs to
+
 ## v0.5.0
 
 - feat: `Ledger.from_sqlite(path)` — persistent SQLite backend, zero dependencies

@@ -24,6 +24,33 @@ class Ledger:
         self._cache_complete = False  # True after bulk preload — skip individual lookups
         self._node_cache: list = []  # DataNodes from add() — reused by connect()
 
+    @classmethod
+    def from_sqlite(cls, db_path: str) -> Ledger:
+        """Create a Ledger backed by a SQLite database.
+
+        Args:
+            db_path: Path to the SQLite database file. Created if it doesn't exist.
+
+        Example:
+            >>> ledger = Ledger.from_sqlite("./inventory.db")
+        """
+        from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
+        return cls(SQLiteLedgerBackend(db_path))
+
+    @classmethod
+    def from_snowflake(cls, connection: Any, schema: str = "MODEL_LEDGER") -> Ledger:
+        """Create a Ledger backed by Snowflake.
+
+        Args:
+            connection: A Snowflake connection (snowflake.connector or pysnowflake session).
+            schema: Fully qualified schema name (e.g., "MY_DB.MODEL_LEDGER").
+
+        Example:
+            >>> ledger = Ledger.from_snowflake(conn, schema="ANALYTICS.MODEL_LEDGER")
+        """
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+        return cls(SnowflakeLedgerBackend(connection=connection, schema=schema))
+
     def _resolve_model(self, model: ModelRef | str) -> ModelRef:
         if isinstance(model, ModelRef):
             return model

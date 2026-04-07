@@ -51,6 +51,15 @@ class TestConnect:
         deps = ledger.dependencies("reader", direction="upstream")
         assert any(d["model"].name == "writer" for d in deps)
 
+    def test_arbitrary_schema_key_matching(self, ledger):
+        """DataPort supports any schema key for matching, not just model_name."""
+        ledger.add([
+            DataNode("producer", outputs=[DataPort("queue_slug", kind="alert_queue")]),
+            DataNode("consumer", inputs=[DataPort("queue_slug", kind="alert_queue")]),
+        ])
+        result = ledger.connect()
+        assert result["links_created"] >= 1
+
     def test_no_match(self, ledger):
         ledger.add([DataNode("a", outputs=["x"]), DataNode("b", inputs=["y"])])
         assert ledger.connect()["links_created"] == 0

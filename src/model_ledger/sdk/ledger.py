@@ -428,6 +428,54 @@ class Ledger:
         _walk(name)
         return result
 
+    def register_group(
+        self,
+        *,
+        name: str,
+        owner: str,
+        model_type: str,
+        tier: str,
+        purpose: str,
+        members: list[str],
+        actor: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ModelRef:
+        """Register a governed model group and link its members.
+
+        A group is a business-level entity that aggregates technical components.
+        Members are linked via relationship="member_of".
+
+        Example:
+            >>> group = ledger.register_group(
+            ...     name="Remote Check Deposit", owner="TEAM",
+            ...     model_type="heuristic", tier="high",
+            ...     purpose="Cash check deposit TM",
+            ...     members=["org_prefix_checks", "compl_org_prefix_checks"],
+            ...     actor="vignesh",
+            ... )
+        """
+        ref = self.register(
+            name=name, owner=owner, model_type=model_type,
+            tier=tier, purpose=purpose, actor=actor,
+        )
+        for member in members:
+            self.link_dependency(
+                upstream=member, downstream=name,
+                relationship="member_of", actor=actor,
+                metadata=metadata,
+            )
+        return ref
+
+    def members(self, group: ModelRef | str) -> list[ModelRef]:
+        """Return all models that are members of this group."""
+        deps = self.dependencies(group, direction="upstream")
+        return [d["model"] for d in deps if d.get("relationship") == "member_of"]
+
+    def groups(self, model: ModelRef | str) -> list[ModelRef]:
+        """Return all groups this model belongs to."""
+        deps = self.dependencies(model, direction="downstream")
+        return [d["model"] for d in deps if d.get("relationship") == "member_of"]
+
     def _load_discovered_nodes(self):
         """Rebuild DataNodes from stored discovery snapshots.
 

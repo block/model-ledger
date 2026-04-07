@@ -1,6 +1,6 @@
 [project]
 name = "model-ledger"
-version = "0.4.8"
+version = "0.5.0"
 description = "Developer-first model inventory and governance framework for SR 11-7, EU AI Act, and NIST AI RMF compliance"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,6 +40,10 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.0",
 ]
+snowflake = ["snowflake-connector-python>=3.0", "pandas>=2.0"]
+rest = ["httpx>=0.28"]
+github = ["httpx>=0.28"]
+all = ["snowflake-connector-python>=3.0", "pandas>=2.0", "httpx>=0.28"]
 
 [project.scripts]
 model-ledger = "model_ledger.cli:app"

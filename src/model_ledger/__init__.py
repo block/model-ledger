@@ -30,6 +30,7 @@ from model_ledger.graph.models import DataNode, DataPort
 from model_ledger.graph.protocol import SourceConnector
 from model_ledger.sdk.inventory import Inventory
 from model_ledger.sdk.ledger import Ledger
+from model_ledger.connectors import sql_connector, rest_connector, github_connector
 
 if TYPE_CHECKING:
     from model_ledger.introspect.models import IntrospectionResult
@@ -47,6 +48,10 @@ __all__ = [
     "DataNode",
     "DataPort",
     "SourceConnector",
+    # v0.5.0 — connector factories
+    "sql_connector",
+    "rest_connector",
+    "github_connector",
     # v0.2.0 — legacy
     "Inventory",
     "Model",
@@ -70,7 +75,7 @@ __all__ = [
     "register_introspector",
 ]
 
-__version__ = "0.4.8"
+__version__ = "0.5.0"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

@@ -3,7 +3,7 @@
 ## v0.5.0
 
 - feat: `Ledger.from_sqlite(path)` — persistent SQLite backend, zero dependencies
-- feat: `Ledger.from_snowflake(conn, schema)` — Snowflake backend (upstreamed from Block)
+- feat: `Ledger.from_snowflake(conn, schema)` — persistent Snowflake backend
 - feat: `sql_connector()` — config-driven SQL-based model discovery
 - feat: `rest_connector()` — config-driven REST API model discovery
 - feat: `github_connector()` — discover models from config files in GitHub repos

@@ -155,6 +155,63 @@ def test_shared_table_patterns_empty():
     assert len(scored_inputs) == 0
 
 
+def test_sql_preprocessor_strips_template_vars():
+    conn = MockConnection([
+        {"name": "job1", "raw_sql": "SELECT * FROM {{schema}}.{{table}} WHERE x = 1"},
+    ])
+    c = sql_connector(name="etl", connection=conn,
+                      query="SELECT name, raw_sql FROM jobs",
+                      name_column="name",
+                      sql_column="raw_sql")
+    nodes = c.discover()
+    # strip_template_vars is the default preprocessor — {{schema}}.{{table}} → schema.table
+    assert any(p.identifier == "schema.table" for p in nodes[0].inputs)
+
+
+def test_sql_preprocessor_disabled():
+    conn = MockConnection([
+        {"name": "job1", "raw_sql": "SELECT * FROM {{schema}}.{{table}}"},
+    ])
+    c = sql_connector(name="etl", connection=conn,
+                      query="SELECT name, raw_sql FROM jobs",
+                      name_column="name",
+                      sql_column="raw_sql",
+                      sql_preprocessor=None)
+    nodes = c.discover()
+    # With preprocessing disabled, {{schema}}.{{table}} won't parse as a table
+    assert len(nodes[0].inputs) == 0
+
+
+def test_cron_column():
+    conn = MockConnection([
+        {"name": "job1", "cron": "0 7 * * *"},
+    ])
+    c = sql_connector(name="etl", connection=conn,
+                      query="SELECT name, cron FROM jobs",
+                      name_column="name",
+                      cron_column="cron")
+    nodes = c.discover()
+    assert nodes[0].metadata["cron"] == "0 7 * * *"
+    assert "run_frequency" in nodes[0].metadata
+
+
+def test_shared_table_fallback():
+    conn = MockConnection([
+        {"name": "org_prefix_checks", "raw_sql":
+         "INSERT INTO schema.global_alert_attributes SELECT 1"},
+    ])
+    c = sql_connector(name="etl", connection=conn,
+                      query="SELECT name, raw_sql FROM jobs",
+                      name_column="name",
+                      sql_column="raw_sql",
+                      shared_table_patterns=["global_alert"],
+                      shared_table_fallback={"source_column": "name", "strip_prefix": "org_prefix_"})
+    nodes = c.discover()
+    out = [p for p in nodes[0].outputs if p.schema.get("model_name")]
+    assert len(out) == 1
+    assert out[0].schema["model_name"] == "checks"  # prefix stripped
+
+
 def test_empty_result():
     conn = MockConnection([])
     c = sql_connector(name="test", connection=conn, query="SELECT 1", name_column="name")

@@ -5,7 +5,8 @@ Supports three levels: simple column mapping, explicit I/O columns, SQL parsing.
 """
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, Callable
 
 from model_ledger.graph.models import DataNode, DataPort
 
@@ -20,7 +21,10 @@ def sql_connector(
     input_columns: list[str] | None = None,
     output_columns: list[str] | None = None,
     sql_column: str | None = None,
+    sql_preprocessor: Callable[[str], str] | None = "default",
     shared_table_patterns: list[str] | None = None,
+    shared_table_fallback: dict[str, str] | None = None,
+    cron_column: str | None = None,
     input_port: dict[str, str] | None = None,
     output_port: dict[str, str] | None = None,
     metadata_columns: dict[str, str] | None = None,
@@ -36,25 +40,39 @@ def sql_connector(
         input_columns: Columns containing input table/port identifiers.
         output_columns: Columns containing output table/port identifiers.
         sql_column: Column containing SQL to parse for input/output tables.
+        sql_preprocessor: Function to clean SQL before parsing (e.g., strip template
+            variables). Default: strip_template_vars from model_ledger.adapters.sql.
+            Pass None to disable preprocessing.
         shared_table_patterns: When sql_column is set, table names matching any of
             these substrings will get model_name discriminators from the parsed SQL.
-            Default: ["scores", "alert"] (common patterns for shared scoring/alerting tables).
+            Default: ["scores", "alert"].
+        shared_table_fallback: When a write table matches shared_table_patterns but
+            no model_name is found in the SQL, derive model_name from a column value.
+            Dict with keys: source_column (required), strip_prefix (optional regex).
+            Example: {"source_column": "NAME", "strip_prefix": "org_prefix_"}
+        cron_column: Column containing a cron expression. When set, adds both
+            the raw cron and an English translation to metadata.
         input_port: Config dict with keys: column, fallback (optional), kind (optional).
-            Creates a single input port from a column value.
         output_port: Config dict with keys: column, fallback (optional), kind (optional).
-            Creates a single output port from a column value.
         metadata_columns: Explicit {metadata_key: column_name} mapping.
             If omitted, all unmapped columns become metadata automatically.
 
     Returns:
         A SourceConnector with a discover() method.
     """
+    # Resolve default preprocessor
+    if sql_preprocessor == "default":
+        from model_ledger.adapters.sql import strip_template_vars
+        sql_preprocessor = strip_template_vars
+
     return _SQLConnector(
         name=name, connection=connection, query=query,
         name_column=name_column, name_prefix=name_prefix,
         input_columns=input_columns or [], output_columns=output_columns or [],
-        sql_column=sql_column,
+        sql_column=sql_column, sql_preprocessor=sql_preprocessor,
         shared_table_patterns=shared_table_patterns if shared_table_patterns is not None else ["scores", "alert"],
+        shared_table_fallback=shared_table_fallback,
+        cron_column=cron_column,
         input_port=input_port, output_port=output_port,
         metadata_columns=metadata_columns,
     )
@@ -65,7 +83,10 @@ class _SQLConnector:
         self, *, name: str, connection: Any, query: str,
         name_column: str, name_prefix: str,
         input_columns: list[str], output_columns: list[str],
-        sql_column: str | None, shared_table_patterns: list[str],
+        sql_column: str | None, sql_preprocessor: Callable[[str], str] | None,
+        shared_table_patterns: list[str],
+        shared_table_fallback: dict[str, str] | None,
+        cron_column: str | None,
         input_port: dict[str, str] | None, output_port: dict[str, str] | None,
         metadata_columns: dict[str, str] | None,
     ) -> None:
@@ -77,7 +98,10 @@ class _SQLConnector:
         self._input_columns = input_columns
         self._output_columns = output_columns
         self._sql_column = sql_column
+        self._sql_preprocessor = sql_preprocessor
         self._shared_table_patterns = shared_table_patterns
+        self._shared_table_fallback = shared_table_fallback
+        self._cron_column = cron_column
         self._input_port = input_port
         self._output_port = output_port
         self._metadata_columns = metadata_columns
@@ -87,6 +111,8 @@ class _SQLConnector:
         self._reserved_columns.update(output_columns)
         if sql_column:
             self._reserved_columns.add(sql_column)
+        if cron_column:
+            self._reserved_columns.add(cron_column)
         for port_cfg in [input_port, output_port]:
             if port_cfg:
                 self._reserved_columns.add(port_cfg.get("column", ""))
@@ -129,6 +155,8 @@ class _SQLConnector:
         # SQL column parsing
         if self._sql_column:
             sql_text = row.get(self._sql_column) or ""
+            if self._sql_preprocessor and sql_text:
+                sql_text = self._sql_preprocessor(sql_text)
             if sql_text:
                 from model_ledger.adapters.sql import (
                     extract_model_name_filters,
@@ -145,9 +173,20 @@ class _SQLConnector:
                             inputs.append(DataPort(t.lower(), model_name=mn))
                     else:
                         inputs.append(DataPort(t.lower()))
+
                 for t in write_tables:
                     if model_names:
                         outputs.append(DataPort(t.lower(), model_name=model_names[0]))
+                    elif self._shared_table_fallback and any(
+                        p in t.lower() for p in self._shared_table_patterns
+                    ):
+                        # Derive model_name from name column with optional prefix stripping
+                        src_col = self._shared_table_fallback["source_column"]
+                        fallback_name = str(row.get(src_col, ""))
+                        strip = self._shared_table_fallback.get("strip_prefix")
+                        if strip:
+                            fallback_name = re.sub(f"^{strip}", "", fallback_name)
+                        outputs.append(DataPort(t.lower(), model_name=fallback_name))
                     else:
                         outputs.append(DataPort(t.lower()))
 
@@ -175,6 +214,14 @@ class _SQLConnector:
                 k: v for k, v in row.items()
                 if k not in self._reserved_columns and v is not None
             }
+
+        # Cron column translation
+        if self._cron_column:
+            cron_val = row.get(self._cron_column)
+            if cron_val:
+                from model_ledger.adapters.cron import translate_cron_to_english
+                metadata["cron"] = cron_val
+                metadata["run_frequency"] = translate_cron_to_english(cron_val)
 
         metadata["node_type"] = metadata.get("node_type", self.name)
 

@@ -8,9 +8,9 @@ from model_ledger.graph.models import DataNode
 def ledger():
     ledger = Ledger()
     ledger.add([
-        DataNode("etl_job_checks", platform="etl_engine", outputs=["alerts"]),
-        DataNode("alerting_checks", platform="alerting", inputs=["alerts"], outputs=["queue"]),
-        DataNode("queue:checks", platform="case_mgmt", inputs=["queue"]),
+        DataNode("feature_pipeline", platform="etl", outputs=["scores"]),
+        DataNode("scoring_model", platform="ml", inputs=["scores"], outputs=["alerts"]),
+        DataNode("alert_queue", platform="alerting", inputs=["alerts"]),
     ])
     ledger.connect()
     return ledger
@@ -19,38 +19,38 @@ def ledger():
 class TestRegisterGroup:
     def test_creates_model_ref(self, ledger):
         group = ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks", "alerting_checks", "queue:checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline", "scoring_model", "alert_queue"], actor="system",
         )
-        assert group.name == "Remote Check Deposit"
-        assert group.owner == "TEAM"
-        assert group.model_type == "heuristic"
+        assert group.name == "Credit Scorecard"
+        assert group.owner == "risk-team"
+        assert group.model_type == "ml_model"
         assert group.tier == "high"
 
     def test_links_members(self, ledger):
         ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks", "alerting_checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline", "scoring_model"], actor="system",
         )
-        deps = ledger.dependencies("Remote Check Deposit", direction="upstream")
+        deps = ledger.dependencies("Credit Scorecard", direction="upstream")
         upstream_names = [d["model"].name for d in deps]
-        assert "etl_job_checks" in upstream_names
-        assert "alerting_checks" in upstream_names
+        assert "feature_pipeline" in upstream_names
+        assert "scoring_model" in upstream_names
 
     def test_relationship_is_member_of(self, ledger):
         ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline"], actor="system",
         )
-        deps = ledger.dependencies("Remote Check Deposit", direction="upstream")
+        deps = ledger.dependencies("Credit Scorecard", direction="upstream")
         assert deps[0]["relationship"] == "member_of"
 
     def test_empty_members(self, ledger):
         group = ledger.register_group(
-            name="Empty Group", owner="test", model_type="heuristic",
+            name="Empty Group", owner="test", model_type="ml_model",
             tier="low", purpose="test", members=[], actor="test",
         )
         assert group.name == "Empty Group"
@@ -58,55 +58,55 @@ class TestRegisterGroup:
 
     def test_trace_includes_group(self, ledger):
         ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks", "alerting_checks", "queue:checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline", "scoring_model", "alert_queue"], actor="system",
         )
-        trace = ledger.trace("Remote Check Deposit")
-        assert trace[0] == "etl_job_checks"
-        assert trace[-1] == "Remote Check Deposit"
+        trace = ledger.trace("Credit Scorecard")
+        assert trace[0] == "feature_pipeline"
+        assert trace[-1] == "Credit Scorecard"
 
 
 class TestMembers:
     def test_returns_member_models(self, ledger):
         ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks", "alerting_checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline", "scoring_model"], actor="system",
         )
-        members = ledger.members("Remote Check Deposit")
+        members = ledger.members("Credit Scorecard")
         member_names = [m.name for m in members]
-        assert "etl_job_checks" in member_names
-        assert "alerting_checks" in member_names
+        assert "feature_pipeline" in member_names
+        assert "scoring_model" in member_names
 
     def test_non_group_returns_empty(self, ledger):
-        assert ledger.members("etl_job_checks") == []
+        assert ledger.members("feature_pipeline") == []
 
 
 class TestGroups:
     def test_returns_parent_groups(self, ledger):
         ledger.register_group(
-            name="Remote Check Deposit", owner="TEAM", model_type="heuristic",
-            tier="high", purpose="Cash check deposit TM",
-            members=["etl_job_checks"], actor="vignesh",
+            name="Credit Scorecard", owner="risk-team", model_type="ml_model",
+            tier="high", purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline"], actor="system",
         )
-        parent_groups = ledger.groups("etl_job_checks")
+        parent_groups = ledger.groups("feature_pipeline")
         group_names = [g.name for g in parent_groups]
-        assert "Remote Check Deposit" in group_names
+        assert "Credit Scorecard" in group_names
 
     def test_model_in_no_group(self, ledger):
-        assert ledger.groups("etl_job_checks") == []
+        assert ledger.groups("feature_pipeline") == []
 
     def test_model_in_multiple_groups(self, ledger):
         ledger.register_group(
-            name="Group A", owner="t", model_type="heuristic",
-            tier="low", purpose="test", members=["etl_job_checks"], actor="t",
+            name="Group A", owner="t", model_type="ml_model",
+            tier="low", purpose="test", members=["feature_pipeline"], actor="t",
         )
         ledger.register_group(
-            name="Group B", owner="t", model_type="heuristic",
-            tier="low", purpose="test", members=["etl_job_checks"], actor="t",
+            name="Group B", owner="t", model_type="ml_model",
+            tier="low", purpose="test", members=["feature_pipeline"], actor="t",
         )
-        parent_groups = ledger.groups("etl_job_checks")
+        parent_groups = ledger.groups("feature_pipeline")
         group_names = [g.name for g in parent_groups]
         assert "Group A" in group_names
         assert "Group B" in group_names

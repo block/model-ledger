@@ -49,7 +49,7 @@ def sql_connector(
         shared_table_fallback: When a write table matches shared_table_patterns but
             no model_name is found in the SQL, derive model_name from a column value.
             Dict with keys: source_column (required), strip_prefix (optional regex).
-            Example: {"source_column": "NAME", "strip_prefix": "org_prefix_"}
+            Example: {"source_column": "NAME", "strip_prefix": "etl_"}
         cron_column: Column containing a cron expression. When set, adds both
             the raw cron and an English translation to metadata.
         input_port: Config dict with keys: column, fallback (optional), kind (optional).

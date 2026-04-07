@@ -49,6 +49,8 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 This is an Apache-2.0 open-source project. All code must be generic and useful to any organization. Organization-specific connectors, auth, and backends go in separate packages.
 
+**Examples in code, tests, and docstrings must be generic** — use names like "Credit Scorecard", "feature_pipeline", "risk-team", "scoring_model". Never use organization-specific system names, team names, queue names, or person names in OSS code.
+
 ## Key Patterns
 
 - Event-log paradigm: models are identities (ModelRef), everything else is immutable Snapshots

@@ -447,11 +447,11 @@ class Ledger:
 
         Example:
             >>> group = ledger.register_group(
-            ...     name="Remote Check Deposit", owner="TEAM",
-            ...     model_type="heuristic", tier="high",
-            ...     purpose="Cash check deposit TM",
-            ...     members=["org_prefix_checks", "compl_org_prefix_checks"],
-            ...     actor="vignesh",
+            ...     name="Credit Scorecard", owner="risk-team",
+            ...     model_type="ml_model", tier="high",
+            ...     purpose="Credit risk scoring pipeline",
+            ...     members=["feature_pipeline", "scoring_model", "alert_queue"],
+            ...     actor="system",
             ... )
         """
         ref = self.register(

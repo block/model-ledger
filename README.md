@@ -7,9 +7,7 @@
 
 ---
 
-## What It Does
-
-model-ledger automatically discovers every model, rule, pipeline, and queue across your systems — then builds the dependency graph between them. No spreadsheets. No manual registration. Point it at your databases and APIs, and it maps your entire model risk ecosystem.
+model-ledger automatically discovers models, rules, pipelines, and queues across your systems — then builds the dependency graph between them.
 
 ```python
 from model_ledger import Ledger, DataNode
@@ -17,9 +15,9 @@ from model_ledger import Ledger, DataNode
 ledger = Ledger.from_sqlite("./inventory.db")
 
 ledger.add([
-    DataNode("segmentation",  outputs=["customer_segments"]),
-    DataNode("fraud_scorer",  inputs=["customer_segments"], outputs=["risk_scores"]),
-    DataNode("fraud_alerts",  inputs=["risk_scores"]),
+    DataNode("segmentation",  platform="etl",      outputs=["customer_segments"]),
+    DataNode("fraud_scorer",  platform="ml",        inputs=["customer_segments"], outputs=["risk_scores"]),
+    DataNode("fraud_alerts",  platform="alerting",  inputs=["risk_scores"]),
 ])
 ledger.connect()
 
@@ -29,13 +27,14 @@ ledger.trace("fraud_alerts")
 
 ```mermaid
 graph LR
-    A["segmentation"] --> B["fraud_scorer"] --> C["fraud_alerts"]
-    style A fill:#607D8B,color:#fff
-    style B fill:#4CAF50,color:#fff
-    style C fill:#FF9800,color:#fff
+    A["segmentation<br/><small>ETL pipeline</small>"] -->|customer_segments| B["fraud_scorer<br/><small>ML model</small>"]
+    B -->|risk_scores| C["fraud_alerts<br/><small>Alert queue</small>"]
+    style A fill:#607D8B,color:#fff,stroke:#455A64
+    style B fill:#4CAF50,color:#fff,stroke:#388E3C
+    style C fill:#FF9800,color:#fff,stroke:#F57C00
 ```
 
-Unlike model registries that track ML models only, model-ledger tracks *everything in the model risk ecosystem* — ETL pipelines, heuristic rules, scoring jobs, alert queues, and ML models — as one connected graph with a full audit trail.
+Unlike model registries that track ML models only, model-ledger tracks the *entire model risk ecosystem* — ETL pipelines, heuristic rules, scoring jobs, alert queues, and ML models — as one connected graph with a full audit trail.
 
 ## Install
 
@@ -47,26 +46,39 @@ pip install model-ledger[github]              # + GitHub connector
 pip install model-ledger[all]                 # Everything
 ```
 
-## The Core Idea
+## How It Works
 
-Everything is a **DataNode** with typed input and output ports. The dependency graph builds itself from port matching — no manual linking.
+```mermaid
+graph TB
+    subgraph discover ["1. Discover"]
+        direction LR
+        DB["SQL databases"] --> F["sql_connector()"]
+        API["REST APIs"] --> G["rest_connector()"]
+        GH["GitHub repos"] --> H["github_connector()"]
+        CUSTOM["Your platform"] --> I["SourceConnector protocol"]
+    end
 
+    subgraph ledger ["2. Build Graph"]
+        direction LR
+        ADD["ledger.add()"] --> CON["ledger.connect()"]
+        CON --> |"match output ports<br/>to input ports"| GRAPH["Dependency graph"]
+    end
+
+    subgraph query ["3. Query"]
+        direction LR
+        TRACE["trace()"] ~~~ UP["upstream()"] ~~~ DOWN["downstream()"] ~~~ INV["inventory_at()"]
+    end
+
+    discover --> ledger --> query
+
+    style discover fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+    style ledger fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+    style query fill:#FFF3E0,stroke:#E65100,color:#BF360C
 ```
-                    ┌──────────────┐
-  inputs            │   DataNode   │            outputs
- ───────────────>   │              │   ───────────────>
-  DataPort("scores")│  "scorer"    │   DataPort("alerts")
-                    └──────────────┘
 
-  When an output port matches an input port, connect() creates the edge.
-```
+Every model is a **DataNode** with typed input and output ports. When an output port name matches an input port name, `connect()` creates the dependency edge automatically.
 
-Under the hood, the Ledger maintains three things:
-- **ModelRef** — the regulatory identity (name, owner, type, tier)
-- **Snapshots** — immutable, timestamped observations (append-only event log)
-- **Tags** — mutable pointers to snapshots (e.g., "production", "latest")
-
-Every mutation is recorded. Nothing is deleted. You get a complete audit trail and point-in-time inventory reconstruction for any date.
+Every mutation is recorded as an immutable **Snapshot** — an append-only event log. Nothing is deleted. This gives you a complete audit trail and point-in-time inventory reconstruction for any date.
 
 ## Discover Models From Your Systems
 
@@ -219,19 +231,6 @@ result.hyperparameters  # {"n_estimators": 50, "max_depth": 4}
 ```
 
 Ships with sklearn, XGBoost, and LightGBM support. Add your own via the `Introspector` protocol.
-
-## Architecture
-
-```
-model-ledger
-├── Ledger SDK           register, record, add, connect, trace, upstream, downstream
-├── DataNode / DataPort  graph primitives with schema-aware port matching
-├── Connector Factories  sql_connector, rest_connector, github_connector
-├── Backends             SQLite (built-in), Snowflake (optional), custom (protocol)
-├── Adapters             SQL parsing, table-based pipeline discovery
-├── Compliance           SR 11-7, EU AI Act, NIST AI RMF validation profiles
-└── Introspection        sklearn, XGBoost, LightGBM, custom (protocol)
-```
 
 ## Design Principles
 

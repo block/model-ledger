@@ -41,7 +41,9 @@ dev = [
     "mypy>=1.0",
 ]
 snowflake = ["snowflake-connector-python>=3.0", "pandas>=2.0"]
+mcp = ["mcp[cli]>=1.7.1,<2"]
 rest = ["httpx>=0.28"]
+rest-api = ["fastapi>=0.115", "uvicorn>=0.30"]
 github = ["httpx>=0.28"]
 all = ["snowflake-connector-python>=3.0", "pandas>=2.0", "httpx>=0.28"]
 
@@ -85,7 +87,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"

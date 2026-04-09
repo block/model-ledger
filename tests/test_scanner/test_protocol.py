@@ -30,7 +30,7 @@ class TestModelCandidate:
     def test_parent_name(self):
         c = ModelCandidate(
             name="ruleset-1", owner="risk-team",
-            model_type="ruleset", platform="risk-arbiter",
+            model_type="ruleset", platform="rules-engine",
             parent_name="TD-85",
         )
         assert c.parent_name == "TD-85"
@@ -46,7 +46,7 @@ class TestModelCandidate:
         c = ModelCandidate(
             name="arr-v3", model_type="ml_model",
             platform="ml_platform",
-            external_ids={"ml_platform": "arr_v3", "risk_arbiter": "TD-85"},
+            external_ids={"ml_platform": "arr_v3", "rules_engine": "TD-85"},
             metadata={},
         )
         assert c.external_ids["ml_platform"] == "arr_v3"

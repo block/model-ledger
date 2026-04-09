@@ -20,6 +20,11 @@ htmlcov/
 .env.local
 .DS_Store
 
+# Lock file (contains index URLs from local environment)
+uv.lock
+
 # Internal design docs (contain org-specific context)
 docs/superpowers/
-.gitleaks.toml
+
+# Detailed internal blocklist (committed config is .gitleaks.toml)
+.gitleaks-internal.toml

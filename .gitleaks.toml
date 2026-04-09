@@ -1,0 +1,46 @@
+# Gitleaks config for OSS boundary enforcement
+# Blocks internal infrastructure patterns from leaking into the public repo.
+# For detailed internal blocklists, see .gitleaks-internal.toml (gitignored).
+
+title = "model-ledger OSS boundary rules"
+
+# Internal corporate hostnames
+[[rules]]
+id = "internal-hostname"
+description = "Internal corporate hostname"
+regex = '''[a-z0-9.-]+\.sqprod\.co'''
+keywords = ["sqprod"]
+
+# Internal Artifactory / PyPI mirror
+[[rules]]
+id = "internal-artifactory"
+description = "Internal Artifactory hostname"
+regex = '''artifactory\.global\.square'''
+keywords = ["artifactory.global"]
+
+[[rules]]
+id = "internal-pypi-mirror"
+description = "Internal PyPI mirror"
+regex = '''block-artifacts\.com'''
+keywords = ["block-artifacts"]
+
+# Corporate email in source (OK in pyproject.toml authors, git config)
+[[rules]]
+id = "corporate-email"
+description = "Corporate email domain in source files"
+regex = '''@squareup\.com'''
+keywords = ["squareup.com"]
+
+# Internal GNS hostname
+[[rules]]
+id = "internal-gns"
+description = "Internal GNS hostname"
+regex = '''gns\.square'''
+keywords = ["gns.square"]
+
+# Global allowlist — files where matches are expected
+[allowlist]
+paths = [
+    '''\.gitleaks\.toml$''',
+    '''\.gitleaks-internal\.toml$''',
+]

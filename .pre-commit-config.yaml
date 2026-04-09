@@ -1,0 +1,7 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+        # Runs committed config; for internal blocklist, run manually:
+        # gitleaks detect --config .gitleaks-internal.toml

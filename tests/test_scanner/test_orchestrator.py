@@ -263,8 +263,8 @@ class TestNotFoundTracking:
         # model-a disappears from ml_platform — rule-b should NOT get not_found
         s1._candidates = []
         reports = inv.discover_all()
-        ml_platform_report = [r for r in reports if r.platform == "ml_platform"][0]
-        assert ml_platform_report.not_found_models == 1
+        platform_report = [r for r in reports if r.platform == "ml_platform"][0]
+        assert platform_report.not_found_models == 1
 
         snaps = ledger.history("rule-b")
         not_found = [s for s in snaps if s.event_type == "not_found"]

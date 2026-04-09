@@ -48,10 +48,17 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
             as_of = as_of.replace(tzinfo=timezone.utc)
         snapshots = [s for s in snapshots if s.timestamp <= as_of]
 
-    # 4. Merge metadata from all snapshot payloads (oldest first, newest wins)
+    # 4. Merge metadata from user-facing snapshot payloads (oldest first, newest wins)
+    # Skip internal event types (graph wiring, registration identity) and internal keys
+    _INTERNAL_EVENTS = {"depends_on", "has_dependent", "registered"}
+    _INTERNAL_KEYS = {"_content_hash", "upstream", "downstream", "upstream_hash",
+                       "downstream_hash", "relationship", "via", "via_schema",
+                       "name", "owner", "tier", "purpose", "model_origin"}
     metadata: dict = {}
     for snap in reversed(snapshots):  # reversed = oldest first
-        metadata.update(snap.payload)
+        if snap.event_type in _INTERNAL_EVENTS:
+            continue
+        metadata.update({k: v for k, v in snap.payload.items() if k not in _INTERNAL_KEYS})
 
     # 5. Build recent_events list
     events = [_snapshot_to_event(s) for s in snapshots]

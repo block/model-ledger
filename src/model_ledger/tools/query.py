@@ -21,9 +21,12 @@ def _model_to_summary(model: ModelRef, ledger: Ledger) -> ModelSummary:
 
     platform: str | None = None
     for snap in snapshots:
-        if snap.source:
-            platform = snap.source
+        # Prefer platform from discovered payload, fall back to source
+        if snap.event_type == "discovered" and snap.payload.get("platform"):
+            platform = snap.payload["platform"]
             break
+        if snap.source and not platform:
+            platform = snap.source
 
     return ModelSummary(
         name=model.name,

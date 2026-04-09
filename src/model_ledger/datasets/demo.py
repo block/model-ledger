@@ -35,14 +35,14 @@ def load_demo_inventory(ledger: Ledger) -> None:
                 "customer_features",
                 platform="database",
                 outputs=["customer_data"],
-                metadata={"owner": "data-team", "description": "Core customer feature store"},
+                metadata={"owner": "data-team", "model_type": "data_source", "description": "Core customer feature store"},
             ),
             DataNode(
                 "transaction_pipeline",
                 platform="etl",
                 inputs=["raw_transactions"],
                 outputs=["processed_transactions", "customer_data"],
-                metadata={"owner": "data-team", "schedule": "hourly"},
+                metadata={"owner": "data-team", "model_type": "etl_pipeline", "schedule": "hourly"},
             ),
             DataNode(
                 "fraud_scoring",
@@ -51,6 +51,7 @@ def load_demo_inventory(ledger: Ledger) -> None:
                 outputs=["fraud_scores"],
                 metadata={
                     "owner": "risk-team",
+                    "model_type": "ml_model",
                     "algorithm": "gradient_boosted_trees",
                 },
             ),
@@ -59,26 +60,26 @@ def load_demo_inventory(ledger: Ledger) -> None:
                 platform="ml",
                 inputs=["customer_data"],
                 outputs=["churn_probabilities"],
-                metadata={"owner": "growth-team", "algorithm": "logistic_regression"},
+                metadata={"owner": "growth-team", "model_type": "ml_model", "algorithm": "logistic_regression"},
             ),
             DataNode(
                 "alert_engine",
                 platform="alerting",
                 inputs=["fraud_scores"],
-                metadata={"owner": "ops-team"},
+                metadata={"owner": "ops-team", "model_type": "alerting"},
             ),
             DataNode(
                 "credit_risk",
                 platform="ml",
                 inputs=["customer_data", "processed_transactions"],
                 outputs=["credit_scores"],
-                metadata={"owner": "risk-team", "algorithm": "neural_network"},
+                metadata={"owner": "risk-team", "model_type": "ml_model", "algorithm": "neural_network"},
             ),
             DataNode(
                 "pricing_rules",
                 platform="rules",
                 inputs=["credit_scores", "churn_probabilities"],
-                metadata={"owner": "pricing-team", "type": "heuristic"},
+                metadata={"owner": "pricing-team", "model_type": "heuristic"},
             ),
         ]
     )

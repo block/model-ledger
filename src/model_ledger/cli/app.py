@@ -58,10 +58,10 @@ def _snowflake_backend(schema: str | None = None):
     try:
         from pysnowflake import Session
 
-        user = os.environ.get("SNOWFLAKE_USER")
-        if not user:
-            raise typer.Exit("SNOWFLAKE_USER env var required for sq-pysnowflake")
-        session = Session(user=user)
+        session = Session()
+        # sq-pysnowflake requires context manager to activate the connection.
+        # Enter the context and keep it alive — cleanup happens at process exit.
+        session.__enter__()
         return SnowflakeLedgerBackend(connection=session, schema=sf_schema)
     except ImportError:
         pass

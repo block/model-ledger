@@ -43,4 +43,5 @@ keywords = ["gns.square"]
 paths = [
     '''\.gitleaks\.toml$''',
     '''\.gitleaks-internal\.toml$''',
+    '''uv\.lock$''',
 ]

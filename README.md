@@ -1,13 +1,34 @@
 # model-ledger
 
-**The model inventory your regulator actually wants. Auto-discovered, dependency-traced, audit-ready.**
+**Know what models you have deployed, where they run, what they depend on, and what changed.**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![PyPI](https://img.shields.io/pypi/v/model-ledger)](https://pypi.org/project/model-ledger/)
 
 ---
 
-model-ledger automatically discovers models, rules, pipelines, and queues across your systems — then builds the dependency graph between them.
+model-ledger is a model inventory for any company with deployed models. It discovers models across your platforms, maps the dependency graph, and tracks every change as an immutable event. Unlike model registries tied to a single platform (MLflow, SageMaker, W&B), model-ledger discovers across *all* of them — as one connected graph.
+
+## Quick Start
+
+**Talk to your inventory** — point Claude (or any MCP-compatible agent) at it:
+
+```bash
+pip install model-ledger[mcp]
+claude mcp add model-ledger -- model-ledger mcp --demo
+```
+
+```
+You: "what models are in my inventory?"
+Claude: "7 models across 5 platforms. fraud_scoring was retrained
+         and deployed this week. Want me to dig into anything?"
+
+You: "if we deprecate customer_features, what breaks?"
+Claude: "3 models consume it directly, 2 more transitively."
+```
+
+**Or use the Python SDK:**
 
 ```python
 from model_ledger import Ledger, DataNode
@@ -34,23 +55,41 @@ graph LR
     style C fill:#FF9800,color:#fff,stroke:#F57C00
 ```
 
-Unlike model registries that track ML models only, model-ledger tracks the *entire model risk ecosystem* — ETL pipelines, heuristic rules, scoring jobs, alert queues, and ML models — as one connected graph with a full audit trail.
-
 ## Install
 
 ```bash
-pip install model-ledger                       # Core + SQLite backend
-pip install model-ledger[snowflake]            # + Snowflake backend
-pip install model-ledger[rest]                 # + REST API connector
-pip install model-ledger[github]              # + GitHub connector
-pip install model-ledger[all]                 # Everything
+pip install model-ledger                          # Core — SDK + tools + CLI
+pip install model-ledger[mcp]                     # + MCP server (for Claude Code / AI agents)
+pip install model-ledger[rest-api]                # + REST API (for frontends / dashboards)
+pip install model-ledger[snowflake]               # + Snowflake backend
+pip install model-ledger[mcp,rest-api,snowflake]  # Everything
 ```
 
 ## How It Works
 
 ```mermaid
 graph TB
-    subgraph discover ["1. Discover"]
+    subgraph consumers ["Consumers"]
+        direction LR
+        AGENT["Claude / AI Agents<br/><small>MCP</small>"]
+        FRONT["Frontends<br/><small>REST API</small>"]
+        SCRIPT["Scripts / Notebooks<br/><small>Python SDK</small>"]
+        CLI_C["CLI<br/><small>model-ledger</small>"]
+    end
+
+    subgraph tools ["Agent Protocol — 6 Consolidated Tools"]
+        direction LR
+        DISC["discover"] ~~~ REC["record"] ~~~ INV["investigate"]
+        QRY["query"] ~~~ TRC["trace"] ~~~ CHG["changelog"]
+    end
+
+    subgraph sdk ["Ledger SDK"]
+        direction LR
+        REG["register()"] ~~~ RECD["record()"] ~~~ GET["get() / list()"]
+        HIST["history()"] ~~~ TRAC["trace()"] ~~~ CONN["connect()"]
+    end
+
+    subgraph discover ["Discovery Sources"]
         direction LR
         DB["SQL databases"] --> F["sql_connector()"]
         API["REST APIs"] --> G["rest_connector()"]
@@ -58,33 +97,98 @@ graph TB
         CUSTOM["Your platform"] --> I["SourceConnector protocol"]
     end
 
-    subgraph ledger ["2. Build Graph"]
+    subgraph backends ["Storage — Pluggable Backends"]
         direction LR
-        ADD["ledger.add()"] --> CON["ledger.connect()"]
-        CON --> |"match output ports<br/>to input ports"| GRAPH["Dependency graph"]
+        JSON["JSON files<br/><small>default</small>"]
+        SQLITE["SQLite"]
+        SNOW["Snowflake"]
+        PLUG["Plugin<br/><small>Postgres, GitHub, ...</small>"]
     end
 
-    subgraph query ["3. Query"]
-        direction LR
-        TRACE["trace()"] ~~~ UP["upstream()"] ~~~ DOWN["downstream()"] ~~~ INV["inventory_at()"]
-    end
+    consumers --> tools
+    tools --> sdk
+    sdk --> discover
+    sdk --> backends
 
-    discover --> ledger --> query
-
-    style discover fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
-    style ledger fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
-    style query fill:#FFF3E0,stroke:#E65100,color:#BF360C
+    style consumers fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C
+    style tools fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+    style sdk fill:#E1F5FE,stroke:#0277BD,color:#01579B
+    style discover fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+    style backends fill:#FFF3E0,stroke:#E65100,color:#BF360C
 ```
 
-Every model is a **DataNode** with typed input and output ports. When an output port name matches an input port name, `connect()` creates the dependency edge automatically.
+Every model is a **DataNode** with typed input and output ports. When an output port name matches an input port name, `connect()` creates the dependency edge automatically. Every mutation is recorded as an immutable **Snapshot** — an append-only event log that gives you full history and point-in-time reconstruction.
 
-Every mutation is recorded as an immutable **Snapshot** — an append-only event log. Nothing is deleted. This gives you a complete audit trail and point-in-time inventory reconstruction for any date.
+## Agent Protocol
+
+Six consolidated tools designed for AI agents ([Anthropic's tool design guidance](https://www.anthropic.com/engineering/writing-tools-for-agents)). Each is a plain Python function with Pydantic I/O — usable via MCP, REST, CLI, or direct import.
+
+| Tool | What it does | Scale |
+|------|-------------|-------|
+| **discover** | Add models from any source — scan platforms, import files, inline data | Bulk |
+| **record** | Register a model or record an event with arbitrary metadata | Single |
+| **investigate** | Deep dive — identity, merged metadata, recent events, dependencies | Single |
+| **query** | Search and filter the inventory with pagination | Multi |
+| **trace** | Dependency graph — upstream, downstream, impact analysis | Graph |
+| **changelog** | What changed across the inventory in a time range | Multi |
+
+### Using the tools directly
+
+```python
+from model_ledger import Ledger, record, investigate, query
+from model_ledger.tools.schemas import RecordInput, InvestigateInput, QueryInput
+from model_ledger.graph.models import DataNode
+
+ledger = Ledger.from_sqlite("./inventory.db")
+
+# Register a model
+record(RecordInput(
+    model_name="fraud_scoring", event="registered",
+    owner="risk-team", model_type="ml_model",
+    purpose="Real-time fraud detection",
+), ledger)
+
+# Record an event with schema-free payload
+record(RecordInput(
+    model_name="fraud_scoring", event="retrained",
+    payload={"accuracy": 0.94, "features_added": ["velocity_24h"]},
+    actor="ml-pipeline",
+), ledger)
+
+# Deep dive
+result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
+result.metadata      # {"accuracy": 0.94, "features_added": ["velocity_24h"]}
+result.total_events  # 2
+
+# Search
+models = query(QueryInput(text="fraud", model_type="ml_model"), ledger)
+models.total  # 1
+```
+
+### MCP server
+
+```bash
+model-ledger mcp                                             # empty inventory
+model-ledger mcp --demo                                      # sample data
+model-ledger mcp --backend sqlite --path ./inventory.db      # SQLite
+model-ledger mcp --backend json --path ./my-inventory        # JSON files
+
+# Connect to Claude Code (one time)
+claude mcp add model-ledger -- model-ledger mcp
+```
+
+### REST API
+
+```bash
+model-ledger serve                        # start on port 8000
+model-ledger serve --demo --port 3001     # with sample data
+```
+
+Auto-generated OpenAPI docs at `/docs`. Endpoints: `POST /record`, `POST /discover`, `GET /query`, `GET /investigate/{name}`, `GET /trace/{name}`, `GET /changelog`, `GET /overview`.
 
 ## Discover Models From Your Systems
 
 ### SQL databases
-
-Most discovery is "query a table, map rows to models." The `sql_connector` factory handles this without writing classes:
 
 ```python
 from model_ledger import Ledger, sql_connector
@@ -146,7 +250,7 @@ pipelines = github_connector(
 
 ### Custom connectors
 
-For anything the factories don't cover, implement the `SourceConnector` protocol:
+Implement the `SourceConnector` protocol for anything the factories don't cover:
 
 ```python
 class SageMakerConnector:
@@ -162,18 +266,44 @@ class SageMakerConnector:
         ]
 ```
 
-## Persistent Storage
+## Storage
+
+Storage-agnostic. Default is JSON files — human-readable, git-friendly, zero config. Upgrade when you need scale.
 
 ```python
 from model_ledger import Ledger
+from model_ledger.backends.json_files import JsonFileLedgerBackend
 
-ledger = Ledger.from_sqlite("./inventory.db")                        # SQLite — zero infrastructure
-ledger = Ledger.from_snowflake(connection, schema="DB.MODEL_LEDGER") # Snowflake — production scale
-ledger = Ledger()                                                     # In-memory — testing
-ledger = Ledger(my_custom_backend)                                    # Custom — LedgerBackend protocol
+ledger = Ledger(JsonFileLedgerBackend("./my-inventory"))              # JSON files — default
+ledger = Ledger.from_sqlite("./inventory.db")                         # SQLite — zero infrastructure
+ledger = Ledger.from_snowflake(connection, schema="DB.MODEL_LEDGER")  # Snowflake — production
+ledger = Ledger()                                                      # In-memory — testing
 ```
 
-## Key Capabilities
+JSON file layout — inspect, diff, and version-control your inventory:
+
+```
+my-inventory/
+├── models/
+│   ├── fraud_scoring.json
+│   └── churn_predictor.json
+├── snapshots/
+│   ├── a1b2c3d4.json
+│   └── e5f6g7h8.json
+└── tags/
+    └── {model_hash}/
+        └── v1.json
+```
+
+Add community backends via entry points:
+
+```toml
+# pyproject.toml
+[project.entry-points."model_ledger.backends"]
+postgres = "my_package:PostgresBackend"
+```
+
+## Additional Capabilities
 
 ### Dependency tracing
 
@@ -181,74 +311,55 @@ ledger = Ledger(my_custom_backend)                                    # Custom �
 ledger.trace("fraud_alerts")                              # Full pipeline path
 ledger.upstream("fraud_alerts")                           # Everything that feeds this
 ledger.downstream("segmentation")                         # Everything that depends on this
-ledger.dependencies("fraud_alerts", direction="upstream")  # Detailed with relationship info
 ```
 
 ### Shared table disambiguation
 
-When multiple models write to the same table, `DataPort` handles precision matching:
+When multiple models write to the same table, `DataPort` schema matching handles precision:
 
 ```python
 from model_ledger import DataPort, DataNode
 
-# Two models write to the same alert table with different model_name values
 DataNode("check_rules", outputs=[DataPort("alerts", model_name="checks")])
 DataNode("card_rules",  outputs=[DataPort("alerts", model_name="cards")])
-
-# This reader only connects to check_rules — model_name must match
 DataNode("check_queue", inputs=[DataPort("alerts", model_name="checks")])
+# check_queue connects to check_rules only — model_name must match
 ```
 
 ### Point-in-time inventory
 
 ```python
-from datetime import datetime
 inventory = ledger.inventory_at(datetime(2025, 12, 31))
 # Every model that was active on that date
 ```
 
-### Compliance validation
+### Compliance validation (plugin)
 
-Built-in profiles for major model risk regulations:
-
-| Profile | Regulation | Checks |
-|---------|-----------|--------|
-| `sr_11_7` | US Federal Reserve SR 11-7 | Validator independence, governance docs, validation schedule |
-| `eu_ai_act` | EU AI Act (2024/1689) | Risk classification, data governance, human oversight |
-| `nist_ai_rmf` | NIST AI RMF 1.0 | GOVERN, MAP, MEASURE, MANAGE functions |
+Built-in profiles for SR 11-7, EU AI Act, and NIST AI RMF. Add custom profiles for your organization's policies. See [validation docs](docs/) for details.
 
 ### Model introspection
 
-Extract metadata from fitted ML models:
-
-```python
-from model_ledger import introspect
-
-result = introspect(fitted_model)
-result.algorithm        # "XGBClassifier"
-result.features         # [FeatureInfo(name="velocity_30d", ...), ...]
-result.hyperparameters  # {"n_estimators": 50, "max_depth": 4}
-```
-
-Ships with sklearn, XGBoost, and LightGBM support. Add your own via the `Introspector` protocol.
+Extract metadata from fitted sklearn, XGBoost, and LightGBM models. Add custom introspectors via the `Introspector` protocol. See [introspection docs](docs/) for details.
 
 ## Design Principles
 
+- **Agents are the primary interface** — the MCP server is the product. SDK and CLI are still first-class, but the agent experience is what we optimize for.
+- **Fundamental, not specialized** — model inventory for any company with deployed models. Not tied to a specific regulatory framework or industry.
 - **Everything is a DataNode** — ML models, heuristic rules, ETL pipelines, alert queues. One abstraction.
 - **The graph builds itself** — declare inputs and outputs. Dependencies follow from port matching.
-- **Schema-agnostic metadata** — `Snapshot.payload` is `dict[str, Any]`. The framework stores whatever your connectors discover.
-- **Append-only audit trail** — every change is an immutable Snapshot. Full history, point-in-time queries.
-- **Factory for the 80%, protocol for the 20%** — config-driven factories for common patterns, open protocols for anything custom.
-- **Batteries included** — persistence, discovery, graph building, and compliance with zero infrastructure.
+- **Schema-free payloads** — record whatever metadata matters. No schema to maintain, no migrations.
+- **Change tracking is central** — every mutation is an immutable Snapshot. The inventory is a living event log.
+- **Storage-agnostic** — JSON files, SQLite, Snowflake, or bring your own via the `LedgerBackend` protocol.
 
 ## For Organizations
 
-model-ledger is designed as a core framework with lightweight organization-specific extensions. The OSS core handles graph building, storage, compliance, and the connector factories. Your internal package provides:
+The OSS core handles discovery, graph building, change tracking, storage, and the agent protocol. Your internal package provides:
 
-- **Connector configs** — point `sql_connector()` at your tables, `rest_connector()` at your APIs
+- **Connector configs** — point factories at your tables and APIs
 - **Custom connectors** — for internal platforms the factories don't cover
-- **Authentication** — your database/API credentials and auth wrappers
-- **Additional compliance profiles** — OSFI E-23, PRA SS1/23, MAS AIRG, or internal policies
+- **Authentication** — your credentials and auth wrappers
+- **Custom backends** — Postgres, GitHub repos, or any storage via `LedgerBackend` protocol
+- **Compliance profiles** — SR 11-7, EU AI Act, or your own internal policies (plugin-based)
 
 Your internal repo should be thin config and credentials, not reimplemented logic.
 

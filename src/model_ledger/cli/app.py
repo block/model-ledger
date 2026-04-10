@@ -20,6 +20,24 @@ app = typer.Typer(
 console = Console()
 
 
+def _resolve_backend(backend: str, path: str | None):
+    """Resolve a backend name to a backend instance."""
+    if backend == "sqlite" and path:
+        from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
+
+        return SQLiteLedgerBackend(path)
+    if backend == "json":
+        from model_ledger.backends.json_files import JsonFileLedgerBackend
+
+        json_path = path or os.path.expanduser("~/.model-ledger")
+        return JsonFileLedgerBackend(json_path)
+    if backend == "memory":
+        from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+
+        return InMemoryLedgerBackend()
+    return None
+
+
 def _default_db() -> str:
     return os.environ.get("MODEL_LEDGER_DB", "inventory.db")
 
@@ -352,3 +370,39 @@ def introspect_cmd(
                 )
         except ModelNotFoundError:
             console.print(f"[yellow]Warning:[/yellow] Model '{model_name}' not found in inventory.")
+
+
+@app.command(name="mcp")
+def mcp_cmd(
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json"),
+    path: str = typer.Option(None, help="Path for sqlite/json backend"),
+    demo: bool = typer.Option(False, help="Load demo inventory"),
+) -> None:
+    """Start the MCP server for AI agent integration."""
+    try:
+        from model_ledger.mcp.server import create_server
+    except ImportError:
+        typer.echo("MCP not installed. Run: pip install model-ledger[mcp]", err=True)
+        raise typer.Exit(1)
+    backend_obj = _resolve_backend(backend, path)
+    server = create_server(backend=backend_obj, demo=demo)
+    server.run()
+
+
+@app.command(name="serve")
+def serve_cmd(
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json"),
+    path: str = typer.Option(None, help="Path for sqlite/json backend"),
+    demo: bool = typer.Option(False, help="Load demo inventory"),
+    port: int = typer.Option(8000, help="Port to serve on"),
+) -> None:
+    """Start the REST API server."""
+    try:
+        from model_ledger.rest.app import create_app
+        import uvicorn
+    except ImportError:
+        typer.echo("REST API not installed. Run: pip install model-ledger[rest-api]", err=True)
+        raise typer.Exit(1)
+    backend_obj = _resolve_backend(backend, path)
+    rest_app = create_app(backend=backend_obj, demo=demo)
+    uvicorn.run(rest_app, host="0.0.0.0", port=port)

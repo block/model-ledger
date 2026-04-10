@@ -32,6 +32,17 @@ from model_ledger.sdk.inventory import Inventory
 from model_ledger.sdk.ledger import Ledger
 from model_ledger.connectors import sql_connector, rest_connector, github_connector
 
+# v0.6.0 — agent protocol tools
+from model_ledger.tools import (
+    changelog, discover, investigate, query, record, trace,
+)
+from model_ledger.tools.schemas import (
+    ChangelogInput, ChangelogOutput, DiscoverInput, DiscoverOutput,
+    InvestigateInput, InvestigateOutput, ModelSummary,
+    QueryInput, QueryOutput, RecordInput, RecordOutput,
+    TraceInput, TraceOutput,
+)
+
 if TYPE_CHECKING:
     from model_ledger.introspect.models import IntrospectionResult
     from model_ledger.introspect.protocol import Introspector
@@ -73,9 +84,15 @@ __all__ = [
     # Introspection
     "introspect",
     "register_introspector",
+    # v0.6.0 — agent tools
+    "changelog", "discover", "investigate", "query", "record", "trace",
+    "ChangelogInput", "ChangelogOutput", "DiscoverInput", "DiscoverOutput",
+    "InvestigateInput", "InvestigateOutput", "ModelSummary",
+    "QueryInput", "QueryOutput", "RecordInput", "RecordOutput",
+    "TraceInput", "TraceOutput",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

@@ -38,11 +38,19 @@ def create_server(
 
     Args:
         backend: Optional storage backend. Defaults to InMemoryLedgerBackend.
+            If an HttpLedgerBackend is provided, tools call the remote REST API
+            directly instead of going through the Ledger SDK.
         demo: If True, pre-populate with sample data (requires datasets.demo module).
 
     Returns:
         A configured FastMCP server ready to ``run()``.
     """
+    from model_ledger.backends.http import HttpLedgerBackend
+
+    # HTTP backend → pass-through mode: call REST API directly
+    if isinstance(backend, HttpLedgerBackend):
+        return _create_http_server(backend)
+
     if backend is None:
         backend = InMemoryLedgerBackend()
 
@@ -54,7 +62,7 @@ def create_server(
 
             load_demo_inventory(ledger)
         except ImportError:
-            pass  # demo module not yet available (Task 11)
+            pass
 
     mcp = FastMCP("model-ledger")
 
@@ -273,6 +281,185 @@ def create_server(
             "demo": demo,
         }
         return json.dumps(data, indent=2)
+
+    return mcp
+
+
+def _create_http_server(http_backend: Any) -> FastMCP:
+    """Create MCP server that passes through to a remote REST API.
+
+    Instead of going through the Ledger SDK (which can't fully work over
+    HTTP), the tools call the REST API endpoints directly. The server-side
+    REST API does all the computation.
+    """
+    client = http_backend._client
+    mcp = FastMCP("model-ledger")
+
+    @mcp.tool()
+    def discover(
+        source_type: str,
+        models: list[dict] | None = None,
+        connector_name: str | None = None,
+        connector_config: dict | None = None,
+        file_path: str | None = None,
+        auto_connect: bool = True,
+    ) -> dict:
+        """Import models from external sources into the ledger.
+
+        Supports inline model dicts, JSON files, or named connectors.
+        Returns counts of models added/skipped and links created.
+        """
+        resp = client.post("/discover", json={
+            "source_type": source_type,
+            "models": models,
+            "connector_name": connector_name,
+            "connector_config": connector_config,
+            "file_path": file_path,
+            "auto_connect": auto_connect,
+        })
+        return resp.json()
+
+    @mcp.tool()
+    def record(
+        model_name: str,
+        event: str,
+        payload: dict | None = None,
+        actor: str = "user",
+        owner: str | None = None,
+        model_type: str | None = None,
+        purpose: str | None = None,
+    ) -> dict:
+        """Register a new model or record an event on an existing model.
+
+        Use event='registered' to create a new model. Any other event
+        value appends to an existing model's history.
+        """
+        resp = client.post("/record", json={
+            "model_name": model_name,
+            "event": event,
+            "payload": payload or {},
+            "actor": actor,
+            "owner": owner,
+            "model_type": model_type,
+            "purpose": purpose,
+        })
+        return resp.json()
+
+    @mcp.tool()
+    def investigate(
+        model_name: str,
+        detail: str = "summary",
+        as_of: str | None = None,
+    ) -> dict:
+        """Deep-dive into a single model — history, metadata, dependencies.
+
+        Returns owner, type, status, recent events, upstream/downstream
+        dependencies, and group memberships.
+        """
+        params: dict[str, Any] = {"detail": detail}
+        if as_of:
+            params["as_of"] = as_of
+        resp = client.get(f"/investigate/{model_name}", params=params)
+        return resp.json()
+
+    @mcp.tool()
+    def query(
+        text: str | None = None,
+        platform: str | None = None,
+        model_type: str | None = None,
+        owner: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Search and filter the model inventory.
+
+        Supports text search (fuzzy name/purpose match) and structured
+        filters (platform, model_type, owner, status) with pagination.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if text:
+            params["text"] = text
+        if platform:
+            params["platform"] = platform
+        if model_type:
+            params["model_type"] = model_type
+        if owner:
+            params["owner"] = owner
+        if status:
+            params["status"] = status
+        resp = client.get("/query", params=params)
+        return resp.json()
+
+    @mcp.tool()
+    def trace(
+        name: str,
+        direction: str = "both",
+        depth: int | None = None,
+    ) -> dict:
+        """Traverse a model's dependency graph.
+
+        Walks upstream (models this one depends on) and/or downstream
+        (models that depend on this one). Returns dependency nodes with
+        depth and relationship metadata.
+        """
+        params: dict[str, Any] = {"direction": direction}
+        if depth is not None:
+            params["depth"] = depth
+        resp = client.get(f"/trace/{name}", params=params)
+        return resp.json()
+
+    @mcp.tool()
+    def changelog(
+        since: str | None = None,
+        until: str | None = None,
+        model_name: str | None = None,
+        event_type: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict:
+        """View cross-model event history with time range filtering.
+
+        Returns events sorted newest-first with pagination. Defaults
+        to the last 7 days if no time range is specified.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        if model_name:
+            params["model_name"] = model_name
+        if event_type:
+            params["event_type"] = event_type
+        resp = client.get("/changelog", params=params)
+        return resp.json()
+
+    @mcp.resource("ledger://overview")
+    def overview() -> str:
+        """Inventory statistics — model count, event count, type breakdown."""
+        resp = client.get("/overview")
+        return json.dumps(resp.json(), indent=2)
+
+    @mcp.resource("ledger://schema")
+    def schema_resource() -> str:
+        """JSON Schema definitions for all tool I/O models."""
+        all_schemas: dict[str, Any] = {}
+        for cls in [
+            schemas.DiscoverInput, schemas.DiscoverOutput,
+            schemas.RecordInput, schemas.RecordOutput,
+            schemas.QueryInput, schemas.QueryOutput,
+            schemas.InvestigateInput, schemas.InvestigateOutput,
+            schemas.TraceInput, schemas.TraceOutput,
+            schemas.ChangelogInput, schemas.ChangelogOutput,
+        ]:
+            all_schemas[cls.__name__] = cls.model_json_schema()
+        return json.dumps(all_schemas, indent=2)
+
+    @mcp.resource("ledger://backends")
+    def backends_resource() -> str:
+        """Active backend configuration."""
+        return json.dumps({"backend": "http", "url": str(client.base_url)}, indent=2)
 
     return mcp
 

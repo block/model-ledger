@@ -287,7 +287,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="model-ledger MCP server")
     parser.add_argument(
         "--backend",
-        choices=["memory", "sqlite", "json"],
+        choices=["memory", "sqlite", "json", "snowflake"],
         default="memory",
         help="Storage backend (default: memory)",
     )
@@ -295,6 +295,11 @@ def main() -> None:
         "--path",
         default=None,
         help="Path for sqlite or json backend",
+    )
+    parser.add_argument(
+        "--schema",
+        default=None,
+        help="Snowflake schema (e.g., MY_DB.MODEL_LEDGER)",
     )
     parser.add_argument(
         "--demo",
@@ -315,6 +320,11 @@ def main() -> None:
 
         path = args.path or "./ledger-data"
         backend = JsonFileLedgerBackend(path)
+    elif args.backend == "snowflake":
+        # Delegate to CLI helper which handles sq-pysnowflake and snowflake-connector
+        from model_ledger.cli.app import _snowflake_backend
+
+        backend = _snowflake_backend(args.schema)
     # else: memory — use None (create_server default)
 
     server = create_server(backend=backend, demo=args.demo)

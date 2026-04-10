@@ -20,7 +20,7 @@ app = typer.Typer(
 console = Console()
 
 
-def _resolve_backend(backend: str, path: str | None):
+def _resolve_backend(backend: str, path: str | None, schema: str | None = None):
     """Resolve a backend name to a backend instance."""
     if backend == "sqlite" and path:
         from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
@@ -31,11 +31,69 @@ def _resolve_backend(backend: str, path: str | None):
 
         json_path = path or os.path.expanduser("~/.model-ledger")
         return JsonFileLedgerBackend(json_path)
+    if backend == "snowflake":
+        return _snowflake_backend(schema)
     if backend == "memory":
         from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 
         return InMemoryLedgerBackend()
     return None
+
+
+def _snowflake_backend(schema: str | None = None):
+    """Create a SnowflakeLedgerBackend from environment variables.
+
+    Tries sq-pysnowflake (Block internal) first, then snowflake-connector-python.
+
+    Env vars:
+        SNOWFLAKE_ACCOUNT  — Snowflake account identifier
+        SNOWFLAKE_USER     — Snowflake username
+        SNOWFLAKE_SCHEMA   — Fully qualified schema (e.g., "MY_DB.MODEL_LEDGER")
+    """
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    sf_schema = schema or os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
+
+    # Try sq-pysnowflake first (Block internal — SSO auth)
+    try:
+        from pysnowflake import Session
+
+        user = os.environ.get("SNOWFLAKE_USER")
+        if not user:
+            raise typer.Exit("SNOWFLAKE_USER env var required for sq-pysnowflake")
+        session = Session(user=user)
+        return SnowflakeLedgerBackend(connection=session, schema=sf_schema)
+    except ImportError:
+        pass
+
+    # Fall back to snowflake-connector-python (OSS)
+    try:
+        import snowflake.connector
+
+        account = os.environ.get("SNOWFLAKE_ACCOUNT")
+        user = os.environ.get("SNOWFLAKE_USER")
+        password = os.environ.get("SNOWFLAKE_PASSWORD")
+        authenticator = os.environ.get("SNOWFLAKE_AUTHENTICATOR")
+
+        if not account or not user:
+            raise typer.Exit(
+                "Snowflake backend requires SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER env vars. "
+                "For SSO: set SNOWFLAKE_AUTHENTICATOR=externalbrowser"
+            )
+
+        connect_kwargs: dict = {"account": account, "user": user}
+        if password:
+            connect_kwargs["password"] = password
+        if authenticator:
+            connect_kwargs["authenticator"] = authenticator
+
+        conn = snowflake.connector.connect(**connect_kwargs)
+        return SnowflakeLedgerBackend(connection=conn, schema=sf_schema)
+    except ImportError as exc:
+        raise typer.Exit(
+            "Snowflake backend requires snowflake-connector-python. "
+            "Run: pip install model-ledger[snowflake]"
+        ) from exc
 
 
 def _default_db() -> str:
@@ -374,35 +432,38 @@ def introspect_cmd(
 
 @app.command(name="mcp")
 def mcp_cmd(
-    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json"),
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake"),
     path: str = typer.Option(None, help="Path for sqlite/json backend"),
+    schema: str = typer.Option(None, help="Snowflake schema (e.g., MY_DB.MODEL_LEDGER)"),
     demo: bool = typer.Option(False, help="Load demo inventory"),
 ) -> None:
     """Start the MCP server for AI agent integration."""
     try:
         from model_ledger.mcp.server import create_server
-    except ImportError:
+    except ImportError as exc:
         typer.echo("MCP not installed. Run: pip install model-ledger[mcp]", err=True)
-        raise typer.Exit(1)
-    backend_obj = _resolve_backend(backend, path)
+        raise typer.Exit(1) from exc
+    backend_obj = _resolve_backend(backend, path, schema)
     server = create_server(backend=backend_obj, demo=demo)
     server.run()
 
 
 @app.command(name="serve")
 def serve_cmd(
-    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json"),
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake"),
     path: str = typer.Option(None, help="Path for sqlite/json backend"),
+    schema: str = typer.Option(None, help="Snowflake schema (e.g., MY_DB.MODEL_LEDGER)"),
     demo: bool = typer.Option(False, help="Load demo inventory"),
     port: int = typer.Option(8000, help="Port to serve on"),
 ) -> None:
     """Start the REST API server."""
     try:
-        from model_ledger.rest.app import create_app
         import uvicorn
-    except ImportError:
+
+        from model_ledger.rest.app import create_app
+    except ImportError as exc:
         typer.echo("REST API not installed. Run: pip install model-ledger[rest-api]", err=True)
-        raise typer.Exit(1)
-    backend_obj = _resolve_backend(backend, path)
+        raise typer.Exit(1) from exc
+    backend_obj = _resolve_backend(backend, path, schema)
     rest_app = create_app(backend=backend_obj, demo=demo)
     uvicorn.run(rest_app, host="0.0.0.0", port=port)

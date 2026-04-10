@@ -33,6 +33,16 @@ def _resolve_backend(backend: str, path: str | None, schema: str | None = None):
         return JsonFileLedgerBackend(json_path)
     if backend == "snowflake":
         return _snowflake_backend(schema)
+    if backend == "http":
+        from model_ledger.backends.http import HttpLedgerBackend
+
+        url = path or os.environ.get("MODEL_LEDGER_URL")
+        if not url:
+            raise typer.Exit(
+                "HTTP backend requires --path <url> or MODEL_LEDGER_URL env var. "
+                "Example: model-ledger mcp --backend http --path https://model-ledger.internal:8000"
+            )
+        return HttpLedgerBackend(url)
     if backend == "memory":
         from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 
@@ -419,7 +429,7 @@ def introspect_cmd(
 
 @app.command(name="mcp")
 def mcp_cmd(
-    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake"),
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake, http"),
     path: str = typer.Option(None, help="Path for sqlite/json backend"),
     schema: str = typer.Option(None, help="Snowflake schema (e.g., MY_DB.MODEL_LEDGER)"),
     demo: bool = typer.Option(False, help="Load demo inventory"),
@@ -437,7 +447,7 @@ def mcp_cmd(
 
 @app.command(name="serve")
 def serve_cmd(
-    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake"),
+    backend: str = typer.Option("memory", help="Backend: memory, sqlite, json, snowflake, http"),
     path: str = typer.Option(None, help="Path for sqlite/json backend"),
     schema: str = typer.Option(None, help="Snowflake schema (e.g., MY_DB.MODEL_LEDGER)"),
     demo: bool = typer.Option(False, help="Load demo inventory"),

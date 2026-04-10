@@ -12,6 +12,7 @@ CLI entry point:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -287,14 +288,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="model-ledger MCP server")
     parser.add_argument(
         "--backend",
-        choices=["memory", "sqlite", "json", "snowflake"],
+        choices=["memory", "sqlite", "json", "snowflake", "http"],
         default="memory",
         help="Storage backend (default: memory)",
     )
     parser.add_argument(
         "--path",
         default=None,
-        help="Path for sqlite or json backend",
+        help="Path for sqlite/json backend, or URL for http backend",
     )
     parser.add_argument(
         "--schema",
@@ -325,6 +326,14 @@ def main() -> None:
         from model_ledger.cli.app import _snowflake_backend
 
         backend = _snowflake_backend(args.schema)
+    elif args.backend == "http":
+        from model_ledger.backends.http import HttpLedgerBackend
+
+        url = args.path or os.environ.get("MODEL_LEDGER_URL")
+        if not url:
+            print("HTTP backend requires --path <url> or MODEL_LEDGER_URL env var", file=sys.stderr)
+            sys.exit(1)
+        backend = HttpLedgerBackend(url)
     # else: memory — use None (create_server default)
 
     server = create_server(backend=backend, demo=args.demo)

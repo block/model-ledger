@@ -321,7 +321,7 @@ def main() -> None:
         path = args.path or "./ledger-data"
         backend = JsonFileLedgerBackend(path)
     elif args.backend == "snowflake":
-        # Delegate to CLI helper which handles sq-pysnowflake and snowflake-connector
+        # Delegate to CLI helper which handles snowflake-connector-python
         from model_ledger.cli.app import _snowflake_backend
 
         backend = _snowflake_backend(args.schema)

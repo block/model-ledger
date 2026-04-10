@@ -43,57 +43,44 @@ def _resolve_backend(backend: str, path: str | None, schema: str | None = None):
 def _snowflake_backend(schema: str | None = None):
     """Create a SnowflakeLedgerBackend from environment variables.
 
-    Tries sq-pysnowflake (Block internal) first, then snowflake-connector-python.
-
     Env vars:
-        SNOWFLAKE_ACCOUNT  — Snowflake account identifier
-        SNOWFLAKE_USER     — Snowflake username
-        SNOWFLAKE_SCHEMA   — Fully qualified schema (e.g., "MY_DB.MODEL_LEDGER")
+        SNOWFLAKE_ACCOUNT       — Snowflake account identifier
+        SNOWFLAKE_USER          — Snowflake username
+        SNOWFLAKE_PASSWORD      — Snowflake password (optional, for key-pair/password auth)
+        SNOWFLAKE_AUTHENTICATOR — Auth method (e.g., "externalbrowser" for SSO)
+        SNOWFLAKE_SCHEMA        — Fully qualified schema (e.g., "MY_DB.MODEL_LEDGER")
     """
     from model_ledger.backends.snowflake import SnowflakeLedgerBackend
 
     sf_schema = schema or os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
 
-    # Try sq-pysnowflake first (Block internal — SSO auth)
-    try:
-        from pysnowflake import Session
-
-        session = Session()
-        # sq-pysnowflake requires context manager to activate the connection.
-        # Enter the context and keep it alive — cleanup happens at process exit.
-        session.__enter__()
-        return SnowflakeLedgerBackend(connection=session, schema=sf_schema)
-    except ImportError:
-        pass
-
-    # Fall back to snowflake-connector-python (OSS)
     try:
         import snowflake.connector
-
-        account = os.environ.get("SNOWFLAKE_ACCOUNT")
-        user = os.environ.get("SNOWFLAKE_USER")
-        password = os.environ.get("SNOWFLAKE_PASSWORD")
-        authenticator = os.environ.get("SNOWFLAKE_AUTHENTICATOR")
-
-        if not account or not user:
-            raise typer.Exit(
-                "Snowflake backend requires SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER env vars. "
-                "For SSO: set SNOWFLAKE_AUTHENTICATOR=externalbrowser"
-            )
-
-        connect_kwargs: dict = {"account": account, "user": user}
-        if password:
-            connect_kwargs["password"] = password
-        if authenticator:
-            connect_kwargs["authenticator"] = authenticator
-
-        conn = snowflake.connector.connect(**connect_kwargs)
-        return SnowflakeLedgerBackend(connection=conn, schema=sf_schema)
     except ImportError as exc:
         raise typer.Exit(
             "Snowflake backend requires snowflake-connector-python. "
             "Run: pip install model-ledger[snowflake]"
         ) from exc
+
+    account = os.environ.get("SNOWFLAKE_ACCOUNT")
+    user = os.environ.get("SNOWFLAKE_USER")
+    password = os.environ.get("SNOWFLAKE_PASSWORD")
+    authenticator = os.environ.get("SNOWFLAKE_AUTHENTICATOR")
+
+    if not account or not user:
+        raise typer.Exit(
+            "Snowflake backend requires SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER env vars. "
+            "For SSO: set SNOWFLAKE_AUTHENTICATOR=externalbrowser"
+        )
+
+    connect_kwargs: dict = {"account": account, "user": user}
+    if password:
+        connect_kwargs["password"] = password
+    if authenticator:
+        connect_kwargs["authenticator"] = authenticator
+
+    conn = snowflake.connector.connect(**connect_kwargs)
+    return SnowflakeLedgerBackend(connection=conn, schema=sf_schema)
 
 
 def _default_db() -> str:

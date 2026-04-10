@@ -42,7 +42,7 @@ class Ledger:
         """Create a Ledger backed by Snowflake.
 
         Args:
-            connection: A Snowflake connection (snowflake.connector or pysnowflake session).
+            connection: A Snowflake connection (snowflake.connector connection object).
             schema: Fully qualified schema name (e.g., "MY_DB.MODEL_LEDGER").
 
         Example:

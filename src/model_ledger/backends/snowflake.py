@@ -100,15 +100,18 @@ class SnowflakeLedgerBackend:
 
     def __init__(
         self, connection: Any, schema: str = "MODEL_LEDGER",
+        read_only: bool = False,
     ) -> None:
         self._session = connection
         self._schema = schema
+        self._read_only = read_only
         parts = schema.split(".")
         self._database = parts[0] if len(parts) > 1 else None
         self._schema_name = parts[1] if len(parts) > 1 else parts[0]
         self._model_buffer: list[ModelRef] = []
         self._snapshot_buffer: list[Snapshot] = []
-        self._ensure_tables()
+        if not read_only:
+            self._ensure_tables()
 
     def __enter__(self):
         return self

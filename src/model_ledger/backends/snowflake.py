@@ -301,12 +301,45 @@ class SnowflakeLedgerBackend:
 
     def list_models(self, **filters: str) -> list[ModelRef]:
         self._flush_models()
+        # Extract pagination and text search from filters
+        limit = filters.pop("limit", None)
+        offset = filters.pop("offset", None)
+        text = filters.pop("text", None)
+
         sql = f"SELECT * FROM {self._schema}.MODELS"
         conditions = [f"{k.upper()} = {_esc(v)}" for k, v in filters.items()]
+        if text:
+            conditions.append(
+                f"(LOWER(NAME) LIKE {_esc(f'%{text.lower()}%')}"
+                f" OR LOWER(PURPOSE) LIKE {_esc(f'%{text.lower()}%')})"
+            )
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         sql += " ORDER BY NAME"
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        if offset is not None:
+            sql += f" OFFSET {int(offset)}"
         return [_row_to_model_ref(r) for r in _exec(self._session, sql)]
+
+    def count_models(self, **filters: str) -> int:
+        """Count models matching filters without fetching all rows."""
+        self._flush_models()
+        text = filters.pop("text", None)
+        filters.pop("limit", None)
+        filters.pop("offset", None)
+
+        sql = f"SELECT COUNT(*) AS CNT FROM {self._schema}.MODELS"
+        conditions = [f"{k.upper()} = {_esc(v)}" for k, v in filters.items()]
+        if text:
+            conditions.append(
+                f"(LOWER(NAME) LIKE {_esc(f'%{text.lower()}%')}"
+                f" OR LOWER(PURPOSE) LIKE {_esc(f'%{text.lower()}%')})"
+            )
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        rows = _exec(self._session, sql)
+        return rows[0]["CNT"] if rows else 0
 
     def update_model(self, model: ModelRef) -> None:
         self.save_model(model)

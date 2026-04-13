@@ -42,10 +42,8 @@ def _model_to_summary(model: ModelRef, ledger: Ledger) -> ModelSummary:
 def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     """Search and filter the model inventory with pagination.
 
-    Applies structured filters (model_type, owner, status) via the
-    ledger backend, then optionally fuzzy-filters on name and purpose
-    using case-insensitive substring matching. Results are paginated
-    via offset/limit.
+    Pushes limit, offset, and text filters to the backend when supported
+    (e.g., Snowflake SQL) to avoid fetching all rows.
     """
     # Build filter dict — only include non-None values
     filters: dict[str, str] = {}
@@ -56,25 +54,33 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     if input.status is not None:
         filters["status"] = input.status
 
-    # Get all matching models from the backend
-    models = ledger.list(**filters)
-
-    # Fuzzy-filter on name and purpose (case-insensitive contains)
+    # Get total count (uses SQL COUNT when supported)
+    count_filters = dict(filters)
     if input.text:
-        text_lower = input.text.lower()
-        models = [
-            m
-            for m in models
-            if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
-        ]
+        count_filters["text"] = input.text
+    backend = ledger._backend
+    if hasattr(backend, "count_models"):
+        total = backend.count_models(**count_filters)
+    else:
+        models_all = ledger.list(**filters)
+        if input.text:
+            text_lower = input.text.lower()
+            models_all = [
+                m for m in models_all
+                if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
+            ]
+        total = len(models_all)
 
-    total = len(models)
+    # Fetch paginated results (uses SQL LIMIT/OFFSET when supported)
+    page_filters = dict(filters)
+    if input.text:
+        page_filters["text"] = input.text
+    page_filters["limit"] = str(input.limit)
+    page_filters["offset"] = str(input.offset)
 
-    # Paginate
-    page = models[input.offset : input.offset + input.limit]
+    models = ledger.list(**page_filters)
+
     has_more = (input.offset + input.limit) < total
-
-    # Convert each ModelRef to a ModelSummary
-    summaries = [_model_to_summary(m, ledger) for m in page]
+    summaries = [_model_to_summary(m, ledger) for m in models]
 
     return QueryOutput(total=total, models=summaries, has_more=has_more)

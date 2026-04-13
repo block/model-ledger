@@ -26,9 +26,24 @@ class InMemoryLedgerBackend:
         return None
 
     def list_models(self, **filters: str) -> list[ModelRef]:
+        text = filters.pop("text", None)
+        limit = filters.pop("limit", None)
+        offset = filters.pop("offset", None)
+
         results = list(self._models.values())
         for key, value in filters.items():
             results = [m for m in results if getattr(m, key, None) == value]
+        if text:
+            text_lower = text.lower()
+            results = [
+                m for m in results
+                if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
+            ]
+        results.sort(key=lambda m: m.name)
+        if offset is not None:
+            results = results[int(offset):]
+        if limit is not None:
+            results = results[:int(limit)]
         return results
 
     def update_model(self, model: ModelRef) -> None:

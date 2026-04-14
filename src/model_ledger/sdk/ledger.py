@@ -314,7 +314,8 @@ class Ledger:
             # Content-hash dedup: skip if payload unchanged.
             # Exclude volatile fields (timestamps change between runs without
             # the model actually changing).
-            _VOLATILE = {"created_at", "updated_at", "_content_hash"}
+            _VOLATILE = {"created_at", "updated_at", "source_updated_at", "_content_hash",
+                         "change_detected", "change_occurred"}
             stable_payload = {k: v for k, v in payload.items() if k not in _VOLATILE}
             content_hash = hashlib.sha256(
                 json.dumps(stable_payload, sort_keys=True, default=str).encode()
@@ -324,6 +325,9 @@ class Ledger:
                 continue
 
             payload["_content_hash"] = content_hash
+            payload["change_detected"] = datetime.now().isoformat()
+            if node.metadata.get("source_updated_at"):
+                payload["change_occurred"] = node.metadata["source_updated_at"]
             self.record(
                 ref,
                 event="discovered",

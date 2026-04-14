@@ -43,6 +43,33 @@ class TestAdd:
         assert r2["added"] == 1
         assert r2["skipped"] == 0
 
+    def test_add_sets_change_detected(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        snap = [s for s in ledger.history("scorer") if s.event_type == "discovered"][0]
+        assert "change_detected" in snap.payload
+
+    def test_add_sets_change_occurred_when_provided(self, ledger):
+        node = DataNode("scorer", platform="ml_platform", outputs=["scores"],
+                        metadata={"source_updated_at": "2026-04-01T12:00:00"})
+        ledger.add(node)
+        snap = [s for s in ledger.history("scorer") if s.event_type == "discovered"][0]
+        assert snap.payload["change_occurred"] == "2026-04-01T12:00:00"
+
+    def test_add_omits_change_occurred_when_absent(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        snap = [s for s in ledger.history("scorer") if s.event_type == "discovered"][0]
+        assert "change_occurred" not in snap.payload
+
+    def test_add_source_updated_at_does_not_affect_dedup(self, ledger):
+        node1 = DataNode("scorer", platform="ml_platform", outputs=["scores"],
+                         metadata={"source_updated_at": "2026-04-01T12:00:00"})
+        node2 = DataNode("scorer", platform="ml_platform", outputs=["scores"],
+                         metadata={"source_updated_at": "2026-04-02T12:00:00"})
+        r1 = ledger.add(node1)
+        r2 = ledger.add(node2)
+        assert r1["added"] == 1
+        assert r2["skipped"] == 1
+
 class TestConnect:
     def test_matching_ports(self, ledger):
         ledger.add([DataNode("writer", outputs=["shared"]), DataNode("reader", inputs=["shared"])])

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
@@ -308,7 +308,7 @@ class Ledger:
                 "inputs": [{"identifier": p.identifier, **p.schema} for p in node.inputs],
                 "outputs": [{"identifier": p.identifier, **p.schema} for p in node.outputs],
                 **{k: v for k, v in node.metadata.items()
-                   if k not in ("owner", "node_type", "tier", "purpose", "model_origin")},
+                   if k not in ("owner", "node_type", "tier", "purpose", "model_origin", "source_updated_at")},
             }
 
             # Content-hash dedup: skip if payload unchanged.
@@ -325,7 +325,7 @@ class Ledger:
                 continue
 
             payload["_content_hash"] = content_hash
-            payload["change_detected"] = datetime.now().isoformat()
+            payload["change_detected"] = datetime.now(timezone.utc).isoformat()
             if node.metadata.get("source_updated_at"):
                 payload["change_occurred"] = node.metadata["source_updated_at"]
             self.record(

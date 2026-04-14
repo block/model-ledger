@@ -8,5 +8,6 @@
 from model_ledger.connectors.sql import sql_connector
 from model_ledger.connectors.rest import rest_connector
 from model_ledger.connectors.github import github_connector
+from model_ledger.connectors.prefect import prefect_connector
 
-__all__ = ["sql_connector", "rest_connector", "github_connector"]
+__all__ = ["sql_connector", "rest_connector", "github_connector", "prefect_connector"]

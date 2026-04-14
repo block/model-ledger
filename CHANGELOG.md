@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+- feat: `prefect_connector()` — discover deployments from Prefect Cloud with optional tag filtering
+- feat: `last_seen` timestamp on `ModelRef` — updated every sync run, even for unchanged models
+- feat: dual change timestamps — `change_detected` (UTC, always set) and `change_occurred` (from source, optional via `source_updated_at` metadata)
 - feat: `register_group()` — register governed model groups with member linking
 - feat: `members()` — list all models that belong to a group
 - feat: `groups()` — find all groups a model belongs to
+- fix: `rest_connector` preserves URL query params (httpx was stripping them when `params={}`)
 
 ## v0.5.0
 

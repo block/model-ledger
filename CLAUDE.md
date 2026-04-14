@@ -14,13 +14,19 @@ Open-source model inventory and governance framework. Apache-2.0.
 
 ## Architecture
 
-### v0.5.0 (current — production backends + connector factories)
-- `src/model_ledger/backends/sqlite_ledger.py` — SQLiteLedgerBackend (persistent, zero-dep)
-- `src/model_ledger/backends/snowflake.py` — SnowflakeLedgerBackend (upstreamed from Block)
+### v0.7.2+ (current — agent protocol + connectors + change tracking)
 - `src/model_ledger/connectors/sql.py` — sql_connector() factory
 - `src/model_ledger/connectors/rest.py` — rest_connector() factory
 - `src/model_ledger/connectors/github.py` — github_connector() factory
-- `src/model_ledger/sdk/ledger.py` — Ledger.from_sqlite(), Ledger.from_snowflake()
+- `src/model_ledger/connectors/prefect.py` — prefect_connector() factory (Prefect Cloud API)
+- `src/model_ledger/backends/sqlite_ledger.py` — SQLiteLedgerBackend (persistent, zero-dep)
+- `src/model_ledger/backends/snowflake.py` — SnowflakeLedgerBackend (production)
+- `src/model_ledger/backends/http.py` — HttpLedgerBackend (MCP → REST API pass-through)
+- `src/model_ledger/backends/json_files.py` — JsonFileLedgerBackend (git-friendly)
+- `src/model_ledger/sdk/ledger.py` — Ledger SDK with last_seen, change_detected/change_occurred
+- `src/model_ledger/tools/` — 6 agent tool functions (record, query, investigate, trace, changelog, discover)
+- `src/model_ledger/mcp/server.py` — MCP server (FastMCP, 6 tools + 3 resources)
+- `src/model_ledger/rest/app.py` — REST API (FastAPI, create_app() factory)
 
 ### v0.4.x (DataNode graph)
 - `src/model_ledger/core/ledger_models.py` — ModelRef, Snapshot, Tag

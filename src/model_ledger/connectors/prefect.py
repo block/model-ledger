@@ -16,6 +16,8 @@ try:
     from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterTags
 except ImportError:  # pragma: no cover
     get_client = None  # type: ignore[assignment]
+    DeploymentFilter = None  # type: ignore[assignment,misc]
+    DeploymentFilterTags = None  # type: ignore[assignment,misc]
 
 from model_ledger.graph.models import DataNode
 

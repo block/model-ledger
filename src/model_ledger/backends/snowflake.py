@@ -53,6 +53,7 @@ def _row_to_model_ref(row: dict[str, Any]) -> ModelRef:
         purpose=row.get("PURPOSE") or "",
         status=row.get("STATUS", "active"),
         created_at=row["CREATED_AT"] if isinstance(row["CREATED_AT"], datetime) else datetime.now(timezone.utc),
+        last_seen=row.get("LAST_SEEN") if isinstance(row.get("LAST_SEEN"), datetime) else None,
     )
 
 
@@ -153,6 +154,7 @@ class SnowflakeLedgerBackend:
             "MODEL_TYPE": m.model_type, "MODEL_ORIGIN": m.model_origin,
             "TIER": m.tier, "PURPOSE": m.purpose, "STATUS": m.status,
             "CREATED_AT": m.created_at.isoformat(),
+            "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
         } for m in self._model_buffer])
 
         staging = f"{self._schema}.MODELS_STAGING"
@@ -165,11 +167,12 @@ class SnowflakeLedgerBackend:
             MERGE INTO {self._schema}.MODELS t USING {staging} s ON t.MODEL_HASH = s.MODEL_HASH
             WHEN MATCHED THEN UPDATE SET
                 NAME=s.NAME, OWNER=s.OWNER, MODEL_TYPE=s.MODEL_TYPE,
-                MODEL_ORIGIN=s.MODEL_ORIGIN, TIER=s.TIER, PURPOSE=s.PURPOSE, STATUS=s.STATUS
+                MODEL_ORIGIN=s.MODEL_ORIGIN, TIER=s.TIER, PURPOSE=s.PURPOSE, STATUS=s.STATUS,
+                LAST_SEEN=s.LAST_SEEN
             WHEN NOT MATCHED THEN INSERT
-                (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT)
+                (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
                 VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
-                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT)""")
+                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN)""")
         _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
         return True
 
@@ -181,18 +184,20 @@ class SnowflakeLedgerBackend:
                 f"{_esc(m.owner)} AS owner, {_esc(m.model_type)} AS model_type, "
                 f"{_esc(m.model_origin)} AS model_origin, {_esc(m.tier)} AS tier, "
                 f"{_esc(m.purpose)} AS purpose, {_esc(m.status)} AS status, "
-                f"{_esc(m.created_at.isoformat())} AS created_at"
+                f"{_esc(m.created_at.isoformat())} AS created_at, "
+                f"{_esc(m.last_seen.isoformat()) if m.last_seen else 'NULL'} AS last_seen"
                 for m in batch
             )
             _exec_no_result(self._session, f"""
                 MERGE INTO {self._schema}.MODELS t USING ({unions}) s ON t.MODEL_HASH = s.model_hash
                 WHEN MATCHED THEN UPDATE SET
                     NAME=s.name, OWNER=s.owner, MODEL_TYPE=s.model_type,
-                    MODEL_ORIGIN=s.model_origin, TIER=s.tier, PURPOSE=s.purpose, STATUS=s.status
+                    MODEL_ORIGIN=s.model_origin, TIER=s.tier, PURPOSE=s.purpose, STATUS=s.status,
+                    LAST_SEEN=s.last_seen
                 WHEN NOT MATCHED THEN INSERT
-                    (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT)
+                    (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
                     VALUES (s.model_hash, s.name, s.owner, s.model_type, s.model_origin,
-                            s.tier, s.purpose, s.status, s.created_at)""")
+                            s.tier, s.purpose, s.status, s.created_at, s.last_seen)""")
 
     def _flush_snapshots(self) -> None:
         if not self._snapshot_buffer:
@@ -266,7 +271,8 @@ class SnowflakeLedgerBackend:
                 OWNER VARCHAR NOT NULL, MODEL_TYPE VARCHAR NOT NULL,
                 MODEL_ORIGIN VARCHAR DEFAULT 'internal', TIER VARCHAR NOT NULL,
                 PURPOSE VARCHAR, STATUS VARCHAR DEFAULT 'active',
-                CREATED_AT TIMESTAMP_TZ NOT NULL)""")
+                CREATED_AT TIMESTAMP_TZ NOT NULL,
+                LAST_SEEN TIMESTAMP_TZ)""")
         _exec_no_result(self._session, f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.SNAPSHOTS (
                 SNAPSHOT_HASH VARCHAR PRIMARY KEY, MODEL_HASH VARCHAR NOT NULL,

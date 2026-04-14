@@ -320,6 +320,10 @@ class Ledger:
             content_hash = hashlib.sha256(
                 json.dumps(stable_payload, sort_keys=True, default=str).encode()
             ).hexdigest()
+            # Update last_seen on every run, even if unchanged
+            ref.last_seen = datetime.now(timezone.utc)
+            self._backend.update_model(ref)
+
             if existing_hashes.get(ref.model_hash) == content_hash:
                 skipped += 1
                 continue

@@ -34,7 +34,8 @@ class SQLiteLedgerBackend:
                 tier TEXT NOT NULL,
                 purpose TEXT,
                 status TEXT DEFAULT 'active',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                last_seen TEXT
             );
             CREATE TABLE IF NOT EXISTS snapshots (
                 snapshot_hash TEXT PRIMARY KEY,
@@ -60,15 +61,23 @@ class SQLiteLedgerBackend:
 
     def _model_to_row(self, m: ModelRef) -> tuple:
         return (m.model_hash, m.name, m.owner, m.model_type, m.model_origin,
-                m.tier, m.purpose, m.status, m.created_at.isoformat())
+                m.tier, m.purpose, m.status, m.created_at.isoformat(),
+                m.last_seen.isoformat() if m.last_seen else None)
 
     def _row_to_model(self, row: sqlite3.Row) -> ModelRef:
+        last_seen = None
+        try:
+            if row["last_seen"]:
+                last_seen = datetime.fromisoformat(row["last_seen"])
+        except (KeyError, IndexError):
+            pass
         return ModelRef(
             model_hash=row["model_hash"], name=row["name"], owner=row["owner"],
             model_type=row["model_type"], model_origin=row["model_origin"] or "internal",
             tier=row["tier"], purpose=row["purpose"] or "",
             status=row["status"] or "active",
             created_at=datetime.fromisoformat(row["created_at"]),
+            last_seen=last_seen,
         )
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> Snapshot:
@@ -86,7 +95,7 @@ class SQLiteLedgerBackend:
 
     def save_model(self, model: ModelRef) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self._model_to_row(model),
         )
         self._conn.commit()

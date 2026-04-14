@@ -43,6 +43,18 @@ class TestAdd:
         assert r2["added"] == 1
         assert r2["skipped"] == 0
 
+    def test_add_sets_last_seen(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        ref = ledger.get("scorer")
+        assert ref.last_seen is not None
+
+    def test_add_updates_last_seen_on_unchanged(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        first_seen = ledger.get("scorer").last_seen
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        second_seen = ledger.get("scorer").last_seen
+        assert second_seen >= first_seen
+
     def test_add_sets_change_detected(self, ledger):
         ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
         snap = [s for s in ledger.history("scorer") if s.event_type == "discovered"][0]

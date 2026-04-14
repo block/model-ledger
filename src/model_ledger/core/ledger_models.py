@@ -36,6 +36,7 @@ class ModelRef(BaseModel):
     purpose: str
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
+    last_seen: datetime | None = None
 
     @model_validator(mode="after")
     def _set_hash(self) -> ModelRef:

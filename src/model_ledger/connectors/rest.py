@@ -86,10 +86,10 @@ class _RESTConnector:
 
         all_items: list[dict] = []
         url = self._url
-        params: dict[str, str] = {}
+        extra_params: dict[str, str] = {}
 
         while True:
-            resp = httpx.get(url, headers=self._headers, params=params, timeout=30)
+            resp = httpx.get(url, headers=self._headers, params=extra_params or None, timeout=30)
             resp.raise_for_status()
             data = resp.json()
 
@@ -102,7 +102,7 @@ class _RESTConnector:
                 token_field = self._pagination["token_field"]
                 next_token = _get_nested(data, token_field)
                 if next_token:
-                    params[self._pagination["param"]] = next_token
+                    extra_params[self._pagination["param"]] = next_token
                     continue
             break
 

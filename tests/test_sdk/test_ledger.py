@@ -362,3 +362,39 @@ class TestCompositeMembers:
         ledger.add_member("pipeline", "model-a", actor="test")
         current = ledger.members("pipeline")
         assert any(m.name == "model-a" for m in current)
+
+    def test_membership_at_before_removal(self, ledger):
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        group = ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("pipeline", "model-a", actor="test")
+        # Get the timestamp of the add event
+        history = ledger.history("pipeline")
+        add_events = [s for s in history if s.event_type == "member_added"]
+        add_time = add_events[0].timestamp
+
+        ledger.remove_member("pipeline", "model-a", actor="test")
+
+        # Before removal: model-a should be present (query at exact add timestamp)
+        members_before = ledger.membership_at("pipeline", add_time)
+        assert any(m.name == "model-a" for m in members_before)
+
+        # After removal: model-a should be gone
+        members_after = ledger.membership_at(
+            "pipeline", datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert not any(m.name == "model-a" for m in members_after)
+
+    def test_membership_at_empty_group(self, ledger):
+        ledger.register_group(
+            name="empty-group", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        result = ledger.membership_at(
+            "empty-group", datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert result == []

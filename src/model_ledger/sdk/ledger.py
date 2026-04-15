@@ -583,6 +583,41 @@ class Ledger:
             comp_ref, event="member_removed", payload=payload, actor=actor,
         )
 
+    def membership_at(
+        self,
+        composite: ModelRef | str,
+        date: datetime,
+    ) -> list[ModelRef]:
+        """Reconstruct composite membership at a point in time.
+
+        Replays member_added/member_removed snapshots up to the given
+        date to determine who was in the composite at that moment.
+        """
+        ref = self._resolve_model(composite)
+        snaps = self._backend.list_snapshots(ref.model_hash)
+        membership_events = sorted(
+            [s for s in snaps
+             if s.event_type in ("member_added", "member_removed")
+             and s.timestamp <= date],
+            key=lambda s: s.timestamp,
+        )
+        current: dict[str, ModelRef] = {}
+        for s in membership_events:
+            member_hash = s.payload.get("member_hash", "")
+            if s.event_type == "member_added":
+                try:
+                    current[member_hash] = self.get(member_hash)
+                except ModelNotFoundError:
+                    member_name = s.payload.get("member_name", "")
+                    if member_name:
+                        try:
+                            current[member_hash] = self.get(member_name)
+                        except ModelNotFoundError:
+                            continue
+            elif s.event_type == "member_removed":
+                current.pop(member_hash, None)
+        return list(current.values())
+
     def _load_discovered_nodes(self):
         """Rebuild DataNodes from stored discovery snapshots.
 

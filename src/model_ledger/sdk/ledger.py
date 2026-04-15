@@ -475,9 +475,53 @@ class Ledger:
         return ref
 
     def members(self, group: ModelRef | str) -> list[ModelRef]:
-        """Return all models that are members of this group."""
+        """Return current members of this group.
+
+        Replays member_added/member_removed snapshots to determine
+        current membership. Falls back to dependency links if no
+        membership events exist (backward compatible with register_group).
+
+        Mixed case: groups seeded via register_group() that later have
+        add_member()/remove_member() called use dependency links as the
+        baseline and overlay the event log on top.
+        """
+        ref = self._resolve_model(group)
+        snaps = self._backend.list_snapshots(ref.model_hash)
+        membership_events = [
+            s for s in snaps
+            if s.event_type in ("member_added", "member_removed")
+        ]
+
+        # Seed from dependency links (covers register_group() seeded members
+        # and is always correct as the initial universe of linked models).
         deps = self.dependencies(group, direction="upstream")
-        return [d["model"] for d in deps if d.get("relationship") == "member_of"]
+        current: dict[str, ModelRef] = {
+            d["model"].model_hash: d["model"]
+            for d in deps
+            if d.get("relationship") == "member_of"
+        }
+
+        if not membership_events:
+            # No events: dependency links are the full picture.
+            return list(current.values())
+
+        # Replay events on top of the dep-link baseline.
+        for s in sorted(membership_events, key=lambda s: s.timestamp):
+            member_hash = s.payload.get("member_hash", "")
+            if s.event_type == "member_added":
+                if member_hash not in current:
+                    try:
+                        current[member_hash] = self.get(member_hash)
+                    except ModelNotFoundError:
+                        member_name = s.payload.get("member_name", "")
+                        if member_name:
+                            try:
+                                current[member_hash] = self.get(member_name)
+                            except ModelNotFoundError:
+                                continue
+            elif s.event_type == "member_removed":
+                current.pop(member_hash, None)
+        return list(current.values())
 
     def groups(self, model: ModelRef | str) -> list[ModelRef]:
         """Return all groups this model belongs to."""

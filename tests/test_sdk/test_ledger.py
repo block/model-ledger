@@ -332,3 +332,33 @@ class TestCompositeMembers:
         assert snap.event_type == "member_removed"
         assert snap.payload["member_name"] == "old-model"
         assert snap.payload["reason"] == "Replaced by new version"
+
+    def test_members_excludes_removed(self, ledger):
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register(
+            name="model-b", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=["model-a", "model-b"], actor="test",
+        )
+        ledger.remove_member("pipeline", "model-a", actor="test")
+        current = ledger.members("pipeline")
+        names = [m.name for m in current]
+        assert "model-a" not in names
+        assert "model-b" in names
+
+    def test_members_re_add_after_remove(self, ledger):
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=["model-a"], actor="test",
+        )
+        ledger.remove_member("pipeline", "model-a", actor="test")
+        ledger.add_member("pipeline", "model-a", actor="test")
+        current = ledger.members("pipeline")
+        assert any(m.name == "model-a" for m in current)

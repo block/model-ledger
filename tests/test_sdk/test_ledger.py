@@ -279,3 +279,56 @@ class TestInventoryAt:
             datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         assert any(m.name == "back" for m in result)
+
+
+class TestCompositeMembers:
+    def test_add_member_creates_snapshot_and_link(self, ledger):
+        ledger.register(
+            name="scoring-model", owner="risk-team",
+            model_type="ml_model", tier="high", purpose="Score risk",
+        )
+        group = ledger.register_group(
+            name="risk-pipeline", owner="risk-team",
+            model_type="composite", tier="high",
+            purpose="End-to-end risk scoring",
+            members=[], actor="test",
+        )
+        snap = ledger.add_member("risk-pipeline", "scoring-model", role="scorer", actor="test")
+        assert snap.event_type == "member_added"
+        assert snap.payload["member_name"] == "scoring-model"
+        assert snap.payload["role"] == "scorer"
+        assert any(m.name == "scoring-model" for m in ledger.members("risk-pipeline"))
+
+    def test_add_member_without_role(self, ledger):
+        ledger.register(
+            name="etl-job", owner="data-team",
+            model_type="pipeline", tier="low", purpose="Extract data",
+        )
+        ledger.register_group(
+            name="detection-rule", owner="risk-team",
+            model_type="composite", tier="medium",
+            purpose="Detect anomalies",
+            members=[], actor="test",
+        )
+        snap = ledger.add_member("detection-rule", "etl-job", actor="test")
+        assert snap.event_type == "member_added"
+        assert "role" not in snap.payload
+
+    def test_remove_member_creates_snapshot(self, ledger):
+        ledger.register(
+            name="old-model", owner="risk-team",
+            model_type="ml_model", tier="high", purpose="Legacy scorer",
+        )
+        ledger.register_group(
+            name="risk-pipeline", owner="risk-team",
+            model_type="composite", tier="high",
+            purpose="End-to-end risk scoring",
+            members=["old-model"], actor="test",
+        )
+        snap = ledger.remove_member(
+            "risk-pipeline", "old-model",
+            reason="Replaced by new version", actor="test",
+        )
+        assert snap.event_type == "member_removed"
+        assert snap.payload["member_name"] == "old-model"
+        assert snap.payload["reason"] == "Replaced by new version"

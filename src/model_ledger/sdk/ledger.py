@@ -484,6 +484,61 @@ class Ledger:
         deps = self.dependencies(model, direction="downstream")
         return [d["model"] for d in deps if d.get("relationship") == "member_of"]
 
+    def add_member(
+        self,
+        composite: ModelRef | str,
+        member: ModelRef | str,
+        *,
+        role: str | None = None,
+        actor: str,
+    ) -> Snapshot:
+        """Add a member to a composite.
+
+        Records a member_added snapshot on the composite and creates
+        a member_of dependency link.
+        """
+        comp_ref = self._resolve_model(composite)
+        mem_ref = self._resolve_model(member)
+        self.link_dependency(
+            upstream=mem_ref, downstream=comp_ref,
+            relationship="member_of", actor=actor,
+        )
+        payload: dict[str, Any] = {
+            "member_name": mem_ref.name,
+            "member_hash": mem_ref.model_hash,
+        }
+        if role is not None:
+            payload["role"] = role
+        return self.record(
+            comp_ref, event="member_added", payload=payload, actor=actor,
+        )
+
+    def remove_member(
+        self,
+        composite: ModelRef | str,
+        member: ModelRef | str,
+        *,
+        reason: str | None = None,
+        actor: str,
+    ) -> Snapshot:
+        """Remove a member from a composite.
+
+        Records a member_removed snapshot. The dependency link is NOT deleted
+        (append-only event log). members() will exclude removed members by
+        replaying member_added/member_removed events.
+        """
+        comp_ref = self._resolve_model(composite)
+        mem_ref = self._resolve_model(member)
+        payload: dict[str, Any] = {
+            "member_name": mem_ref.name,
+            "member_hash": mem_ref.model_hash,
+        }
+        if reason is not None:
+            payload["reason"] = reason
+        return self.record(
+            comp_ref, event="member_removed", payload=payload, actor=actor,
+        )
+
     def _load_discovered_nodes(self):
         """Rebuild DataNodes from stored discovery snapshots.
 

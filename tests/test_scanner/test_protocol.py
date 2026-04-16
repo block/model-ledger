@@ -13,38 +13,48 @@ from model_ledger.scanner.report import ScanReport
 class TestModelCandidate:
     def test_create(self):
         c = ModelCandidate(
-            name="fraud-rule-1", owner="risk-team",
-            model_type="heuristic", platform="etl_engine",
-            platform_id="job-123", metadata={"schedule": "daily"},
+            name="fraud-rule-1",
+            owner="risk-team",
+            model_type="heuristic",
+            platform="etl_engine",
+            platform_id="job-123",
+            metadata={"schedule": "daily"},
         )
         assert c.name == "fraud-rule-1"
         assert c.platform == "etl_engine"
 
     def test_owner_optional(self):
         c = ModelCandidate(
-            name="unknown-rule", model_type="heuristic",
-            platform="etl_engine", metadata={},
+            name="unknown-rule",
+            model_type="heuristic",
+            platform="etl_engine",
+            metadata={},
         )
         assert c.owner is None
 
     def test_parent_name(self):
         c = ModelCandidate(
-            name="ruleset-1", owner="risk-team",
-            model_type="ruleset", platform="rules-engine",
+            name="ruleset-1",
+            owner="risk-team",
+            model_type="ruleset",
+            platform="rules-engine",
             parent_name="TD-85",
         )
         assert c.parent_name == "TD-85"
 
     def test_parent_name_defaults_none(self):
         c = ModelCandidate(
-            name="model-1", model_type="ml",
-            platform="ml_platform", metadata={},
+            name="model-1",
+            model_type="ml",
+            platform="ml_platform",
+            metadata={},
         )
         assert c.parent_name is None
 
     def test_external_ids(self):
         c = ModelCandidate(
-            name="arr-v3", model_type="ml_model",
+            name="arr-v3",
+            model_type="ml_model",
             platform="ml_platform",
             external_ids={"ml_platform": "arr_v3", "rules_engine": "TD-85"},
             metadata={},
@@ -53,8 +63,10 @@ class TestModelCandidate:
 
     def test_external_ids_defaults_empty(self):
         c = ModelCandidate(
-            name="model-1", model_type="ml",
-            platform="ml_platform", metadata={},
+            name="model-1",
+            model_type="ml",
+            platform="ml_platform",
+            metadata={},
         )
         assert c.external_ids == {}
 
@@ -82,10 +94,16 @@ class TestScannerProtocol:
     def test_scan_returns_candidates(self):
         candidates = [
             ModelCandidate(
-                name="m1", model_type="ml", platform="fake", metadata={},
+                name="m1",
+                model_type="ml",
+                platform="fake",
+                metadata={},
             ),
             ModelCandidate(
-                name="m2", model_type="ml", platform="fake", metadata={},
+                name="m2",
+                model_type="ml",
+                platform="fake",
+                metadata={},
             ),
         ]
         scanner = FakeScanner(candidates)
@@ -115,7 +133,10 @@ class TestEnrichableScanner:
     def test_enrich_returns_dict(self):
         scanner = FakeEnrichableScanner()
         c = ModelCandidate(
-            name="test", model_type="ml", platform="x", metadata={},
+            name="test",
+            model_type="ml",
+            platform="x",
+            metadata={},
         )
         result = scanner.enrich(c)
         assert result["enriched"] is True

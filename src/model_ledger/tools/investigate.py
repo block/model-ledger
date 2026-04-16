@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from model_ledger.core.ledger_models import Snapshot
 from model_ledger.sdk.ledger import Ledger
@@ -38,7 +39,7 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     model = ledger.get(input.model_name)
 
     # 2. Get all snapshots (newest first from ledger.history)
-    snapshots = ledger.history(model)
+    snapshots = ledger.history(model) or []
 
     # 3. Filter by as_of if set
     if input.as_of is not None:
@@ -51,10 +52,22 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     # 4. Merge metadata from user-facing snapshot payloads (oldest first, newest wins)
     # Skip internal event types (graph wiring, registration identity) and internal keys
     _INTERNAL_EVENTS = {"depends_on", "has_dependent", "registered"}
-    _INTERNAL_KEYS = {"_content_hash", "upstream", "downstream", "upstream_hash",
-                       "downstream_hash", "relationship", "via", "via_schema",
-                       "name", "owner", "tier", "purpose", "model_origin"}
-    metadata: dict = {}
+    _INTERNAL_KEYS = {
+        "_content_hash",
+        "upstream",
+        "downstream",
+        "upstream_hash",
+        "downstream_hash",
+        "relationship",
+        "via",
+        "via_schema",
+        "name",
+        "owner",
+        "tier",
+        "purpose",
+        "model_origin",
+    }
+    metadata: dict[str, Any] = {}
     for snap in reversed(snapshots):  # reversed = oldest first
         if snap.event_type in _INTERNAL_EVENTS:
             continue
@@ -93,17 +106,26 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     # 8. Get groups and members (catch exceptions)
     group_names: list[str] = []
     try:
-        group_refs = ledger.groups(model)
+        group_refs = ledger.groups(model) or []
         group_names = [g.name for g in group_refs]
     except (KeyError, ValueError, Exception):
         group_names = []
 
     member_names: list[str] = []
     try:
-        member_refs = ledger.members(model)
+        member_refs = ledger.members(model) or []
         member_names = [m.name for m in member_refs]
     except (KeyError, ValueError, Exception):
         member_names = []
+
+    # 9. Governance summary for composites
+    last_validated = None
+    open_observation_count = None
+    if model.model_type == "composite":
+        validated_snaps = [s for s in snapshots if s.event_type == "validated"]
+        if validated_snaps:
+            last_validated = max(s.timestamp for s in validated_snaps)
+        open_observation_count = ledger.open_observation_count(snapshots)
 
     return InvestigateOutput(
         name=model.name,
@@ -120,4 +142,6 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
         downstream=downstream_nodes,
         groups=group_names,
         members=member_names,
+        last_validated=last_validated,
+        open_observation_count=open_observation_count,
     )

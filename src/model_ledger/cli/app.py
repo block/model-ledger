@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
@@ -11,6 +12,9 @@ from rich.table import Table
 
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.sdk.inventory import Inventory
+
+if TYPE_CHECKING:
+    from model_ledger.core.models import ModelVersion
 
 app = typer.Typer(
     name="model-ledger",
@@ -38,10 +42,11 @@ def _resolve_backend(backend: str, path: str | None, schema: str | None = None):
 
         url = path or os.environ.get("MODEL_LEDGER_URL")
         if not url:
-            raise typer.Exit(
+            typer.echo(
                 "HTTP backend requires --path <url> or MODEL_LEDGER_URL env var. "
                 "Example: model-ledger mcp --backend http --path https://model-ledger.internal:8000"
             )
+            raise typer.Exit(1)
         return HttpLedgerBackend(url)
     if backend == "memory":
         from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
@@ -62,15 +67,16 @@ def _snowflake_backend(schema: str | None = None):
     """
     from model_ledger.backends.snowflake import SnowflakeLedgerBackend
 
-    sf_schema = schema or os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
+    sf_schema = schema if schema else os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
 
     try:
         import snowflake.connector
     except ImportError as exc:
-        raise typer.Exit(
+        typer.echo(
             "Snowflake backend requires snowflake-connector-python. "
             "Run: pip install model-ledger[snowflake]"
-        ) from exc
+        )
+        raise typer.Exit(1) from exc
 
     account = os.environ.get("SNOWFLAKE_ACCOUNT")
     user = os.environ.get("SNOWFLAKE_USER")
@@ -78,10 +84,11 @@ def _snowflake_backend(schema: str | None = None):
     authenticator = os.environ.get("SNOWFLAKE_AUTHENTICATOR")
 
     if not account or not user:
-        raise typer.Exit(
+        typer.echo(
             "Snowflake backend requires SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER env vars. "
             "For SSO: set SNOWFLAKE_AUTHENTICATOR=externalbrowser"
         )
+        raise typer.Exit(1)
 
     connect_kwargs: dict = {"account": account, "user": user}
     if password:
@@ -206,6 +213,7 @@ def validate_cmd(
         raise typer.Exit(code=1) from None
 
     # Resolve version
+    ver: ModelVersion | None
     if version is None:
         versions = inv._backend.list_versions(model_name)
         if not versions:
@@ -283,8 +291,8 @@ def audit_log(
 
     try:
         inv.get_model(model_name)
-    except ModelNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+    except ModelNotFoundError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1) from None
 
     events = inv.get_audit_log(model_name, version)
@@ -345,7 +353,7 @@ def export_cmd(
     try:
         from model_ledger.export.audit_pack import export_audit_pack
 
-        export_audit_pack(inv, model_name, version, output_dir=output)
+        export_audit_pack(inventory=inv, model_name=model_name, version=version, output_path=output)
         console.print(f"[green]Audit pack exported to {output}/[/green]")
     except (ImportError, AttributeError):
         console.print(

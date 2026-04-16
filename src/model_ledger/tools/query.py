@@ -15,7 +15,7 @@ def _model_to_summary(model: ModelRef, ledger: Ledger) -> ModelSummary:
     - ``event_count``: total number of snapshots
     - ``platform``: source field from the first snapshot that has one
     """
-    snapshots = ledger.history(model)
+    snapshots = ledger.history(model) or []
     event_count = len(snapshots)
     last_event = snapshots[0].timestamp if snapshots else None
 
@@ -66,7 +66,8 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
         if input.text:
             text_lower = input.text.lower()
             models_all = [
-                m for m in models_all
+                m
+                for m in models_all
                 if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
             ]
         total = len(models_all)

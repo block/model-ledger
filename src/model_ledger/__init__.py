@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from model_ledger.connectors import github_connector, rest_connector, sql_connector
 from model_ledger.core.enums import ModelStatus, ModelType, RiskTier, VersionStatus
 from model_ledger.core.exceptions import (
     ImmutableVersionError,
@@ -25,22 +26,35 @@ from model_ledger.core.exceptions import (
 )
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 from model_ledger.core.models import ComponentNode, Model, ModelVersion
-from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.graph.models import DataNode, DataPort
 from model_ledger.graph.protocol import SourceConnector
+from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.sdk.inventory import Inventory
 from model_ledger.sdk.ledger import Ledger
-from model_ledger.connectors import sql_connector, rest_connector, github_connector
 
 # v0.6.0 — agent protocol tools
 from model_ledger.tools import (
-    changelog, discover, investigate, query, record, trace,
+    changelog,
+    discover,
+    investigate,
+    query,
+    record,
+    trace,
 )
 from model_ledger.tools.schemas import (
-    ChangelogInput, ChangelogOutput, DiscoverInput, DiscoverOutput,
-    InvestigateInput, InvestigateOutput, ModelSummary,
-    QueryInput, QueryOutput, RecordInput, RecordOutput,
-    TraceInput, TraceOutput,
+    ChangelogInput,
+    ChangelogOutput,
+    DiscoverInput,
+    DiscoverOutput,
+    InvestigateInput,
+    InvestigateOutput,
+    ModelSummary,
+    QueryInput,
+    QueryOutput,
+    RecordInput,
+    RecordOutput,
+    TraceInput,
+    TraceOutput,
 )
 
 if TYPE_CHECKING:
@@ -85,11 +99,25 @@ __all__ = [
     "introspect",
     "register_introspector",
     # v0.6.0 — agent tools
-    "changelog", "discover", "investigate", "query", "record", "trace",
-    "ChangelogInput", "ChangelogOutput", "DiscoverInput", "DiscoverOutput",
-    "InvestigateInput", "InvestigateOutput", "ModelSummary",
-    "QueryInput", "QueryOutput", "RecordInput", "RecordOutput",
-    "TraceInput", "TraceOutput",
+    "changelog",
+    "discover",
+    "investigate",
+    "query",
+    "record",
+    "trace",
+    "ChangelogInput",
+    "ChangelogOutput",
+    "DiscoverInput",
+    "DiscoverOutput",
+    "InvestigateInput",
+    "InvestigateOutput",
+    "ModelSummary",
+    "QueryInput",
+    "QueryOutput",
+    "RecordInput",
+    "RecordOutput",
+    "TraceInput",
+    "TraceOutput",
 ]
 
 __version__ = "0.6.0"

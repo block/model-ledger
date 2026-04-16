@@ -134,6 +134,8 @@ class InvestigateOutput(BaseModel):
     downstream: list[DependencyNode] = Field(default_factory=list)
     groups: list[str] = Field(default_factory=list)
     members: list[str] = Field(default_factory=list)
+    last_validated: datetime | None = None
+    open_observation_count: int | None = None
 
 
 # ---------------------------------------------------------------------------

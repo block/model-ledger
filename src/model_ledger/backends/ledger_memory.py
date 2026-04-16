@@ -36,14 +36,15 @@ class InMemoryLedgerBackend:
         if text:
             text_lower = text.lower()
             results = [
-                m for m in results
+                m
+                for m in results
                 if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
             ]
         results.sort(key=lambda m: m.name)
         if offset is not None:
-            results = results[int(offset):]
+            results = results[int(offset) :]
         if limit is not None:
-            results = results[:int(limit)]
+            results = results[: int(limit)]
         return results
 
     def update_model(self, model: ModelRef) -> None:
@@ -91,12 +92,13 @@ class InMemoryLedgerBackend:
         return max(snaps, key=lambda s: s.timestamp)
 
     def list_snapshots_before(
-        self, model_hash: str, before: datetime,
+        self,
+        model_hash: str,
+        before: datetime,
         event_type: str | None = None,
     ) -> list[Snapshot]:
         results = [
-            s for s in self._snapshots
-            if s.model_hash == model_hash and s.timestamp < before
+            s for s in self._snapshots if s.model_hash == model_hash and s.timestamp < before
         ]
         if event_type is not None:
             results = [s for s in results if s.event_type == event_type]

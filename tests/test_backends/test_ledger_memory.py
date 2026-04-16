@@ -16,8 +16,11 @@ def backend():
 @pytest.fixture
 def sample_model():
     return ModelRef(
-        name="test-model", owner="team-a", model_type="ml_model",
-        tier="high", purpose="testing",
+        name="test-model",
+        owner="team-a",
+        model_type="ml_model",
+        tier="high",
+        purpose="testing",
         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -58,8 +61,10 @@ class TestSnapshotOperations:
     def test_append_and_get_snapshot(self, backend, sample_model):
         backend.save_model(sample_model)
         snap = Snapshot(
-            model_hash=sample_model.model_hash, actor="test",
-            event_type="registered", payload={"name": "test-model"},
+            model_hash=sample_model.model_hash,
+            actor="test",
+            event_type="registered",
+            payload={"name": "test-model"},
         )
         backend.append_snapshot(snap)
         result = backend.get_snapshot(snap.snapshot_hash)
@@ -69,39 +74,59 @@ class TestSnapshotOperations:
     def test_list_snapshots(self, backend, sample_model):
         backend.save_model(sample_model)
         for i in range(3):
-            backend.append_snapshot(Snapshot(
-                model_hash=sample_model.model_hash, actor="test",
-                event_type=f"event_{i}", payload={"i": i},
-                timestamp=datetime(2026, 1, i + 1, tzinfo=timezone.utc),
-            ))
+            backend.append_snapshot(
+                Snapshot(
+                    model_hash=sample_model.model_hash,
+                    actor="test",
+                    event_type=f"event_{i}",
+                    payload={"i": i},
+                    timestamp=datetime(2026, 1, i + 1, tzinfo=timezone.utc),
+                )
+            )
         snaps = backend.list_snapshots(sample_model.model_hash)
         assert len(snaps) == 3
 
     def test_list_snapshots_with_event_filter(self, backend, sample_model):
         backend.save_model(sample_model)
-        backend.append_snapshot(Snapshot(
-            model_hash=sample_model.model_hash, actor="test",
-            event_type="registered", payload={},
-        ))
-        backend.append_snapshot(Snapshot(
-            model_hash=sample_model.model_hash, actor="test",
-            event_type="introspected", payload={"features": []},
-        ))
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=sample_model.model_hash,
+                actor="test",
+                event_type="registered",
+                payload={},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=sample_model.model_hash,
+                actor="test",
+                event_type="introspected",
+                payload={"features": []},
+            )
+        )
         snaps = backend.list_snapshots(sample_model.model_hash, event_type="introspected")
         assert len(snaps) == 1
 
     def test_latest_snapshot(self, backend, sample_model):
         backend.save_model(sample_model)
-        backend.append_snapshot(Snapshot(
-            model_hash=sample_model.model_hash, actor="test",
-            event_type="v1", payload={},
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ))
-        backend.append_snapshot(Snapshot(
-            model_hash=sample_model.model_hash, actor="test",
-            event_type="v2", payload={},
-            timestamp=datetime(2026, 1, 2, tzinfo=timezone.utc),
-        ))
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=sample_model.model_hash,
+                actor="test",
+                event_type="v1",
+                payload={},
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=sample_model.model_hash,
+                actor="test",
+                event_type="v2",
+                payload={},
+                timestamp=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            )
+        )
         latest = backend.latest_snapshot(sample_model.model_hash)
         assert latest.event_type == "v2"
 
@@ -135,45 +160,69 @@ class TestListSnapshotsBefore:
     def test_filters_by_timestamp(self):
         backend = InMemoryLedgerBackend()
         model = ModelRef(
-            name="m", owner="o", model_type="ml", tier="h", purpose="p",
+            name="m",
+            owner="o",
+            model_type="ml",
+            tier="h",
+            purpose="p",
         )
         backend.save_model(model)
 
         s1 = Snapshot(
-            model_hash=model.model_hash, actor="x", event_type="registered",
-            payload={}, timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            model_hash=model.model_hash,
+            actor="x",
+            event_type="registered",
+            payload={},
+            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         s2 = Snapshot(
-            model_hash=model.model_hash, actor="x", event_type="scan_confirmed",
-            payload={}, timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            model_hash=model.model_hash,
+            actor="x",
+            event_type="scan_confirmed",
+            payload={},
+            timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
         )
         s3 = Snapshot(
-            model_hash=model.model_hash, actor="x", event_type="scan_confirmed",
-            payload={}, timestamp=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            model_hash=model.model_hash,
+            actor="x",
+            event_type="scan_confirmed",
+            payload={},
+            timestamp=datetime(2026, 6, 1, tzinfo=timezone.utc),
         )
         backend.append_snapshot(s1)
         backend.append_snapshot(s2)
         backend.append_snapshot(s3)
 
         result = backend.list_snapshots_before(
-            model.model_hash, datetime(2026, 4, 1, tzinfo=timezone.utc),
+            model.model_hash,
+            datetime(2026, 4, 1, tzinfo=timezone.utc),
         )
         assert len(result) == 2
 
     def test_filters_by_event_type(self):
         backend = InMemoryLedgerBackend()
         model = ModelRef(
-            name="m", owner="o", model_type="ml", tier="h", purpose="p",
+            name="m",
+            owner="o",
+            model_type="ml",
+            tier="h",
+            purpose="p",
         )
         backend.save_model(model)
 
         s1 = Snapshot(
-            model_hash=model.model_hash, actor="x", event_type="registered",
-            payload={}, timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            model_hash=model.model_hash,
+            actor="x",
+            event_type="registered",
+            payload={},
+            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         s2 = Snapshot(
-            model_hash=model.model_hash, actor="x", event_type="not_found",
-            payload={}, timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            model_hash=model.model_hash,
+            actor="x",
+            event_type="not_found",
+            payload={},
+            timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc),
         )
         backend.append_snapshot(s1)
         backend.append_snapshot(s2)
@@ -189,6 +238,7 @@ class TestListSnapshotsBefore:
     def test_empty_when_no_snapshots_before(self):
         backend = InMemoryLedgerBackend()
         result = backend.list_snapshots_before(
-            "nonexistent", datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "nonexistent",
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         assert result == []

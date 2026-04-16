@@ -19,7 +19,7 @@ class FeedbackCorpus:
         reason_code: str | None = None,
         observation_ref: str | None = None,
     ) -> list[FeedbackEvent]:
-        events = self._backend.list_feedback_events()
+        events: list[FeedbackEvent] = self._backend.list_feedback_events()
         if verdict:
             events = [e for e in events if e.verdict == verdict]
         if reason_code:

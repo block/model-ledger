@@ -1,5 +1,6 @@
 # tests/test_tools/test_schemas.py
 """Tests for agent protocol I/O schemas."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -232,9 +233,7 @@ class TestRecordOutput:
 
     def test_json_roundtrip(self):
         ts = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
-        r = RecordOutput(
-            model_name="test", event_id="x", timestamp=ts, is_new_model=False
-        )
+        r = RecordOutput(model_name="test", event_id="x", timestamp=ts, is_new_model=False)
         data = r.model_dump(mode="json")
         assert RecordOutput(**data) == r
 

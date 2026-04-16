@@ -42,22 +42,31 @@ class TestModelRef:
 
     def test_hash_length_is_32(self):
         model = ModelRef(
-            name="test", owner="owner", model_type="ml",
-            tier="high", purpose="testing",
+            name="test",
+            owner="owner",
+            model_type="ml",
+            tier="high",
+            purpose="testing",
         )
         assert len(model.model_hash) == 32
 
     def test_model_origin_defaults_to_internal(self):
         model = ModelRef(
-            name="test", owner="owner", model_type="ml",
-            tier="high", purpose="testing",
+            name="test",
+            owner="owner",
+            model_type="ml",
+            tier="high",
+            purpose="testing",
         )
         assert model.model_origin == "internal"
 
     def test_model_origin_can_be_set(self):
         model = ModelRef(
-            name="vendor-model", owner="vendor-team", model_type="vendor",
-            tier="high", purpose="Credit scoring",
+            name="vendor-model",
+            owner="vendor-team",
+            model_type="vendor",
+            tier="high",
+            purpose="Credit scoring",
             model_origin="vendor",
         )
         assert model.model_origin == "vendor"
@@ -80,12 +89,16 @@ class TestSnapshot:
 
     def test_snapshot_hash_includes_timestamp(self):
         s1 = Snapshot(
-            model_hash="abc", actor="x", event_type="test",
+            model_hash="abc",
+            actor="x",
+            event_type="test",
             payload={"a": 1},
             timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         s2 = Snapshot(
-            model_hash="abc", actor="x", event_type="test",
+            model_hash="abc",
+            actor="x",
+            event_type="test",
             payload={"a": 1},
             timestamp=datetime(2026, 1, 2, tzinfo=timezone.utc),
         )
@@ -93,7 +106,9 @@ class TestSnapshot:
 
     def test_snapshot_json_serializable(self):
         snapshot = Snapshot(
-            model_hash="abc", actor="test", event_type="registered",
+            model_hash="abc",
+            actor="test",
+            event_type="registered",
             payload={"name": "test-model"},
         )
         data = snapshot.model_dump()
@@ -103,8 +118,10 @@ class TestSnapshot:
 
     def test_snapshot_hash_length_is_32(self):
         snapshot = Snapshot(
-            model_hash="a" * 32, actor="test",
-            event_type="registered", payload={"x": 1},
+            model_hash="a" * 32,
+            actor="test",
+            event_type="registered",
+            payload={"x": 1},
         )
         assert len(snapshot.snapshot_hash) == 32
 

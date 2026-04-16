@@ -3,10 +3,12 @@
 The factory handles GitHub API plumbing. You provide a parser function
 that converts file content into DataNodes.
 """
+
 from __future__ import annotations
 
 import base64
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 try:
     import httpx
@@ -42,15 +44,24 @@ def github_connector(
         A SourceConnector with a discover() method.
     """
     return _GitHubConnector(
-        name=name, repos=repos, project_path=project_path,
-        config_file=config_file, parser=parser, token=token,
+        name=name,
+        repos=repos,
+        project_path=project_path,
+        config_file=config_file,
+        parser=parser,
+        token=token,
     )
 
 
 class _GitHubConnector:
     def __init__(
-        self, *, name: str, repos: list[str], project_path: str,
-        config_file: str, parser: Callable[[str, str], DataNode | None],
+        self,
+        *,
+        name: str,
+        repos: list[str],
+        project_path: str,
+        config_file: str,
+        parser: Callable[[str, str], DataNode | None],
         token: str | None,
     ) -> None:
         self.name = name
@@ -62,7 +73,9 @@ class _GitHubConnector:
 
     def discover(self) -> list[DataNode]:
         if httpx is None:  # pragma: no cover
-            raise ImportError("httpx is required for github_connector. Install it with: pip install httpx")
+            raise ImportError(
+                "httpx is required for github_connector. Install it with: pip install httpx"
+            )
 
         nodes = []
         for repo in self._repos:
@@ -102,7 +115,8 @@ class _GitHubConnector:
         try:
             resp = httpx.get(
                 f"https://api.github.com/{endpoint}",
-                headers=headers, timeout=15,
+                headers=headers,
+                timeout=15,
             )
             if resp.status_code == 200:
                 return resp.json()

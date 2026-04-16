@@ -82,9 +82,9 @@ def extract_model_name_filters(sql: str | None) -> list[str]:
     seen: set[str] = set()
 
     patterns = [
-        r"model_name\s*=\s*'([^']+)'",           # WHERE model_name = 'X'
-        r"model_name\s+LIKE\s+'([^']+)'",         # WHERE model_name LIKE 'X%'
-        r"'([^']+)'\s+AS\s+model_name",           # 'X' AS model_name
+        r"model_name\s*=\s*'([^']+)'",  # WHERE model_name = 'X'
+        r"model_name\s+LIKE\s+'([^']+)'",  # WHERE model_name LIKE 'X%'
+        r"'([^']+)'\s+AS\s+model_name",  # 'X' AS model_name
     ]
     for pattern in patterns:
         for match in re.finditer(pattern, sql, re.IGNORECASE):
@@ -143,7 +143,7 @@ def extract_comment_tags(sql: str | None, prefix: str = "@") -> dict[str, str]:
     for line in sql.split("\n"):
         line = line.strip()
         if line.startswith(f"-- {prefix}"):
-            parts = line[len(f"-- {prefix}"):].split(":", 1)
+            parts = line[len(f"-- {prefix}") :].split(":", 1)
             if len(parts) == 2:
                 tags[parts[0].strip()] = parts[1].strip()
     return tags

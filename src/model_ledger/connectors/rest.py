@@ -2,6 +2,7 @@
 
 Returns a SourceConnector that queries a REST API and maps JSON items to DataNodes.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -17,7 +18,7 @@ from model_ledger.graph.models import DataNode, DataPort
 def _get_nested(data: dict, path: str) -> Any:
     """Navigate a dot-separated path into nested dicts."""
     parts = path.split(".")
-    current = data
+    current: Any = data
     for part in parts:
         if isinstance(current, dict):
             current = current.get(part)
@@ -56,18 +57,30 @@ def rest_connector(
         A SourceConnector with a discover() method.
     """
     return _RESTConnector(
-        name=name, url=url, items_path=items_path, name_field=name_field,
-        headers=headers or {}, input_fields=input_fields or [],
+        name=name,
+        url=url,
+        items_path=items_path,
+        name_field=name_field,
+        headers=headers or {},
+        input_fields=input_fields or [],
         output_fields=output_fields or [],
-        metadata_fields=metadata_fields, pagination=pagination,
+        metadata_fields=metadata_fields,
+        pagination=pagination,
     )
 
 
 class _RESTConnector:
     def __init__(
-        self, *, name: str, url: str, items_path: str, name_field: str,
-        headers: dict[str, str], input_fields: list[str],
-        output_fields: list[str], metadata_fields: dict[str, str] | None,
+        self,
+        *,
+        name: str,
+        url: str,
+        items_path: str,
+        name_field: str,
+        headers: dict[str, str],
+        input_fields: list[str],
+        output_fields: list[str],
+        metadata_fields: dict[str, str] | None,
         pagination: dict[str, str] | None,
     ) -> None:
         self.name = name
@@ -82,7 +95,9 @@ class _RESTConnector:
 
     def discover(self) -> list[DataNode]:
         if httpx is None:  # pragma: no cover
-            raise ImportError("httpx is required for rest_connector. Install it with: pip install httpx")
+            raise ImportError(
+                "httpx is required for rest_connector. Install it with: pip install httpx"
+            )
 
         all_items: list[dict] = []
         url = self._url
@@ -111,10 +126,16 @@ class _RESTConnector:
     def _to_node(self, item: dict[str, Any]) -> DataNode:
         model_name = str(_get_nested(item, self._name_field) or "")
 
-        inputs = [DataPort(str(_get_nested(item, f)).lower())
-                  for f in self._input_fields if _get_nested(item, f)]
-        outputs = [DataPort(str(_get_nested(item, f)).lower())
-                   for f in self._output_fields if _get_nested(item, f)]
+        inputs = [
+            DataPort(str(_get_nested(item, f)).lower())
+            for f in self._input_fields
+            if _get_nested(item, f)
+        ]
+        outputs = [
+            DataPort(str(_get_nested(item, f)).lower())
+            for f in self._output_fields
+            if _get_nested(item, f)
+        ]
 
         reserved = {self._name_field}
         reserved.update(self._input_fields)
@@ -127,12 +148,14 @@ class _RESTConnector:
                 if _get_nested(item, field_path) is not None
             }
         else:
-            metadata = {k: v for k, v in item.items()
-                       if k not in reserved and v is not None}
+            metadata = {k: v for k, v in item.items() if k not in reserved and v is not None}
 
         metadata["node_type"] = metadata.get("node_type", self.name)
 
         return DataNode(
-            name=model_name, platform=self.name,
-            inputs=inputs, outputs=outputs, metadata=metadata,
+            name=model_name,
+            platform=self.name,
+            inputs=inputs,
+            outputs=outputs,
+            metadata=metadata,
         )

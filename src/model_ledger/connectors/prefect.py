@@ -7,6 +7,7 @@ DataNode with schedule, parameters, and metadata.
     >>> connector = prefect_connector(name="prefect")
     >>> nodes = connector.discover()
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,15 +25,21 @@ from model_ledger.graph.models import DataNode
 
 class _PrefectConnector:
     def __init__(
-        self, *, name: str, tag_filter: list[str] | None,
+        self,
+        *,
+        name: str,
+        tag_filter: list[str] | None,
     ) -> None:
         self.name = name
         self._tag_filter = tag_filter
 
     def discover(self) -> list[DataNode]:
         if get_client is None:  # pragma: no cover
-            raise ImportError("prefect is required for prefect_connector. Install with: pip install prefect")
+            raise ImportError(
+                "prefect is required for prefect_connector. Install with: pip install prefect"
+            )
         import asyncio
+
         return asyncio.run(self._discover_async())
 
     async def _discover_async(self) -> list[DataNode]:
@@ -42,9 +49,7 @@ class _PrefectConnector:
 
         deployment_filter = None
         if self._tag_filter:
-            deployment_filter = DeploymentFilter(
-                tags=DeploymentFilterTags(all_=self._tag_filter)
-            )
+            deployment_filter = DeploymentFilter(tags=DeploymentFilterTags(all_=self._tag_filter))
 
         async with get_client() as client:
             while True:
@@ -68,10 +73,7 @@ class _PrefectConnector:
         return nodes
 
     def _to_node(self, dep: Any) -> DataNode:
-        tags = {
-            t.split(":", 1)[0]: t.split(":", 1)[1]
-            for t in (dep.tags or []) if ":" in t
-        }
+        tags = {t.split(":", 1)[0]: t.split(":", 1)[1] for t in (dep.tags or []) if ":" in t}
 
         schedule = None
         if dep.schedules:

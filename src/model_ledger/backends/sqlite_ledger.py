@@ -6,12 +6,12 @@ WAL mode for concurrent reads. Same schema as SnowflakeLedgerBackend.
     >>> from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
     >>> backend = SQLiteLedgerBackend("./inventory.db")
 """
+
 from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
 
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
@@ -60,9 +60,18 @@ class SQLiteLedgerBackend:
         """)
 
     def _model_to_row(self, m: ModelRef) -> tuple:
-        return (m.model_hash, m.name, m.owner, m.model_type, m.model_origin,
-                m.tier, m.purpose, m.status, m.created_at.isoformat(),
-                m.last_seen.isoformat() if m.last_seen else None)
+        return (
+            m.model_hash,
+            m.name,
+            m.owner,
+            m.model_type,
+            m.model_origin,
+            m.tier,
+            m.purpose,
+            m.status,
+            m.created_at.isoformat(),
+            m.last_seen.isoformat() if m.last_seen else None,
+        )
 
     def _row_to_model(self, row: sqlite3.Row) -> ModelRef:
         last_seen = None
@@ -72,9 +81,13 @@ class SQLiteLedgerBackend:
         except (KeyError, IndexError):
             pass
         return ModelRef(
-            model_hash=row["model_hash"], name=row["name"], owner=row["owner"],
-            model_type=row["model_type"], model_origin=row["model_origin"] or "internal",
-            tier=row["tier"], purpose=row["purpose"] or "",
+            model_hash=row["model_hash"],
+            name=row["name"],
+            owner=row["owner"],
+            model_type=row["model_type"],
+            model_origin=row["model_origin"] or "internal",
+            tier=row["tier"],
+            purpose=row["purpose"] or "",
             status=row["status"] or "active",
             created_at=datetime.fromisoformat(row["created_at"]),
             last_seen=last_seen,
@@ -84,11 +97,15 @@ class SQLiteLedgerBackend:
         payload = json.loads(row["payload"]) if row["payload"] else {}
         tags = json.loads(row["tags"]) if row["tags"] else {}
         return Snapshot(
-            snapshot_hash=row["snapshot_hash"], model_hash=row["model_hash"],
-            parent_hash=row["parent_hash"], actor=row["actor"],
-            event_type=row["event_type"], source=row["source"],
+            snapshot_hash=row["snapshot_hash"],
+            model_hash=row["model_hash"],
+            parent_hash=row["parent_hash"],
+            actor=row["actor"],
+            event_type=row["event_type"],
+            source=row["source"],
             timestamp=datetime.fromisoformat(row["timestamp"]),
-            payload=payload, tags=tags,
+            payload=payload,
+            tags=tags,
         )
 
     # --- Models ---
@@ -107,9 +124,7 @@ class SQLiteLedgerBackend:
         return self._row_to_model(row) if row else None
 
     def get_model_by_name(self, name: str) -> ModelRef | None:
-        row = self._conn.execute(
-            "SELECT * FROM models WHERE name = ?", (name,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM models WHERE name = ?", (name,)).fetchone()
         return self._row_to_model(row) if row else None
 
     def list_models(self, **filters: str) -> list[ModelRef]:
@@ -132,11 +147,17 @@ class SQLiteLedgerBackend:
     def append_snapshot(self, snapshot: Snapshot) -> None:
         self._conn.execute(
             "INSERT OR IGNORE INTO snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (snapshot.snapshot_hash, snapshot.model_hash, snapshot.parent_hash,
-             snapshot.timestamp.isoformat(), snapshot.actor, snapshot.event_type,
-             snapshot.source,
-             json.dumps(snapshot.payload, default=str) if snapshot.payload else None,
-             json.dumps(snapshot.tags, default=str) if snapshot.tags else None),
+            (
+                snapshot.snapshot_hash,
+                snapshot.model_hash,
+                snapshot.parent_hash,
+                snapshot.timestamp.isoformat(),
+                snapshot.actor,
+                snapshot.event_type,
+                snapshot.source,
+                json.dumps(snapshot.payload, default=str) if snapshot.payload else None,
+                json.dumps(snapshot.tags, default=str) if snapshot.tags else None,
+            ),
         )
         self._conn.commit()
 
@@ -157,9 +178,7 @@ class SQLiteLedgerBackend:
 
     def list_all_snapshots(self, event_type: str | None = None) -> list[Snapshot]:
         if event_type:
-            rows = self._conn.execute(
-                "SELECT * FROM snapshots WHERE event_type = ?", (event_type,)
-            )
+            rows = self._conn.execute("SELECT * FROM snapshots WHERE event_type = ?", (event_type,))
         else:
             rows = self._conn.execute("SELECT * FROM snapshots")
         return [self._row_to_snapshot(r) for r in rows]
@@ -186,7 +205,10 @@ class SQLiteLedgerBackend:
         return self._row_to_snapshot(row) if row else None
 
     def list_snapshots_before(
-        self, model_hash: str, before: datetime, event_type: str | None = None,
+        self,
+        model_hash: str,
+        before: datetime,
+        event_type: str | None = None,
     ) -> list[Snapshot]:
         sql = "SELECT * FROM snapshots WHERE model_hash = ? AND timestamp < ?"
         params: list[str] = [model_hash, before.isoformat()]
@@ -213,7 +235,8 @@ class SQLiteLedgerBackend:
         if not row:
             return None
         return Tag(
-            model_hash=row["model_hash"], name=row["name"],
+            model_hash=row["model_hash"],
+            name=row["name"],
             snapshot_hash=row["snapshot_hash"],
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -224,8 +247,11 @@ class SQLiteLedgerBackend:
             (model_hash,),
         )
         return [
-            Tag(model_hash=r["model_hash"], name=r["name"],
+            Tag(
+                model_hash=r["model_hash"],
+                name=r["name"],
                 snapshot_hash=r["snapshot_hash"],
-                updated_at=datetime.fromisoformat(r["updated_at"]))
+                updated_at=datetime.fromisoformat(r["updated_at"]),
+            )
             for r in rows
         ]

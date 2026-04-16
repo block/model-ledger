@@ -14,5 +14,7 @@ class DBConnection(Protocol):
     """
 
     def execute(
-        self, query: str, params: dict[str, Any] | None = None,
+        self,
+        query: str,
+        params: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]: ...

@@ -1,8 +1,10 @@
 """Tests for SQLiteLedgerBackend."""
+
 import os
 import tempfile
+
 import pytest
-from datetime import datetime, timezone
+
 from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
@@ -22,15 +24,21 @@ def backend(db_path):
 
 def _make_model(name="test-model"):
     return ModelRef(
-        name=name, owner="alice", model_type="ml_model",
-        tier="high", purpose="testing", status="active",
+        name=name,
+        owner="alice",
+        model_type="ml_model",
+        tier="high",
+        purpose="testing",
+        status="active",
     )
 
 
 def _make_snapshot(model_hash, event_type="discovered"):
     return Snapshot(
-        model_hash=model_hash, actor="test",
-        event_type=event_type, payload={"key": "value"},
+        model_hash=model_hash,
+        actor="test",
+        event_type=event_type,
+        payload={"key": "value"},
     )
 
 
@@ -164,10 +172,12 @@ class TestLedgerIntegration:
         backend = SQLiteLedgerBackend(db_path)
         ledger = Ledger(backend)
 
-        ledger.add([
-            DataNode("writer", outputs=["shared_table"]),
-            DataNode("reader", inputs=["shared_table"]),
-        ])
+        ledger.add(
+            [
+                DataNode("writer", outputs=["shared_table"]),
+                DataNode("reader", inputs=["shared_table"]),
+            ]
+        )
         ledger.connect()
 
         assert len(ledger.list()) == 2

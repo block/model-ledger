@@ -3,10 +3,12 @@
 Returns a SourceConnector that queries a database and maps rows to DataNodes.
 Supports three levels: simple column mapping, explicit I/O columns, SQL parsing.
 """
+
 from __future__ import annotations
 
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from model_ledger.graph.models import DataNode, DataPort
 
@@ -21,7 +23,7 @@ def sql_connector(
     input_columns: list[str] | None = None,
     output_columns: list[str] | None = None,
     sql_column: str | None = None,
-    sql_preprocessor: Callable[[str], str] | None = "default",
+    sql_preprocessor: Callable[[str], str] | str | None = "default",
     shared_table_patterns: list[str] | None = None,
     shared_table_fallback: dict[str, str] | None = None,
     cron_column: str | None = None,
@@ -61,33 +63,55 @@ def sql_connector(
         A SourceConnector with a discover() method.
     """
     # Resolve default preprocessor
+    resolved_preprocessor: Callable[[str], str] | None
     if sql_preprocessor == "default":
         from model_ledger.adapters.sql import strip_template_vars
-        sql_preprocessor = strip_template_vars
+
+        resolved_preprocessor = strip_template_vars
+    elif callable(sql_preprocessor):
+        resolved_preprocessor = sql_preprocessor
+    else:
+        resolved_preprocessor = None
 
     return _SQLConnector(
-        name=name, connection=connection, query=query,
-        name_column=name_column, name_prefix=name_prefix,
-        input_columns=input_columns or [], output_columns=output_columns or [],
-        sql_column=sql_column, sql_preprocessor=sql_preprocessor,
-        shared_table_patterns=shared_table_patterns if shared_table_patterns is not None else ["scores", "alert"],
+        name=name,
+        connection=connection,
+        query=query,
+        name_column=name_column,
+        name_prefix=name_prefix,
+        input_columns=input_columns or [],
+        output_columns=output_columns or [],
+        sql_column=sql_column,
+        sql_preprocessor=resolved_preprocessor,
+        shared_table_patterns=shared_table_patterns
+        if shared_table_patterns is not None
+        else ["scores", "alert"],
         shared_table_fallback=shared_table_fallback,
         cron_column=cron_column,
-        input_port=input_port, output_port=output_port,
+        input_port=input_port,
+        output_port=output_port,
         metadata_columns=metadata_columns,
     )
 
 
 class _SQLConnector:
     def __init__(
-        self, *, name: str, connection: Any, query: str,
-        name_column: str, name_prefix: str,
-        input_columns: list[str], output_columns: list[str],
-        sql_column: str | None, sql_preprocessor: Callable[[str], str] | None,
+        self,
+        *,
+        name: str,
+        connection: Any,
+        query: str,
+        name_column: str,
+        name_prefix: str,
+        input_columns: list[str],
+        output_columns: list[str],
+        sql_column: str | None,
+        sql_preprocessor: Callable[[str], str] | None,
         shared_table_patterns: list[str],
         shared_table_fallback: dict[str, str] | None,
         cron_column: str | None,
-        input_port: dict[str, str] | None, output_port: dict[str, str] | None,
+        input_port: dict[str, str] | None,
+        output_port: dict[str, str] | None,
         metadata_columns: dict[str, str] | None,
     ) -> None:
         self.name = name
@@ -163,6 +187,7 @@ class _SQLConnector:
                     extract_tables_from_sql,
                     extract_write_tables,
                 )
+
                 read_tables = extract_tables_from_sql(sql_text)
                 write_tables = extract_write_tables(sql_text)
                 model_names = extract_model_name_filters(sql_text)
@@ -211,8 +236,7 @@ class _SQLConnector:
             }
         else:
             metadata = {
-                k: v for k, v in row.items()
-                if k not in self._reserved_columns and v is not None
+                k: v for k, v in row.items() if k not in self._reserved_columns and v is not None
             }
 
         # Cron column translation
@@ -220,12 +244,16 @@ class _SQLConnector:
             cron_val = row.get(self._cron_column)
             if cron_val:
                 from model_ledger.adapters.cron import translate_cron_to_english
+
                 metadata["cron"] = cron_val
                 metadata["run_frequency"] = translate_cron_to_english(cron_val)
 
         metadata["node_type"] = metadata.get("node_type", self.name)
 
         return DataNode(
-            name=model_name, platform=self.name,
-            inputs=inputs, outputs=outputs, metadata=metadata,
+            name=model_name,
+            platform=self.name,
+            inputs=inputs,
+            outputs=outputs,
+            metadata=metadata,
         )

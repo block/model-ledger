@@ -139,13 +139,17 @@ class HttpLedgerBackend:
         ]
 
     def latest_snapshot(
-        self, model_hash: str, tag: str | None = None,
+        self,
+        model_hash: str,
+        tag: str | None = None,
     ) -> Snapshot | None:
         snapshots = self.list_snapshots(model_hash)
         return snapshots[0] if snapshots else None
 
     def list_snapshots_before(
-        self, model_hash: str, before: datetime,
+        self,
+        model_hash: str,
+        before: datetime,
         event_type: str | None = None,
     ) -> list[Snapshot]:
         snapshots = self.list_snapshots(model_hash)
@@ -154,6 +158,7 @@ class HttpLedgerBackend:
             ts = s.timestamp
             if ts.tzinfo is None:
                 from datetime import timezone
+
                 ts = ts.replace(tzinfo=timezone.utc)
             before_aware = before if before.tzinfo else before.replace(tzinfo=timezone.utc)
             if ts < before_aware and (event_type is None or s.event_type == event_type):

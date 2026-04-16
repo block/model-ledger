@@ -1,5 +1,7 @@
 """DataNode and DataPort — the core graph primitives."""
+
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -7,6 +9,7 @@ from typing import Any
 
 class DataPort:
     """A connection point. Acts like a string, carries optional schema for precision."""
+
     __slots__ = ("identifier", "schema")
 
     def __init__(self, identifier: str, **schema: str) -> None:

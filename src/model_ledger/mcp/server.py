@@ -269,7 +269,7 @@ def create_server(
             schemas.ChangelogInput,
             schemas.ChangelogOutput,
         ]:
-            all_schemas[cls.__name__] = cls.model_json_schema()
+            all_schemas[cls.__name__] = cls.model_json_schema()  # type: ignore[attr-defined]
         return json.dumps(all_schemas, indent=2)
 
     @mcp.resource("ledger://backends")
@@ -309,15 +309,18 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         Supports inline model dicts, JSON files, or named connectors.
         Returns counts of models added/skipped and links created.
         """
-        resp = client.post("/discover", json={
-            "source_type": source_type,
-            "models": models,
-            "connector_name": connector_name,
-            "connector_config": connector_config,
-            "file_path": file_path,
-            "auto_connect": auto_connect,
-        })
-        return resp.json()
+        resp = client.post(
+            "/discover",
+            json={
+                "source_type": source_type,
+                "models": models,
+                "connector_name": connector_name,
+                "connector_config": connector_config,
+                "file_path": file_path,
+                "auto_connect": auto_connect,
+            },
+        )
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.tool()
     def record(
@@ -334,16 +337,19 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         Use event='registered' to create a new model. Any other event
         value appends to an existing model's history.
         """
-        resp = client.post("/record", json={
-            "model_name": model_name,
-            "event": event,
-            "payload": payload or {},
-            "actor": actor,
-            "owner": owner,
-            "model_type": model_type,
-            "purpose": purpose,
-        })
-        return resp.json()
+        resp = client.post(
+            "/record",
+            json={
+                "model_name": model_name,
+                "event": event,
+                "payload": payload or {},
+                "actor": actor,
+                "owner": owner,
+                "model_type": model_type,
+                "purpose": purpose,
+            },
+        )
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.tool()
     def investigate(
@@ -360,7 +366,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         if as_of:
             params["as_of"] = as_of
         resp = client.get(f"/investigate/{model_name}", params=params)
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.tool()
     def query(
@@ -389,7 +395,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         if status:
             params["status"] = status
         resp = client.get("/query", params=params)
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.tool()
     def trace(
@@ -407,7 +413,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         if depth is not None:
             params["depth"] = depth
         resp = client.get(f"/trace/{name}", params=params)
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.tool()
     def changelog(
@@ -433,7 +439,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         if event_type:
             params["event_type"] = event_type
         resp = client.get("/changelog", params=params)
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
 
     @mcp.resource("ledger://overview")
     def overview() -> str:
@@ -446,14 +452,20 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         """JSON Schema definitions for all tool I/O models."""
         all_schemas: dict[str, Any] = {}
         for cls in [
-            schemas.DiscoverInput, schemas.DiscoverOutput,
-            schemas.RecordInput, schemas.RecordOutput,
-            schemas.QueryInput, schemas.QueryOutput,
-            schemas.InvestigateInput, schemas.InvestigateOutput,
-            schemas.TraceInput, schemas.TraceOutput,
-            schemas.ChangelogInput, schemas.ChangelogOutput,
+            schemas.DiscoverInput,
+            schemas.DiscoverOutput,
+            schemas.RecordInput,
+            schemas.RecordOutput,
+            schemas.QueryInput,
+            schemas.QueryOutput,
+            schemas.InvestigateInput,
+            schemas.InvestigateOutput,
+            schemas.TraceInput,
+            schemas.TraceOutput,
+            schemas.ChangelogInput,
+            schemas.ChangelogOutput,
         ]:
-            all_schemas[cls.__name__] = cls.model_json_schema()
+            all_schemas[cls.__name__] = cls.model_json_schema()  # type: ignore[attr-defined]
         return json.dumps(all_schemas, indent=2)
 
     @mcp.resource("ledger://backends")

@@ -1,10 +1,10 @@
 """Tests for Ledger class method constructors."""
+
 import os
 import tempfile
-import pytest
-from model_ledger.sdk.ledger import Ledger
-from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
+
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+from model_ledger.sdk.ledger import Ledger
 
 
 class TestFromSqlite:
@@ -13,8 +13,14 @@ class TestFromSqlite:
             path = f.name
         try:
             ledger = Ledger.from_sqlite(path)
-            ledger.register(name="test", owner="alice", model_type="ml",
-                           tier="high", purpose="test", actor="test")
+            ledger.register(
+                name="test",
+                owner="alice",
+                model_type="ml",
+                tier="high",
+                purpose="test",
+                actor="test",
+            )
             assert len(ledger.list()) == 1
             del ledger
             ledger2 = Ledger.from_sqlite(path)
@@ -25,7 +31,7 @@ class TestFromSqlite:
     def test_creates_file_if_missing(self):
         path = tempfile.mktemp(suffix=".db")
         try:
-            ledger = Ledger.from_sqlite(path)
+            Ledger.from_sqlite(path)
             assert os.path.exists(path)
         finally:
             if os.path.exists(path):
@@ -35,10 +41,12 @@ class TestFromSqlite:
 class TestFromSnowflake:
     def test_creates_ledger_with_snowflake_backend(self):
         from tests.test_backends.test_snowflake_ledger import MockLedgerSession
+
         session = MockLedgerSession()
         ledger = Ledger.from_snowflake(session, schema="TEST_SCHEMA")
-        ledger.register(name="test", owner="alice", model_type="ml",
-                       tier="high", purpose="test", actor="test")
+        ledger.register(
+            name="test", owner="alice", model_type="ml", tier="high", purpose="test", actor="test"
+        )
         assert len(ledger.list()) == 1
 
 

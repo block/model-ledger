@@ -1,5 +1,7 @@
 """Tests for prefect_connector factory."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
 from model_ledger.connectors.prefect import prefect_connector
 from model_ledger.graph.protocol import SourceConnector
 
@@ -79,9 +81,11 @@ def test_tag_filter_passed_to_api():
     mock_filter = MagicMock()
     mock_tags = MagicMock()
 
-    with patch("model_ledger.connectors.prefect.get_client", return_value=client), \
-         patch("model_ledger.connectors.prefect.DeploymentFilter", mock_filter), \
-         patch("model_ledger.connectors.prefect.DeploymentFilterTags", mock_tags):
+    with (
+        patch("model_ledger.connectors.prefect.get_client", return_value=client),
+        patch("model_ledger.connectors.prefect.DeploymentFilter", mock_filter),
+        patch("model_ledger.connectors.prefect.DeploymentFilterTags", mock_tags),
+    ):
         prefect_connector(tag_filter=["deploy_from:main"]).discover()
         mock_tags.assert_called_once_with(all_=["deploy_from:main"])
         mock_filter.assert_called_once()
@@ -105,6 +109,7 @@ def test_no_schedule():
 
 def test_extracts_source_updated_at():
     from datetime import datetime, timezone
+
     ts = datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc)
     deps = [_make_deployment("model", updated=ts)]
     with _patch_prefect(deps):

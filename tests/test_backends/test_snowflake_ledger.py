@@ -1,6 +1,5 @@
 """Tests for SnowflakeLedgerBackend — v0.4.0 LedgerBackend protocol."""
 
-import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -36,13 +35,18 @@ class MockLedgerSession:
             # Handle batched MERGE with UNION ALL
             for m in re.finditer(
                 r"SELECT\s+'([^']+)'\s+AS\s+model_hash,\s+'([^']+)'\s+AS\s+name,\s+'([^']+)'\s+AS\s+owner,\s+'([^']+)'\s+AS\s+model_type,\s+'([^']+)'\s+AS\s+model_origin,\s+'([^']+)'\s+AS\s+tier",
-                query, re.DOTALL,
+                query,
+                re.DOTALL,
             ):
                 self._models[m.group(1)] = {
-                    "MODEL_HASH": m.group(1), "NAME": m.group(2),
-                    "OWNER": m.group(3), "MODEL_TYPE": m.group(4),
-                    "MODEL_ORIGIN": m.group(5), "TIER": m.group(6),
-                    "PURPOSE": "", "STATUS": "active",
+                    "MODEL_HASH": m.group(1),
+                    "NAME": m.group(2),
+                    "OWNER": m.group(3),
+                    "MODEL_TYPE": m.group(4),
+                    "MODEL_ORIGIN": m.group(5),
+                    "TIER": m.group(6),
+                    "PURPOSE": "",
+                    "STATUS": "active",
                     "CREATED_AT": datetime(2025, 1, 1, tzinfo=timezone.utc),
                 }
             return MockCollectResult([])
@@ -68,16 +72,22 @@ class MockLedgerSession:
             # Handle batched SELECT ... UNION ALL SELECT format
             for m in re.finditer(
                 r"SELECT\s+'([^']+)',\s*'([^']+)',\s*(NULL|'[^']*'),\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*(NULL|'[^']*')",
-                query, re.DOTALL,
+                query,
+                re.DOTALL,
             ):
-                self._snapshots.append({
-                    "SNAPSHOT_HASH": m.group(1), "MODEL_HASH": m.group(2),
-                    "PARENT_HASH": None if m.group(3) == "NULL" else m.group(3).strip("'"),
-                    "TIMESTAMP": datetime(2025, 1, 1, tzinfo=timezone.utc),
-                    "ACTOR": m.group(5), "EVENT_TYPE": m.group(6),
-                    "SOURCE": None if m.group(7) == "NULL" else m.group(7).strip("'"),
-                    "PAYLOAD": {}, "TAGS": {},
-                })
+                self._snapshots.append(
+                    {
+                        "SNAPSHOT_HASH": m.group(1),
+                        "MODEL_HASH": m.group(2),
+                        "PARENT_HASH": None if m.group(3) == "NULL" else m.group(3).strip("'"),
+                        "TIMESTAMP": datetime(2025, 1, 1, tzinfo=timezone.utc),
+                        "ACTOR": m.group(5),
+                        "EVENT_TYPE": m.group(6),
+                        "SOURCE": None if m.group(7) == "NULL" else m.group(7).strip("'"),
+                        "PAYLOAD": {},
+                        "TAGS": {},
+                    }
+                )
             return MockCollectResult([])
 
         if "SNAPSHOTS" in upper and "MODEL_HASH =" in upper and "ORDER BY" in upper:
@@ -101,11 +111,13 @@ class MockLedgerSession:
         if "MERGE INTO" in upper and "TAGS" in upper:
             m = re.search(
                 r"SELECT\s+'([^']+)'\s+AS\s+model_hash,\s+'([^']+)'\s+AS\s+name,\s+'([^']+)'\s+AS\s+snapshot_hash",
-                query, re.DOTALL,
+                query,
+                re.DOTALL,
             )
             if m:
                 self._tags[(m.group(1), m.group(2))] = {
-                    "MODEL_HASH": m.group(1), "NAME": m.group(2),
+                    "MODEL_HASH": m.group(1),
+                    "NAME": m.group(2),
                     "SNAPSHOT_HASH": m.group(3),
                     "UPDATED_AT": datetime(2025, 1, 1, tzinfo=timezone.utc),
                 }
@@ -132,14 +144,20 @@ class MockLedgerSession:
 @pytest.fixture
 def backend():
     from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
     return SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=MockLedgerSession())
 
 
 def _make_model(name="test-model", model_hash="abc123"):
     return ModelRef(
-        model_hash=model_hash, name=name, owner="test-owner",
-        model_type="ml_model", model_origin="internal",
-        tier="high", purpose="testing", status="active",
+        model_hash=model_hash,
+        name=name,
+        owner="test-owner",
+        model_type="ml_model",
+        model_origin="internal",
+        tier="high",
+        purpose="testing",
+        status="active",
         created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -172,9 +190,12 @@ def test_list_models(backend):
 
 def test_append_and_list_snapshots(backend):
     snap = Snapshot(
-        snapshot_hash="snap1", model_hash="m1",
+        snapshot_hash="snap1",
+        model_hash="m1",
         timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        actor="scanner", event_type="registered", source="alerting",
+        actor="scanner",
+        event_type="registered",
+        source="alerting",
         payload={"rule_count": 42},
     )
     backend.append_snapshot(snap)
@@ -185,17 +206,26 @@ def test_append_and_list_snapshots(backend):
 
 def test_list_snapshots_by_event_type(backend):
     for et in ["registered", "enriched", "not_found"]:
-        backend.append_snapshot(Snapshot(
-            snapshot_hash=f"s-{et}", model_hash="m1",
-            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
-            actor="scanner", event_type=et, source="alerting",
-        ))
+        backend.append_snapshot(
+            Snapshot(
+                snapshot_hash=f"s-{et}",
+                model_hash="m1",
+                timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+                actor="scanner",
+                event_type=et,
+                source="alerting",
+            )
+        )
     assert len(backend.list_snapshots("m1", event_type="enriched")) == 1
 
 
 def test_set_and_get_tag(backend):
-    tag = Tag(model_hash="m1", name="latest", snapshot_hash="snap1",
-              updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    tag = Tag(
+        model_hash="m1",
+        name="latest",
+        snapshot_hash="snap1",
+        updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
     backend.set_tag(tag)
     result = backend.get_tag("m1", "latest")
     assert result is not None
@@ -208,8 +238,12 @@ def test_get_tag_not_found(backend):
 
 def test_list_tags(backend):
     for name in ["latest", "prod"]:
-        backend.set_tag(Tag(
-            model_hash="m1", name=name, snapshot_hash=f"s-{name}",
-            updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        ))
+        backend.set_tag(
+            Tag(
+                model_hash="m1",
+                name=name,
+                snapshot_hash=f"s-{name}",
+                updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            )
+        )
     assert len(backend.list_tags("m1")) == 2

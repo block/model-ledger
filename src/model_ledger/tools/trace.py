@@ -10,12 +10,12 @@ def _get_platform(name: str, ledger: Ledger) -> str | None:
     """Try to extract platform from the model's snapshot history."""
     try:
         model = ledger.get(name)
-        for snap in ledger.history(model):
+        for snap in ledger.history(model) or []:
             if snap.source:
-                return snap.source
+                return str(snap.source)
             # Also check payload for platform from discovered events
             if snap.payload.get("platform"):
-                return snap.payload["platform"]
+                return str(snap.payload["platform"])
     except Exception:
         pass
     return None

@@ -1,5 +1,6 @@
 # tests/test_tools/test_record.py
 """Tests for the record tool — register models and record events."""
+
 from __future__ import annotations
 
 import pytest

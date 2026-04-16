@@ -62,8 +62,13 @@ def translate_cron_to_english(cron_expression: str | None) -> str:
 
     if day == "*" and month == "*" and weekday.isdigit():
         days_of_week = [
-            "Sunday", "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday",
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
         ]
         weekday_int = int(weekday)
         if 0 <= weekday_int < len(days_of_week):

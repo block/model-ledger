@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,11 +14,19 @@ from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 # Events that are internal ledger bookkeeping or governance actions on the
 # composite itself.  These are NOT propagated as member_changed to parent
 # composites — only real domain events on member models should surface there.
-_INTERNAL_EVENTS: frozenset[str] = frozenset({
-    "registered", "has_dependent", "depends_on",
-    "member_added", "member_removed", "member_changed",
-    "observation_issued", "observation_resolved", "validated",
-})
+_INTERNAL_EVENTS: frozenset[str] = frozenset(
+    {
+        "registered",
+        "has_dependent",
+        "depends_on",
+        "member_added",
+        "member_removed",
+        "member_changed",
+        "observation_issued",
+        "observation_resolved",
+        "validated",
+    }
+)
 
 
 class Ledger:
@@ -44,6 +53,7 @@ class Ledger:
             >>> ledger = Ledger.from_sqlite("./inventory.db")
         """
         from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
+
         return cls(SQLiteLedgerBackend(db_path))
 
     @classmethod
@@ -58,6 +68,7 @@ class Ledger:
             >>> ledger = Ledger.from_snowflake(conn, schema="ANALYTICS.MODEL_LEDGER")
         """
         from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
         return cls(SnowflakeLedgerBackend(connection=connection, schema=schema))
 
     def _resolve_model(self, model: ModelRef | str) -> ModelRef:
@@ -93,20 +104,29 @@ class Ledger:
                 self._name_cache[name] = existing
                 return existing
         model = ModelRef(
-            name=name, owner=owner, model_type=model_type,
+            name=name,
+            owner=owner,
+            model_type=model_type,
             model_origin=model_origin,
-            tier=tier, purpose=purpose, status=status,
+            tier=tier,
+            purpose=purpose,
+            status=status,
         )
         self._backend.save_model(model)
-        self._backend.append_snapshot(Snapshot(
-            model_hash=model.model_hash, actor=actor,
-            event_type="registered",
-            payload={
-                "name": name, "owner": owner,
-                "tier": tier, "purpose": purpose,
-                "model_origin": model_origin,
-            },
-        ))
+        self._backend.append_snapshot(
+            Snapshot(
+                model_hash=model.model_hash,
+                actor=actor,
+                event_type="registered",
+                payload={
+                    "name": name,
+                    "owner": owner,
+                    "tier": tier,
+                    "purpose": purpose,
+                    "model_origin": model_origin,
+                },
+            )
+        )
         self._name_cache[name] = model
         return model
 
@@ -146,7 +166,7 @@ class Ledger:
                 parent_composites = self.groups(model)
             except ModelNotFoundError:
                 parent_composites = []
-            for composite in parent_composites:
+            for composite in parent_composites or []:
                 self.record(
                     composite,
                     event="member_changed",
@@ -168,7 +188,8 @@ class Ledger:
         if latest is None:
             raise ModelNotFoundError(ref.name)
         tag = Tag(
-            name=name, model_hash=ref.model_hash,
+            name=name,
+            model_hash=ref.model_hash,
             snapshot_hash=latest.snapshot_hash,
         )
         self._backend.set_tag(tag)
@@ -182,18 +203,22 @@ class Ledger:
             raise ModelNotFoundError(name_or_hash)
         return result
 
-    def list(self, **filters: str) -> list[ModelRef]:
+    def list(self, **filters: str) -> builtins.list[ModelRef]:
         return self._backend.list_models(**filters)
 
     def history(
-        self, model: ModelRef | str, **filters: str,
-    ) -> list[Snapshot]:
+        self,
+        model: ModelRef | str,
+        **filters: str,
+    ) -> builtins.list[Snapshot]:
         ref = self._resolve_model(model)
         snaps = self._backend.list_snapshots(ref.model_hash, **filters)
         return sorted(snaps, key=lambda s: s.timestamp, reverse=True)
 
     def latest(
-        self, model: ModelRef | str, tag: str | None = None,
+        self,
+        model: ModelRef | str,
+        tag: str | None = None,
     ) -> Snapshot | None:
         ref = self._resolve_model(model)
         return self._backend.latest_snapshot(ref.model_hash, tag=tag)
@@ -237,7 +262,7 @@ class Ledger:
         self,
         date: datetime,
         platform: str | None = None,
-    ) -> list[ModelRef]:
+    ) -> builtins.list[ModelRef]:
         all_models = self._backend.list_models()
         result = []
         for model in all_models:
@@ -258,10 +283,10 @@ class Ledger:
         self,
         model: ModelRef | str,
         direction: str = "both",
-    ) -> list[dict[str, Any]]:
+    ) -> builtins.list[dict[str, Any]]:
         ref = self._resolve_model(model)
         snaps = self._backend.list_snapshots(ref.model_hash)
-        result: list[dict[str, Any]] = []
+        result: builtins.list[dict[str, Any]] = []
 
         if direction in ("upstream", "both"):
             for s in snaps:
@@ -270,11 +295,13 @@ class Ledger:
                         upstream = self.get(s.payload["upstream_hash"])
                     except ModelNotFoundError:
                         continue
-                    result.append({
-                        "model": upstream,
-                        "relationship": s.payload.get("relationship", "depends_on"),
-                        "direction": "upstream",
-                    })
+                    result.append(
+                        {
+                            "model": upstream,
+                            "relationship": s.payload.get("relationship", "depends_on"),
+                            "direction": "upstream",
+                        }
+                    )
 
         if direction in ("downstream", "both"):
             for s in snaps:
@@ -283,11 +310,13 @@ class Ledger:
                         downstream = self.get(s.payload["downstream_hash"])
                     except ModelNotFoundError:
                         continue
-                    result.append({
-                        "model": downstream,
-                        "relationship": s.payload.get("relationship", "depends_on"),
-                        "direction": "downstream",
-                    })
+                    result.append(
+                        {
+                            "model": downstream,
+                            "relationship": s.payload.get("relationship", "depends_on"),
+                            "direction": "downstream",
+                        }
+                    )
 
         return result
 
@@ -301,7 +330,8 @@ class Ledger:
         """
         import hashlib
         import json
-        from model_ledger.graph.models import DataNode, DataPort
+
+        from model_ledger.graph.models import DataNode
 
         if isinstance(nodes, DataNode):
             nodes = [nodes]
@@ -330,7 +360,10 @@ class Ledger:
             ref = self.register(
                 name=node.name,
                 owner=node.metadata.get("owner") or "unknown",
-                model_type=node.metadata.get("model_type") or node.metadata.get("node_type") or node.metadata.get("type") or "unknown",
+                model_type=node.metadata.get("model_type")
+                or node.metadata.get("node_type")
+                or node.metadata.get("type")
+                or "unknown",
                 tier=node.metadata.get("tier") or "unclassified",
                 purpose=node.metadata.get("purpose") or "",
                 model_origin=node.metadata.get("model_origin") or "internal",
@@ -340,15 +373,32 @@ class Ledger:
                 "platform": node.platform,
                 "inputs": [{"identifier": p.identifier, **p.schema} for p in node.inputs],
                 "outputs": [{"identifier": p.identifier, **p.schema} for p in node.outputs],
-                **{k: v for k, v in node.metadata.items()
-                   if k not in ("owner", "node_type", "tier", "purpose", "model_origin", "source_updated_at")},
+                **{
+                    k: v
+                    for k, v in node.metadata.items()
+                    if k
+                    not in (
+                        "owner",
+                        "node_type",
+                        "tier",
+                        "purpose",
+                        "model_origin",
+                        "source_updated_at",
+                    )
+                },
             }
 
             # Content-hash dedup: skip if payload unchanged.
             # Exclude volatile fields (timestamps change between runs without
             # the model actually changing).
-            _VOLATILE = {"created_at", "updated_at", "source_updated_at", "_content_hash",
-                         "change_detected", "change_occurred"}
+            _VOLATILE = {
+                "created_at",
+                "updated_at",
+                "source_updated_at",
+                "_content_hash",
+                "change_detected",
+                "change_occurred",
+            }
             stable_payload = {k: v for k, v in payload.items() if k not in _VOLATILE}
             content_hash = hashlib.sha256(
                 json.dumps(stable_payload, sort_keys=True, default=str).encode()
@@ -382,7 +432,6 @@ class Ledger:
         Preloads existing edges to skip duplicates.
         """
         from collections import defaultdict
-        from model_ledger.graph.models import DataNode, DataPort
 
         # Use cached nodes from add() if available, otherwise load from backend
         nodes = self._node_cache if self._node_cache else self._load_discovered_nodes()
@@ -412,7 +461,7 @@ class Ledger:
                 for upstream_node, out_port in output_index.get(in_port.identifier, []):
                     if upstream_node.name == node.name:
                         continue
-                    if not (out_port == in_port):
+                    if out_port != in_port:
                         continue
                     key = (upstream_node.name, node.name)
                     if key in seen:
@@ -427,7 +476,10 @@ class Ledger:
                             downstream=node.name,
                             relationship="data_flow",
                             actor="graph_builder",
-                            metadata={"via": in_port.identifier, "via_schema": in_port.schema if in_port.schema else None},
+                            metadata={
+                                "via": in_port.identifier,
+                                "via_schema": in_port.schema if in_port.schema else None,
+                            },
                         )
                         links_created += 1
                     except ModelNotFoundError:
@@ -439,6 +491,7 @@ class Ledger:
         self._resolve_model(name)
         visited = set()
         order = []
+
         def _walk(n):
             if n in visited:
                 return
@@ -446,6 +499,7 @@ class Ledger:
             for dep in self.dependencies(n, direction="upstream"):
                 _walk(dep["model"].name)
             order.append(n)
+
         _walk(name)
         return order
 
@@ -459,6 +513,7 @@ class Ledger:
         self._resolve_model(name)
         visited = set()
         result = []
+
         def _walk(n):
             for dep in self.dependencies(n, direction="downstream"):
                 child = dep["model"].name
@@ -466,6 +521,7 @@ class Ledger:
                     visited.add(child)
                     result.append(child)
                     _walk(child)
+
         _walk(name)
         return result
 
@@ -477,7 +533,7 @@ class Ledger:
         model_type: str,
         tier: str,
         purpose: str,
-        members: list[str],
+        members: builtins.list[str],
         actor: str,
         metadata: dict[str, Any] | None = None,
     ) -> ModelRef:
@@ -496,18 +552,24 @@ class Ledger:
             ... )
         """
         ref = self.register(
-            name=name, owner=owner, model_type=model_type,
-            tier=tier, purpose=purpose, actor=actor,
+            name=name,
+            owner=owner,
+            model_type=model_type,
+            tier=tier,
+            purpose=purpose,
+            actor=actor,
         )
-        for member in members:
+        for member in members or []:
             self.link_dependency(
-                upstream=member, downstream=name,
-                relationship="member_of", actor=actor,
+                upstream=member,
+                downstream=name,
+                relationship="member_of",
+                actor=actor,
                 metadata=metadata,
             )
         return ref
 
-    def members(self, group: ModelRef | str) -> list[ModelRef]:
+    def members(self, group: ModelRef | str) -> builtins.list[ModelRef]:
         """Return current members of this group.
 
         Replays member_added/member_removed snapshots to determine
@@ -520,18 +582,13 @@ class Ledger:
         """
         ref = self._resolve_model(group)
         snaps = self._backend.list_snapshots(ref.model_hash)
-        membership_events = [
-            s for s in snaps
-            if s.event_type in ("member_added", "member_removed")
-        ]
+        membership_events = [s for s in snaps if s.event_type in ("member_added", "member_removed")]
 
         # Seed from dependency links (covers register_group() seeded members
         # and is always correct as the initial universe of linked models).
-        deps = self.dependencies(group, direction="upstream")
+        deps = self.dependencies(group, direction="upstream") or []
         current: dict[str, ModelRef] = {
-            d["model"].model_hash: d["model"]
-            for d in deps
-            if d.get("relationship") == "member_of"
+            d["model"].model_hash: d["model"] for d in deps if d.get("relationship") == "member_of"
         }
 
         if not membership_events:
@@ -556,9 +613,9 @@ class Ledger:
                 current.pop(member_hash, None)
         return list(current.values())
 
-    def groups(self, model: ModelRef | str) -> list[ModelRef]:
+    def groups(self, model: ModelRef | str) -> builtins.list[ModelRef]:
         """Return all groups this model belongs to."""
-        deps = self.dependencies(model, direction="downstream")
+        deps = self.dependencies(model, direction="downstream") or []
         return [d["model"] for d in deps if d.get("relationship") == "member_of"]
 
     def add_member(
@@ -577,8 +634,10 @@ class Ledger:
         comp_ref = self._resolve_model(composite)
         mem_ref = self._resolve_model(member)
         self.link_dependency(
-            upstream=mem_ref, downstream=comp_ref,
-            relationship="member_of", actor=actor,
+            upstream=mem_ref,
+            downstream=comp_ref,
+            relationship="member_of",
+            actor=actor,
         )
         payload: dict[str, Any] = {
             "member_name": mem_ref.name,
@@ -587,7 +646,10 @@ class Ledger:
         if role is not None:
             payload["role"] = role
         return self.record(
-            comp_ref, event="member_added", payload=payload, actor=actor,
+            comp_ref,
+            event="member_added",
+            payload=payload,
+            actor=actor,
         )
 
     def remove_member(
@@ -613,14 +675,17 @@ class Ledger:
         if reason is not None:
             payload["reason"] = reason
         return self.record(
-            comp_ref, event="member_removed", payload=payload, actor=actor,
+            comp_ref,
+            event="member_removed",
+            payload=payload,
+            actor=actor,
         )
 
     def membership_at(
         self,
         composite: ModelRef | str,
         date: datetime,
-    ) -> list[ModelRef]:
+    ) -> builtins.list[ModelRef]:
         """Reconstruct composite membership at a point in time.
 
         Seeds from dependency links established on or before *date* (so groups
@@ -635,7 +700,8 @@ class Ledger:
         # depends_on snapshots on the composite record when each member_of link
         # was established.
         dep_link_snaps = [
-            s for s in snaps
+            s
+            for s in snaps
             if s.event_type == "depends_on"
             and s.payload.get("relationship") == "member_of"
             and s.timestamp <= date
@@ -656,9 +722,11 @@ class Ledger:
 
         # Overlay explicit membership events on top of the dep-link baseline.
         membership_events = sorted(
-            [s for s in snaps
-             if s.event_type in ("member_added", "member_removed")
-             and s.timestamp <= date],
+            [
+                s
+                for s in snaps
+                if s.event_type in ("member_added", "member_removed") and s.timestamp <= date
+            ],
             key=lambda s: s.timestamp,
         )
         for s in membership_events:
@@ -679,9 +747,14 @@ class Ledger:
         return list(current.values())
 
     def record_observation(
-        self, composite: ModelRef | str, *,
-        observation_id: str, observation: str, status: str,
-        severity: str | None = None, actor: str,
+        self,
+        composite: ModelRef | str,
+        *,
+        observation_id: str,
+        observation: str,
+        status: str,
+        severity: str | None = None,
+        actor: str,
         metadata: dict[str, Any] | None = None,
     ) -> Snapshot:
         """Record an observation against a composite."""
@@ -697,8 +770,12 @@ class Ledger:
         return self.record(composite, event="observation_issued", payload=payload, actor=actor)
 
     def resolve_observation(
-        self, composite: ModelRef | str, *,
-        observation_id: str, resolution: str, actor: str,
+        self,
+        composite: ModelRef | str,
+        *,
+        observation_id: str,
+        resolution: str,
+        actor: str,
         metadata: dict[str, Any] | None = None,
     ) -> Snapshot:
         """Record the resolution of an observation."""
@@ -711,8 +788,11 @@ class Ledger:
         return self.record(composite, event="observation_resolved", payload=payload, actor=actor)
 
     def record_validation(
-        self, composite: ModelRef | str, *,
-        result: str, actor: str,
+        self,
+        composite: ModelRef | str,
+        *,
+        result: str,
+        actor: str,
         metadata: dict[str, Any] | None = None,
     ) -> Snapshot:
         """Record a validation result against a composite."""
@@ -722,7 +802,7 @@ class Ledger:
         return self.record(composite, event="validated", payload=payload, actor=actor)
 
     @staticmethod
-    def _open_observation_count(snapshots: list[Snapshot]) -> int:
+    def _open_observation_count(snapshots: builtins.list[Snapshot]) -> int:
         """Return the number of observations that have been issued but not resolved.
 
         Accepts any iterable of Snapshots.  Only observation_issued and
@@ -731,7 +811,7 @@ class Ledger:
         """
         issued_ids: set[str] = set()
         resolved_ids: set[str] = set()
-        for s in sorted(snapshots, key=lambda s: s.timestamp):
+        for s in sorted(snapshots, key=lambda snap: snap.timestamp):
             obs_id = s.payload.get("observation_id")
             if not obs_id:
                 continue
@@ -741,7 +821,7 @@ class Ledger:
                 resolved_ids.add(obs_id)
         return len(issued_ids - resolved_ids)
 
-    def composite_summary(self) -> list[dict[str, Any]]:
+    def composite_summary(self) -> builtins.list[dict[str, Any]]:
         """Flat inventory of all composites with derived fields."""
         composites = self._backend.list_models(model_type="composite")
         result = []
@@ -749,16 +829,18 @@ class Ledger:
             snaps = self._backend.list_snapshots(comp.model_hash)
             member_count = len(self.members(comp))
             validated_snaps = [s for s in snaps if s.event_type == "validated"]
-            last_validated = (
-                max(s.timestamp for s in validated_snaps) if validated_snaps else None
+            last_validated = max(s.timestamp for s in validated_snaps) if validated_snaps else None
+            result.append(
+                {
+                    "name": comp.name,
+                    "owner": comp.owner,
+                    "tier": comp.tier,
+                    "status": comp.status,
+                    "member_count": member_count,
+                    "last_validated": last_validated,
+                    "open_observation_count": self._open_observation_count(snaps),
+                }
             )
-            result.append({
-                "name": comp.name, "owner": comp.owner,
-                "tier": comp.tier, "status": comp.status,
-                "member_count": member_count,
-                "last_validated": last_validated,
-                "open_observation_count": self._open_observation_count(snaps),
-            })
         return result
 
     def _load_discovered_nodes(self):
@@ -767,6 +849,7 @@ class Ledger:
         Uses bulk loading if the backend supports it (1 query instead of N).
         """
         from collections import defaultdict
+
         from model_ledger.graph.models import DataNode, DataPort
 
         models = self._backend.list_models()
@@ -779,7 +862,9 @@ class Ledger:
             # Fallback: per-model queries
             all_snaps = []
             for model in models:
-                all_snaps.extend(self._backend.list_snapshots(model.model_hash, event_type="discovered"))
+                all_snaps.extend(
+                    self._backend.list_snapshots(model.model_hash, event_type="discovered")
+                )
 
         # Group by model and take latest
         by_model: dict[str, list] = defaultdict(list)
@@ -801,9 +886,17 @@ class Ledger:
                 DataPort(p["identifier"], **{k: v for k, v in p.items() if k != "identifier"})
                 for p in payload.get("outputs", [])
             ]
-            nodes.append(DataNode(
-                name=model.name, platform=payload.get("platform", ""),
-                inputs=inputs, outputs=outputs,
-                metadata={k: v for k, v in payload.items() if k not in ("platform", "inputs", "outputs")},
-            ))
+            nodes.append(
+                DataNode(
+                    name=model.name,
+                    platform=payload.get("platform", ""),
+                    inputs=inputs,
+                    outputs=outputs,
+                    metadata={
+                        k: v
+                        for k, v in payload.items()
+                        if k not in ("platform", "inputs", "outputs")
+                    },
+                )
+            )
         return nodes

@@ -117,10 +117,9 @@ class InventoryScanner:
         )
 
     def _was_discovered_by(self, model: ModelRef, scanner_name: str) -> bool:
-        snaps = self._ledger.history(model)
+        snaps = self._ledger.history(model) or []
         return any(
-            s.source == scanner_name
-            and s.event_type in ("discovered", "scan_confirmed")
+            s.source == scanner_name and s.event_type in ("discovered", "scan_confirmed")
             for s in snaps
         )
 

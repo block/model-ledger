@@ -177,7 +177,6 @@ class DraftVersion:
     def __enter__(self) -> DraftVersion:
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if not self._saved:
             self._save()
-        return False

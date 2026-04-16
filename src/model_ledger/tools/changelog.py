@@ -69,7 +69,7 @@ def changelog(input: ChangelogInput, ledger: Ledger) -> ChangelogOutput:
     # Collect all matching events
     all_events: list[EventDetail] = []
     for model in models:
-        snapshots = ledger.history(model)
+        snapshots = ledger.history(model) or []
         for snap in snapshots:
             ts = _ensure_utc(snap.timestamp)
 

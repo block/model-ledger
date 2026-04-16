@@ -22,7 +22,9 @@ class LedgerBackend(Protocol):
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None: ...
 
     def list_snapshots_before(
-        self, model_hash: str, before: datetime,
+        self,
+        model_hash: str,
+        before: datetime,
         event_type: str | None = None,
     ) -> list[Snapshot]: ...
 

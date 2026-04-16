@@ -20,7 +20,7 @@ def _exec(session: Any, sql: str) -> list[dict[str, Any]]:
         cursor = session.execute(sql)
         if cursor.description:
             columns = [d[0] for d in cursor.description]
-            return [{col: val for col, val in zip(columns, row)} for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
         return []
     if hasattr(session, "sql"):
         return session.sql(sql).collect()
@@ -52,7 +52,9 @@ def _row_to_model_ref(row: dict[str, Any]) -> ModelRef:
         tier=row["TIER"],
         purpose=row.get("PURPOSE") or "",
         status=row.get("STATUS", "active"),
-        created_at=row["CREATED_AT"] if isinstance(row["CREATED_AT"], datetime) else datetime.now(timezone.utc),
+        created_at=row["CREATED_AT"]
+        if isinstance(row["CREATED_AT"], datetime)
+        else datetime.now(timezone.utc),
         last_seen=row.get("LAST_SEEN") if isinstance(row.get("LAST_SEEN"), datetime) else None,
     )
 
@@ -100,7 +102,9 @@ class SnowflakeLedgerBackend:
     """
 
     def __init__(
-        self, connection: Any, schema: str = "MODEL_LEDGER",
+        self,
+        connection: Any,
+        schema: str = "MODEL_LEDGER",
         read_only: bool = False,
     ) -> None:
         self._session = connection
@@ -149,21 +153,35 @@ class SnowflakeLedgerBackend:
         if not hasattr(conn, "_session_parameters"):
             return False
 
-        df = pd.DataFrame([{
-            "MODEL_HASH": m.model_hash, "NAME": m.name, "OWNER": m.owner,
-            "MODEL_TYPE": m.model_type, "MODEL_ORIGIN": m.model_origin,
-            "TIER": m.tier, "PURPOSE": m.purpose, "STATUS": m.status,
-            "CREATED_AT": m.created_at.isoformat(),
-            "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
-        } for m in self._model_buffer])
+        df = pd.DataFrame(
+            [
+                {
+                    "MODEL_HASH": m.model_hash,
+                    "NAME": m.name,
+                    "OWNER": m.owner,
+                    "MODEL_TYPE": m.model_type,
+                    "MODEL_ORIGIN": m.model_origin,
+                    "TIER": m.tier,
+                    "PURPOSE": m.purpose,
+                    "STATUS": m.status,
+                    "CREATED_AT": m.created_at.isoformat(),
+                    "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
+                }
+                for m in self._model_buffer
+            ]
+        )
 
         staging = f"{self._schema}.MODELS_STAGING"
-        _exec_no_result(self._session, f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS")
+        _exec_no_result(
+            self._session, f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS"
+        )
         wp_kwargs: dict[str, str] = {"schema": self._schema_name}
         if self._database:
             wp_kwargs["database"] = self._database
-        write_pandas(conn, df, "MODELS_STAGING", **wp_kwargs)
-        _exec_no_result(self._session, f"""
+        write_pandas(conn, df, "MODELS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
+        _exec_no_result(
+            self._session,
+            f"""
             MERGE INTO {self._schema}.MODELS t USING {staging} s ON t.MODEL_HASH = s.MODEL_HASH
             WHEN MATCHED THEN UPDATE SET
                 NAME=s.NAME, OWNER=s.OWNER, MODEL_TYPE=s.MODEL_TYPE,
@@ -172,13 +190,17 @@ class SnowflakeLedgerBackend:
             WHEN NOT MATCHED THEN INSERT
                 (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
                 VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
-                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN)""")
+                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN)""",
+        )
         _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
         return True
 
     def _flush_models_sql(self) -> None:
         """SQL MERGE fallback — works with any session type."""
-        for batch in [self._model_buffer[i:i + BATCH_SIZE] for i in range(0, len(self._model_buffer), BATCH_SIZE)]:
+        for batch in [
+            self._model_buffer[i : i + BATCH_SIZE]
+            for i in range(0, len(self._model_buffer), BATCH_SIZE)
+        ]:
             unions = " UNION ALL ".join(
                 f"SELECT {_esc(m.model_hash)} AS model_hash, {_esc(m.name)} AS name, "
                 f"{_esc(m.owner)} AS owner, {_esc(m.model_type)} AS model_type, "
@@ -188,7 +210,9 @@ class SnowflakeLedgerBackend:
                 f"{_esc(m.last_seen.isoformat()) if m.last_seen else 'NULL'} AS last_seen"
                 for m in batch
             )
-            _exec_no_result(self._session, f"""
+            _exec_no_result(
+                self._session,
+                f"""
                 MERGE INTO {self._schema}.MODELS t USING ({unions}) s ON t.MODEL_HASH = s.model_hash
                 WHEN MATCHED THEN UPDATE SET
                     NAME=s.name, OWNER=s.owner, MODEL_TYPE=s.model_type,
@@ -197,7 +221,8 @@ class SnowflakeLedgerBackend:
                 WHEN NOT MATCHED THEN INSERT
                     (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
                     VALUES (s.model_hash, s.name, s.owner, s.model_type, s.model_origin,
-                            s.tier, s.purpose, s.status, s.created_at, s.last_seen)""")
+                            s.tier, s.purpose, s.status, s.created_at, s.last_seen)""",
+            )
 
     def _flush_snapshots(self) -> None:
         if not self._snapshot_buffer:
@@ -220,70 +245,100 @@ class SnowflakeLedgerBackend:
         if not hasattr(conn, "_session_parameters"):
             return False
 
-        df = pd.DataFrame([{
-            "SNAPSHOT_HASH": s.snapshot_hash, "MODEL_HASH": s.model_hash,
-            "PARENT_HASH": s.parent_hash, "TIMESTAMP": s.timestamp.isoformat(),
-            "ACTOR": s.actor, "EVENT_TYPE": s.event_type, "SOURCE": s.source,
-            "PAYLOAD": json.dumps(s.payload, default=str) if s.payload else None,
-            "TAGS": json.dumps(s.tags, default=str) if s.tags else None,
-        } for s in self._snapshot_buffer])
+        df = pd.DataFrame(
+            [
+                {
+                    "SNAPSHOT_HASH": s.snapshot_hash,
+                    "MODEL_HASH": s.model_hash,
+                    "PARENT_HASH": s.parent_hash,
+                    "TIMESTAMP": s.timestamp.isoformat(),
+                    "ACTOR": s.actor,
+                    "EVENT_TYPE": s.event_type,
+                    "SOURCE": s.source,
+                    "PAYLOAD": json.dumps(s.payload, default=str) if s.payload else None,
+                    "TAGS": json.dumps(s.tags, default=str) if s.tags else None,
+                }
+                for s in self._snapshot_buffer
+            ]
+        )
 
         staging = f"{self._schema}.SNAPSHOTS_STAGING"
-        _exec_no_result(self._session, f"""
+        _exec_no_result(
+            self._session,
+            f"""
             CREATE OR REPLACE TEMPORARY TABLE {staging} (
                 SNAPSHOT_HASH VARCHAR, MODEL_HASH VARCHAR, PARENT_HASH VARCHAR,
                 TIMESTAMP VARCHAR, ACTOR VARCHAR, EVENT_TYPE VARCHAR,
-                SOURCE VARCHAR, PAYLOAD VARCHAR, TAGS VARCHAR)""")
+                SOURCE VARCHAR, PAYLOAD VARCHAR, TAGS VARCHAR)""",
+        )
         wp_kwargs: dict[str, str] = {"schema": self._schema_name}
         if self._database:
             wp_kwargs["database"] = self._database
-        write_pandas(conn, df, "SNAPSHOTS_STAGING", **wp_kwargs)
-        _exec_no_result(self._session, f"""
+        write_pandas(conn, df, "SNAPSHOTS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
+        _exec_no_result(
+            self._session,
+            f"""
             INSERT INTO {self._schema}.SNAPSHOTS
             (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE, PAYLOAD, TAGS)
             SELECT SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP::TIMESTAMP_TZ, ACTOR, EVENT_TYPE, SOURCE,
                    PARSE_JSON(PAYLOAD), PARSE_JSON(TAGS)
             FROM {staging} s
-            WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.SNAPSHOT_HASH)""")
+            WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.SNAPSHOT_HASH)""",
+        )
         _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
         return True
 
     def _flush_snapshots_sql(self) -> None:
         """SQL INSERT fallback — works with any session type."""
-        for batch in [self._snapshot_buffer[i:i + BATCH_SIZE] for i in range(0, len(self._snapshot_buffer), BATCH_SIZE)]:
+        for batch in [
+            self._snapshot_buffer[i : i + BATCH_SIZE]
+            for i in range(0, len(self._snapshot_buffer), BATCH_SIZE)
+        ]:
             unions = " UNION ALL ".join(
                 f"SELECT {_esc(s.snapshot_hash)}, {_esc(s.model_hash)}, "
                 f"{_esc(s.parent_hash)}, {_esc(s.timestamp.isoformat())}, "
                 f"{_esc(s.actor)}, {_esc(s.event_type)}, {_esc(s.source)}"
                 for s in batch
             )
-            _exec_no_result(self._session, f"""
+            _exec_no_result(
+                self._session,
+                f"""
                 INSERT INTO {self._schema}.SNAPSHOTS
                 (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE)
                 SELECT * FROM ({unions}) s
-                WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.$1)""")
+                WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.$1)""",
+            )
 
     def _ensure_tables(self) -> None:
         _exec_no_result(self._session, f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
-        _exec_no_result(self._session, f"""
+        _exec_no_result(
+            self._session,
+            f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.MODELS (
                 MODEL_HASH VARCHAR PRIMARY KEY, NAME VARCHAR UNIQUE NOT NULL,
                 OWNER VARCHAR NOT NULL, MODEL_TYPE VARCHAR NOT NULL,
                 MODEL_ORIGIN VARCHAR DEFAULT 'internal', TIER VARCHAR NOT NULL,
                 PURPOSE VARCHAR, STATUS VARCHAR DEFAULT 'active',
                 CREATED_AT TIMESTAMP_TZ NOT NULL,
-                LAST_SEEN TIMESTAMP_TZ)""")
-        _exec_no_result(self._session, f"""
+                LAST_SEEN TIMESTAMP_TZ)""",
+        )
+        _exec_no_result(
+            self._session,
+            f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.SNAPSHOTS (
                 SNAPSHOT_HASH VARCHAR PRIMARY KEY, MODEL_HASH VARCHAR NOT NULL,
                 PARENT_HASH VARCHAR, TIMESTAMP TIMESTAMP_TZ NOT NULL,
                 ACTOR VARCHAR NOT NULL, EVENT_TYPE VARCHAR NOT NULL,
-                SOURCE VARCHAR, PAYLOAD VARIANT, TAGS VARIANT)""")
-        _exec_no_result(self._session, f"""
+                SOURCE VARCHAR, PAYLOAD VARIANT, TAGS VARIANT)""",
+        )
+        _exec_no_result(
+            self._session,
+            f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.TAGS (
                 MODEL_HASH VARCHAR NOT NULL, NAME VARCHAR NOT NULL,
                 SNAPSHOT_HASH VARCHAR NOT NULL, UPDATED_AT TIMESTAMP_TZ NOT NULL,
-                PRIMARY KEY (MODEL_HASH, NAME))""")
+                PRIMARY KEY (MODEL_HASH, NAME))""",
+        )
 
     # --- Model methods (buffered) ---
 
@@ -292,8 +347,10 @@ class SnowflakeLedgerBackend:
 
     def get_model(self, model_hash: str) -> ModelRef | None:
         self._flush_models()
-        rows = _exec(self._session,
-            f"SELECT * FROM {self._schema}.MODELS WHERE MODEL_HASH = {_esc(model_hash)}")
+        rows = _exec(
+            self._session,
+            f"SELECT * FROM {self._schema}.MODELS WHERE MODEL_HASH = {_esc(model_hash)}",
+        )
         return _row_to_model_ref(rows[0]) if rows else None
 
     def get_model_by_name(self, name: str) -> ModelRef | None:
@@ -301,8 +358,9 @@ class SnowflakeLedgerBackend:
         for m in self._model_buffer:
             if m.name == name:
                 return m
-        rows = _exec(self._session,
-            f"SELECT * FROM {self._schema}.MODELS WHERE NAME = {_esc(name)}")
+        rows = _exec(
+            self._session, f"SELECT * FROM {self._schema}.MODELS WHERE NAME = {_esc(name)}"
+        )
         return _row_to_model_ref(rows[0]) if rows else None
 
     def list_models(self, **filters: str) -> list[ModelRef]:
@@ -357,8 +415,10 @@ class SnowflakeLedgerBackend:
 
     def get_snapshot(self, snapshot_hash: str) -> Snapshot | None:
         self._flush_snapshots()
-        rows = _exec(self._session,
-            f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE SNAPSHOT_HASH = {_esc(snapshot_hash)}")
+        rows = _exec(
+            self._session,
+            f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE SNAPSHOT_HASH = {_esc(snapshot_hash)}",
+        )
         return _row_to_snapshot(rows[0]) if rows else None
 
     def list_snapshots(self, model_hash: str, **filters: str) -> list[Snapshot]:
@@ -403,16 +463,23 @@ class SnowflakeLedgerBackend:
             if t:
                 return self.get_snapshot(t.snapshot_hash)
             return None
-        rows = _exec(self._session,
-            f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY TIMESTAMP DESC LIMIT 1")
+        rows = _exec(
+            self._session,
+            f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY TIMESTAMP DESC LIMIT 1",
+        )
         return _row_to_snapshot(rows[0]) if rows else None
 
     def list_snapshots_before(
-        self, model_hash: str, before: datetime, event_type: str | None = None,
+        self,
+        model_hash: str,
+        before: datetime,
+        event_type: str | None = None,
     ) -> list[Snapshot]:
         self._flush_snapshots()
-        sql = (f"SELECT * FROM {self._schema}.SNAPSHOTS "
-               f"WHERE MODEL_HASH = {_esc(model_hash)} AND TIMESTAMP < {_esc(before.isoformat())}")
+        sql = (
+            f"SELECT * FROM {self._schema}.SNAPSHOTS "
+            f"WHERE MODEL_HASH = {_esc(model_hash)} AND TIMESTAMP < {_esc(before.isoformat())}"
+        )
         if event_type:
             sql += f" AND EVENT_TYPE = {_esc(event_type)}"
         sql += " ORDER BY TIMESTAMP"
@@ -421,7 +488,9 @@ class SnowflakeLedgerBackend:
     # --- Tag methods ---
 
     def set_tag(self, tag: Tag) -> None:
-        _exec_no_result(self._session, f"""
+        _exec_no_result(
+            self._session,
+            f"""
             MERGE INTO {self._schema}.TAGS t
             USING (SELECT {_esc(tag.model_hash)} AS model_hash, {_esc(tag.name)} AS name,
                    {_esc(tag.snapshot_hash)} AS snapshot_hash,
@@ -429,13 +498,21 @@ class SnowflakeLedgerBackend:
             ON t.MODEL_HASH = s.model_hash AND t.NAME = s.name
             WHEN MATCHED THEN UPDATE SET SNAPSHOT_HASH = s.snapshot_hash, UPDATED_AT = s.updated_at
             WHEN NOT MATCHED THEN INSERT (MODEL_HASH, NAME, SNAPSHOT_HASH, UPDATED_AT)
-                VALUES (s.model_hash, s.name, s.snapshot_hash, s.updated_at)""")
+                VALUES (s.model_hash, s.name, s.snapshot_hash, s.updated_at)""",
+        )
 
     def get_tag(self, model_hash: str, name: str) -> Tag | None:
-        rows = _exec(self._session,
-            f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} AND NAME = {_esc(name)}")
+        rows = _exec(
+            self._session,
+            f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} AND NAME = {_esc(name)}",
+        )
         return _row_to_tag(rows[0]) if rows else None
 
     def list_tags(self, model_hash: str) -> list[Tag]:
-        return [_row_to_tag(r) for r in _exec(self._session,
-            f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY NAME")]
+        return [
+            _row_to_tag(r)
+            for r in _exec(
+                self._session,
+                f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY NAME",
+            )
+        ]

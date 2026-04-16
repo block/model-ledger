@@ -13,7 +13,7 @@ deployed, metadata_updated) and data-flow dependencies between nodes.
 
 from __future__ import annotations
 
-from model_ledger.graph.models import DataNode
+from model_ledger.graph.models import DataNode, DataPort
 from model_ledger.sdk.ledger import Ledger
 
 
@@ -34,21 +34,25 @@ def load_demo_inventory(ledger: Ledger) -> None:
             DataNode(
                 "customer_features",
                 platform="database",
-                outputs=["customer_data"],
-                metadata={"owner": "data-team", "model_type": "data_source", "description": "Core customer feature store"},
+                outputs=[DataPort("customer_data")],
+                metadata={
+                    "owner": "data-team",
+                    "model_type": "data_source",
+                    "description": "Core customer feature store",
+                },
             ),
             DataNode(
                 "transaction_pipeline",
                 platform="etl",
-                inputs=["raw_transactions"],
-                outputs=["processed_transactions", "customer_data"],
+                inputs=[DataPort("raw_transactions")],
+                outputs=[DataPort("processed_transactions"), DataPort("customer_data")],
                 metadata={"owner": "data-team", "model_type": "etl_pipeline", "schedule": "hourly"},
             ),
             DataNode(
                 "fraud_scoring",
                 platform="ml",
-                inputs=["customer_data", "processed_transactions"],
-                outputs=["fraud_scores"],
+                inputs=[DataPort("customer_data"), DataPort("processed_transactions")],
+                outputs=[DataPort("fraud_scores")],
                 metadata={
                     "owner": "risk-team",
                     "model_type": "ml_model",
@@ -58,27 +62,35 @@ def load_demo_inventory(ledger: Ledger) -> None:
             DataNode(
                 "churn_predictor",
                 platform="ml",
-                inputs=["customer_data"],
-                outputs=["churn_probabilities"],
-                metadata={"owner": "growth-team", "model_type": "ml_model", "algorithm": "logistic_regression"},
+                inputs=[DataPort("customer_data")],
+                outputs=[DataPort("churn_probabilities")],
+                metadata={
+                    "owner": "growth-team",
+                    "model_type": "ml_model",
+                    "algorithm": "logistic_regression",
+                },
             ),
             DataNode(
                 "alert_engine",
                 platform="alerting",
-                inputs=["fraud_scores"],
+                inputs=[DataPort("fraud_scores")],
                 metadata={"owner": "ops-team", "model_type": "alerting"},
             ),
             DataNode(
                 "credit_risk",
                 platform="ml",
-                inputs=["customer_data", "processed_transactions"],
-                outputs=["credit_scores"],
-                metadata={"owner": "risk-team", "model_type": "ml_model", "algorithm": "neural_network"},
+                inputs=[DataPort("customer_data"), DataPort("processed_transactions")],
+                outputs=[DataPort("credit_scores")],
+                metadata={
+                    "owner": "risk-team",
+                    "model_type": "ml_model",
+                    "algorithm": "neural_network",
+                },
             ),
             DataNode(
                 "pricing_rules",
                 platform="rules",
-                inputs=["credit_scores", "churn_probabilities"],
+                inputs=[DataPort("credit_scores"), DataPort("churn_probabilities")],
                 metadata={"owner": "pricing-team", "model_type": "heuristic"},
             ),
         ]

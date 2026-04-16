@@ -16,8 +16,10 @@ def ledger():
 class TestRegister:
     def test_register_model(self, ledger):
         model = ledger.register(
-            name="fraud-detector", owner="ml-team",
-            model_type="ml_model", tier="high",
+            name="fraud-detector",
+            owner="ml-team",
+            model_type="ml_model",
+            tier="high",
             purpose="Detect fraud",
         )
         assert model.name == "fraud-detector"
@@ -25,16 +27,28 @@ class TestRegister:
 
     def test_register_idempotent(self, ledger):
         m1 = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         m2 = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         assert m1.model_hash == m2.model_hash
 
     def test_register_creates_snapshot(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         snaps = ledger.history(model)
         assert len(snaps) == 1
@@ -42,9 +56,12 @@ class TestRegister:
 
     def test_register_with_model_origin(self, ledger):
         model = ledger.register(
-            name="vendor-model", owner="vendor-co",
-            model_type="vendor", tier="high",
-            purpose="Credit scoring", model_origin="vendor",
+            name="vendor-model",
+            owner="vendor-co",
+            model_type="vendor",
+            tier="high",
+            purpose="Credit scoring",
+            model_origin="vendor",
         )
         assert model.model_origin == "vendor"
 
@@ -52,18 +69,29 @@ class TestRegister:
 class TestRecord:
     def test_record_snapshot(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         snap = ledger.record(
-            model, event="introspected", source="ml_platform",
-            payload={"features": ["f1"]}, actor="test",
+            model,
+            event="introspected",
+            source="ml_platform",
+            payload={"features": ["f1"]},
+            actor="test",
         )
         assert snap.event_type == "introspected"
         assert snap.payload == {"features": ["f1"]}
 
     def test_record_with_model_name(self, ledger):
         ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         snap = ledger.record("a", event="tested", payload={}, actor="ci")
         assert snap.model_hash
@@ -72,17 +100,28 @@ class TestRecord:
 class TestTag:
     def test_tag_model(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         snap = ledger.record(
-            model, event="deployed", payload={}, actor="ci",
+            model,
+            event="deployed",
+            payload={},
+            actor="ci",
         )
         tag = ledger.tag(model, "active")
         assert tag.snapshot_hash == snap.snapshot_hash
 
     def test_tag_moves(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         ledger.record(model, event="v1", payload={}, actor="x")
         ledger.tag(model, "active")
@@ -94,8 +133,11 @@ class TestTag:
 class TestQuery:
     def test_get_by_name(self, ledger):
         ledger.register(
-            name="my-model", owner="team", model_type="ml",
-            tier="high", purpose="x",
+            name="my-model",
+            owner="team",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         result = ledger.get("my-model")
         assert result.name == "my-model"
@@ -106,19 +148,35 @@ class TestQuery:
 
     def test_list_all(self, ledger):
         ledger.register(
-            name="a", owner="t", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="t",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         ledger.register(
-            name="b", owner="t", model_type="heuristic", tier="low", purpose="y",
+            name="b",
+            owner="t",
+            model_type="heuristic",
+            tier="low",
+            purpose="y",
         )
         assert len(ledger.list()) == 2
 
     def test_list_filtered(self, ledger):
         ledger.register(
-            name="a", owner="t", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="t",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         ledger.register(
-            name="b", owner="t", model_type="heuristic", tier="low", purpose="y",
+            name="b",
+            owner="t",
+            model_type="heuristic",
+            tier="low",
+            purpose="y",
         )
         assert len(ledger.list(model_type="ml")) == 1
 
@@ -126,14 +184,24 @@ class TestQuery:
 class TestHistory:
     def test_history_returns_newest_first(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         ledger.record(
-            model, event="introspected", payload={"v": 1}, actor="x",
+            model,
+            event="introspected",
+            payload={"v": 1},
+            actor="x",
             timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         ledger.record(
-            model, event="validated", payload={"v": 2}, actor="x",
+            model,
+            event="validated",
+            payload={"v": 2},
+            actor="x",
             timestamp=datetime(2026, 1, 2, tzinfo=timezone.utc),
         )
         snaps = ledger.history(model)
@@ -141,14 +209,24 @@ class TestHistory:
 
     def test_latest(self, ledger):
         model = ledger.register(
-            name="a", owner="b", model_type="ml", tier="high", purpose="x",
+            name="a",
+            owner="b",
+            model_type="ml",
+            tier="high",
+            purpose="x",
         )
         ledger.record(
-            model, event="v1", payload={}, actor="x",
+            model,
+            event="v1",
+            payload={},
+            actor="x",
             timestamp=datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         ledger.record(
-            model, event="v2", payload={}, actor="x",
+            model,
+            event="v2",
+            payload={},
+            actor="x",
             timestamp=datetime(2099, 1, 2, tzinfo=timezone.utc),
         )
         latest = ledger.latest(model)
@@ -158,16 +236,24 @@ class TestHistory:
 class TestDependencies:
     def test_link_dependency_creates_two_snapshots(self, ledger):
         ledger.register(
-            name="feature-a", owner="team", model_type="signal",
-            tier="unclassified", purpose="velocity feature",
+            name="feature-a",
+            owner="team",
+            model_type="signal",
+            tier="unclassified",
+            purpose="velocity feature",
         )
         ledger.register(
-            name="fraud-model", owner="team", model_type="ml_model",
-            tier="high", purpose="Detect fraud",
+            name="fraud-model",
+            owner="team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Detect fraud",
         )
         up_snap, down_snap = ledger.link_dependency(
-            "feature-a", "fraud-model",
-            relationship="consumes", actor="scanner:ml_platform",
+            "feature-a",
+            "fraud-model",
+            relationship="consumes",
+            actor="scanner:ml_platform",
         )
         assert up_snap.event_type == "has_dependent"
         assert up_snap.payload["downstream"] == "fraud-model"
@@ -177,16 +263,24 @@ class TestDependencies:
 
     def test_dependencies_upstream(self, ledger):
         ledger.register(
-            name="signal-x", owner="t", model_type="signal",
-            tier="unclassified", purpose="x",
+            name="signal-x",
+            owner="t",
+            model_type="signal",
+            tier="unclassified",
+            purpose="x",
         )
         ledger.register(
-            name="model-a", owner="t", model_type="ml_model",
-            tier="high", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml_model",
+            tier="high",
+            purpose="x",
         )
         ledger.link_dependency(
-            "signal-x", "model-a",
-            relationship="consumes", actor="test",
+            "signal-x",
+            "model-a",
+            relationship="consumes",
+            actor="test",
         )
         deps = ledger.dependencies("model-a", direction="upstream")
         assert len(deps) == 1
@@ -196,16 +290,24 @@ class TestDependencies:
 
     def test_dependencies_downstream(self, ledger):
         ledger.register(
-            name="signal-x", owner="t", model_type="signal",
-            tier="unclassified", purpose="x",
+            name="signal-x",
+            owner="t",
+            model_type="signal",
+            tier="unclassified",
+            purpose="x",
         )
         ledger.register(
-            name="model-a", owner="t", model_type="ml_model",
-            tier="high", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml_model",
+            tier="high",
+            purpose="x",
         )
         ledger.link_dependency(
-            "signal-x", "model-a",
-            relationship="consumes", actor="test",
+            "signal-x",
+            "model-a",
+            relationship="consumes",
+            actor="test",
         )
         deps = ledger.dependencies("signal-x", direction="downstream")
         assert len(deps) == 1
@@ -213,16 +315,25 @@ class TestDependencies:
 
     def test_dependencies_both_directions(self, ledger):
         ledger.register(
-            name="signal-x", owner="t", model_type="signal",
-            tier="unclassified", purpose="x",
+            name="signal-x",
+            owner="t",
+            model_type="signal",
+            tier="unclassified",
+            purpose="x",
         )
         ledger.register(
-            name="model-a", owner="t", model_type="ml_model",
-            tier="high", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml_model",
+            tier="high",
+            purpose="x",
         )
         ledger.register(
-            name="rule-b", owner="t", model_type="heuristic",
-            tier="medium", purpose="x",
+            name="rule-b",
+            owner="t",
+            model_type="heuristic",
+            tier="medium",
+            purpose="x",
         )
         ledger.link_dependency("signal-x", "model-a", actor="test")
         ledger.link_dependency("model-a", "rule-b", actor="test")
@@ -233,7 +344,11 @@ class TestDependencies:
 class TestInventoryAt:
     def test_returns_models_created_before_date(self, ledger):
         ledger.register(
-            name="early", owner="t", model_type="ml", tier="h", purpose="x",
+            name="early",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         snaps = ledger.history("early")
         early_time = snaps[0].timestamp
@@ -244,7 +359,11 @@ class TestInventoryAt:
 
     def test_excludes_models_created_after_date(self, ledger):
         ledger.register(
-            name="early", owner="t", model_type="ml", tier="h", purpose="x",
+            name="early",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         # inventory_at far future should include it
         result_now = ledger.inventory_at(datetime(2099, 1, 1, tzinfo=timezone.utc))
@@ -252,11 +371,18 @@ class TestInventoryAt:
 
     def test_excludes_not_found_models(self, ledger):
         model = ledger.register(
-            name="gone", owner="t", model_type="ml", tier="h", purpose="x",
+            name="gone",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.record(
-            model, event="not_found", source="ml_platform",
-            payload={}, actor="scanner:ml_platform",
+            model,
+            event="not_found",
+            source="ml_platform",
+            payload={},
+            actor="scanner:ml_platform",
         )
         result = ledger.inventory_at(
             datetime(2099, 1, 1, tzinfo=timezone.utc),
@@ -265,15 +391,25 @@ class TestInventoryAt:
 
     def test_not_found_then_rediscovered(self, ledger):
         model = ledger.register(
-            name="back", owner="t", model_type="ml", tier="h", purpose="x",
+            name="back",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.record(
-            model, event="not_found", source="ml_platform",
-            payload={}, actor="scanner:ml_platform",
+            model,
+            event="not_found",
+            source="ml_platform",
+            payload={},
+            actor="scanner:ml_platform",
         )
         ledger.record(
-            model, event="scan_confirmed", source="ml_platform",
-            payload={}, actor="scanner:ml_platform",
+            model,
+            event="scan_confirmed",
+            source="ml_platform",
+            payload={},
+            actor="scanner:ml_platform",
         )
         result = ledger.inventory_at(
             datetime(2099, 1, 1, tzinfo=timezone.utc),
@@ -284,14 +420,20 @@ class TestInventoryAt:
 class TestCompositeMembers:
     def test_add_member_creates_snapshot_and_link(self, ledger):
         ledger.register(
-            name="scoring-model", owner="risk-team",
-            model_type="ml_model", tier="high", purpose="Score risk",
+            name="scoring-model",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Score risk",
         )
-        group = ledger.register_group(
-            name="risk-pipeline", owner="risk-team",
-            model_type="composite", tier="high",
+        ledger.register_group(
+            name="risk-pipeline",
+            owner="risk-team",
+            model_type="composite",
+            tier="high",
             purpose="End-to-end risk scoring",
-            members=[], actor="test",
+            members=[],
+            actor="test",
         )
         snap = ledger.add_member("risk-pipeline", "scoring-model", role="scorer", actor="test")
         assert snap.event_type == "member_added"
@@ -301,14 +443,20 @@ class TestCompositeMembers:
 
     def test_add_member_without_role(self, ledger):
         ledger.register(
-            name="etl-job", owner="data-team",
-            model_type="pipeline", tier="low", purpose="Extract data",
+            name="etl-job",
+            owner="data-team",
+            model_type="pipeline",
+            tier="low",
+            purpose="Extract data",
         )
         ledger.register_group(
-            name="detection-rule", owner="risk-team",
-            model_type="composite", tier="medium",
+            name="detection-rule",
+            owner="risk-team",
+            model_type="composite",
+            tier="medium",
             purpose="Detect anomalies",
-            members=[], actor="test",
+            members=[],
+            actor="test",
         )
         snap = ledger.add_member("detection-rule", "etl-job", actor="test")
         assert snap.event_type == "member_added"
@@ -316,18 +464,26 @@ class TestCompositeMembers:
 
     def test_remove_member_creates_snapshot(self, ledger):
         ledger.register(
-            name="old-model", owner="risk-team",
-            model_type="ml_model", tier="high", purpose="Legacy scorer",
+            name="old-model",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Legacy scorer",
         )
         ledger.register_group(
-            name="risk-pipeline", owner="risk-team",
-            model_type="composite", tier="high",
+            name="risk-pipeline",
+            owner="risk-team",
+            model_type="composite",
+            tier="high",
             purpose="End-to-end risk scoring",
-            members=["old-model"], actor="test",
+            members=["old-model"],
+            actor="test",
         )
         snap = ledger.remove_member(
-            "risk-pipeline", "old-model",
-            reason="Replaced by new version", actor="test",
+            "risk-pipeline",
+            "old-model",
+            reason="Replaced by new version",
+            actor="test",
         )
         assert snap.event_type == "member_removed"
         assert snap.payload["member_name"] == "old-model"
@@ -335,14 +491,27 @@ class TestCompositeMembers:
 
     def test_members_excludes_removed(self, ledger):
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register(
-            name="model-b", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-b",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=["model-a", "model-b"], actor="test",
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=["model-a", "model-b"],
+            actor="test",
         )
         ledger.remove_member("pipeline", "model-a", actor="test")
         current = ledger.members("pipeline")
@@ -352,11 +521,20 @@ class TestCompositeMembers:
 
     def test_members_re_add_after_remove(self, ledger):
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=["model-a"], actor="test",
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=["model-a"],
+            actor="test",
         )
         ledger.remove_member("pipeline", "model-a", actor="test")
         ledger.add_member("pipeline", "model-a", actor="test")
@@ -365,11 +543,20 @@ class TestCompositeMembers:
 
     def test_membership_at_before_removal(self, ledger):
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
-        group = ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+        ledger.register_group(
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("pipeline", "model-a", actor="test")
         # Get the timestamp of the add event
@@ -385,50 +572,77 @@ class TestCompositeMembers:
 
         # After removal: model-a should be gone
         members_after = ledger.membership_at(
-            "pipeline", datetime(2099, 1, 1, tzinfo=timezone.utc),
+            "pipeline",
+            datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         assert not any(m.name == "model-a" for m in members_after)
 
     def test_membership_at_empty_group(self, ledger):
         ledger.register_group(
-            name="empty-group", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="empty-group",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         result = ledger.membership_at(
-            "empty-group", datetime(2099, 1, 1, tzinfo=timezone.utc),
+            "empty-group",
+            datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         assert result == []
 
     def test_membership_at_with_register_group_members(self, ledger):
         """membership_at should include members added via register_group()."""
         ledger.register(
-            name="model-x", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-x",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="group-rg", owner="t", model_type="composite",
-            tier="h", purpose="x", members=["model-x"], actor="test",
+            name="group-rg",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=["model-x"],
+            actor="test",
         )
         result = ledger.membership_at(
-            "group-rg", datetime(2099, 1, 1, tzinfo=timezone.utc),
+            "group-rg",
+            datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         assert any(m.name == "model-x" for m in result)
 
 
 class TestMemberChangedPropagation:
     def test_record_on_member_propagates_to_composite(self, ledger):
-        member = ledger.register(
-            name="scoring-model", owner="t", model_type="ml",
-            tier="h", purpose="x",
+        ledger.register(
+            name="scoring-model",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="risk-pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="risk-pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("risk-pipeline", "scoring-model", actor="test")
 
         ledger.record(
-            "scoring-model", event="retrained",
-            payload={"accuracy": 0.95}, actor="ml-platform",
+            "scoring-model",
+            event="retrained",
+            payload={"accuracy": 0.95},
+            actor="ml-platform",
         )
 
         history = ledger.history("risk-pipeline")
@@ -440,22 +654,38 @@ class TestMemberChangedPropagation:
     def test_propagation_does_not_recurse(self, ledger):
         """member_changed on a composite should NOT propagate further."""
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
-        comp_inner = ledger.register_group(
-            name="inner-composite", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+        ledger.register_group(
+            name="inner-composite",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("inner-composite", "model-a", actor="test")
-        comp_outer = ledger.register_group(
-            name="outer-composite", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+        ledger.register_group(
+            name="outer-composite",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("outer-composite", "inner-composite", actor="test")
 
         ledger.record(
-            "model-a", event="retrained",
-            payload={"accuracy": 0.9}, actor="test",
+            "model-a",
+            event="retrained",
+            payload={"accuracy": 0.9},
+            actor="test",
         )
 
         # inner-composite should get member_changed
@@ -471,29 +701,48 @@ class TestMemberChangedPropagation:
     def test_no_propagation_when_no_groups(self, ledger):
         """Models without parent groups should not cause errors."""
         ledger.register(
-            name="standalone", owner="t", model_type="ml", tier="h", purpose="x",
+            name="standalone",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         snap = ledger.record(
-            "standalone", event="validated",
-            payload={"result": "passed"}, actor="test",
+            "standalone",
+            event="validated",
+            payload={"result": "passed"},
+            actor="test",
         )
         assert snap.event_type == "validated"
 
     def test_governance_events_do_not_propagate(self, ledger):
         """Observations/validations on a composite should not propagate to grandparents."""
         ledger.register_group(
-            name="inner", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="inner",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.register_group(
-            name="outer", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="outer",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("outer", "inner", actor="test")
 
         ledger.record_observation(
-            "inner", observation_id="OBS-1",
-            observation="Something", status="open", actor="test",
+            "inner",
+            observation_id="OBS-1",
+            observation="Something",
+            status="open",
+            actor="test",
         )
         ledger.record_validation("inner", result="passed", actor="test")
 
@@ -506,10 +755,13 @@ class TestGovernanceMethods:
     @pytest.fixture
     def composite(self, ledger):
         return ledger.register_group(
-            name="risk-pipeline", owner="risk-team",
-            model_type="composite", tier="high",
+            name="risk-pipeline",
+            owner="risk-team",
+            model_type="composite",
+            tier="high",
             purpose="End-to-end risk scoring",
-            members=[], actor="test",
+            members=[],
+            actor="test",
         )
 
     def test_record_observation(self, ledger, composite):
@@ -544,7 +796,8 @@ class TestGovernanceMethods:
             "risk-pipeline",
             observation_id="OBS-001",
             observation="Feature drift detected",
-            status="open", actor="test",
+            status="open",
+            actor="test",
         )
         snap = ledger.resolve_observation(
             "risk-pipeline",
@@ -575,16 +828,29 @@ class TestGovernanceMethods:
 class TestCompositeSummary:
     def test_summary_returns_all_composites(self, ledger):
         ledger.register_group(
-            name="pipeline-a", owner="team-a", model_type="composite",
-            tier="high", purpose="Pipeline A", members=[], actor="test",
+            name="pipeline-a",
+            owner="team-a",
+            model_type="composite",
+            tier="high",
+            purpose="Pipeline A",
+            members=[],
+            actor="test",
         )
         ledger.register_group(
-            name="pipeline-b", owner="team-b", model_type="composite",
-            tier="medium", purpose="Pipeline B", members=[], actor="test",
+            name="pipeline-b",
+            owner="team-b",
+            model_type="composite",
+            tier="medium",
+            purpose="Pipeline B",
+            members=[],
+            actor="test",
         )
         ledger.register(
-            name="standalone-model", owner="t", model_type="ml_model",
-            tier="low", purpose="x",
+            name="standalone-model",
+            owner="t",
+            model_type="ml_model",
+            tier="low",
+            purpose="x",
         )
         summary = ledger.composite_summary()
         names = [s["name"] for s in summary]
@@ -594,14 +860,27 @@ class TestCompositeSummary:
 
     def test_summary_includes_member_count(self, ledger):
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register(
-            name="model-b", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-b",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.add_member("pipeline", "model-a", actor="test")
         ledger.add_member("pipeline", "model-b", actor="test")
@@ -611,8 +890,13 @@ class TestCompositeSummary:
 
     def test_summary_includes_last_validated(self, ledger):
         ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.record_validation("pipeline", result="passed", actor="test")
         summary = ledger.composite_summary()
@@ -621,20 +905,33 @@ class TestCompositeSummary:
 
     def test_summary_includes_open_observation_count(self, ledger):
         ledger.register_group(
-            name="pipeline", owner="t", model_type="composite",
-            tier="h", purpose="x", members=[], actor="test",
+            name="pipeline",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
         )
         ledger.record_observation(
-            "pipeline", observation_id="OBS-1",
-            observation="Issue one", status="open", actor="test",
+            "pipeline",
+            observation_id="OBS-1",
+            observation="Issue one",
+            status="open",
+            actor="test",
         )
         ledger.record_observation(
-            "pipeline", observation_id="OBS-2",
-            observation="Issue two", status="open", actor="test",
+            "pipeline",
+            observation_id="OBS-2",
+            observation="Issue two",
+            status="open",
+            actor="test",
         )
         ledger.resolve_observation(
-            "pipeline", observation_id="OBS-1",
-            resolution="Fixed", actor="test",
+            "pipeline",
+            observation_id="OBS-1",
+            resolution="Fixed",
+            actor="test",
         )
         summary = ledger.composite_summary()
         pipeline = next(s for s in summary if s["name"] == "pipeline")
@@ -651,20 +948,34 @@ class TestInvestigateComposite:
         from model_ledger.tools.schemas import InvestigateInput
 
         ledger.register(
-            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+            name="model-a",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
         )
         ledger.register_group(
-            name="pipeline", owner="risk-team", model_type="composite",
-            tier="high", purpose="Risk scoring", members=["model-a"], actor="test",
+            name="pipeline",
+            owner="risk-team",
+            model_type="composite",
+            tier="high",
+            purpose="Risk scoring",
+            members=["model-a"],
+            actor="test",
         )
         ledger.add_member("pipeline", "model-a", actor="test")
         ledger.record_observation(
-            "pipeline", observation_id="OBS-1",
-            observation="Drift detected", status="open",
-            severity="P2", actor="test",
+            "pipeline",
+            observation_id="OBS-1",
+            observation="Drift detected",
+            status="open",
+            severity="P2",
+            actor="test",
         )
         ledger.record_validation(
-            "pipeline", result="conditional", actor="test",
+            "pipeline",
+            result="conditional",
+            actor="test",
         )
 
         result = investigate(InvestigateInput(model_name="pipeline"), ledger)

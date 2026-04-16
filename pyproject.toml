@@ -88,6 +88,10 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "E402"]
+"src/model_ledger/backends/snowflake.py" = ["E501"]  # SQL strings
+"src/model_ledger/backends/sqlite.py" = ["E501"]  # SQL strings
+"src/model_ledger/export/templates.py" = ["E501"]  # HTML templates
+"src/model_ledger/validate/profiles/*" = ["E501"]  # long violation messages
 
 [tool.ruff.format]
 quote-style = "double"
@@ -96,6 +100,36 @@ quote-style = "double"
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "xgboost",
+    "xgboost.*",
+    "sklearn",
+    "sklearn.*",
+    "lightgbm",
+    "lightgbm.*",
+    "prefect",
+    "prefect.*",
+    "pandas",
+    "pandas.*",
+    "snowflake",
+    "snowflake.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "model_ledger.backends.snowflake"
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = [
+    "model_ledger.introspect.xgboost",
+    "model_ledger.introspect.sklearn",
+    "model_ledger.introspect.lightgbm",
+    "model_ledger.connectors.prefect",
+]
+disable_error_code = ["import-not-found"]
 
 [tool.coverage.run]
 source = ["src/model_ledger"]

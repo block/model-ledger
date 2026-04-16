@@ -1,5 +1,6 @@
 """Tests for DataNode and DataPort."""
-from model_ledger.graph.models import DataPort, DataNode
+
+from model_ledger.graph.models import DataNode, DataPort
 
 
 class TestDataPort:

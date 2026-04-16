@@ -65,7 +65,8 @@ def validate(model: Model, version: ModelVersion, *, profile: str = "sr_11_7") -
     if profile not in _PROFILES:
         raise ValueError(f"Unknown profile '{profile}'. Available: {list(_PROFILES.keys())}")
     checker = _PROFILES[profile]()
-    return checker.validate(model, version)
+    result: ValidationResult = checker.validate(model, version)
+    return result
 
 
 # Import profiles to trigger registration

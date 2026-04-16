@@ -59,17 +59,27 @@ def ledger():
 
 class TestDiscoverAll:
     def test_discovers_and_registers(self, ledger):
-        scanner = FakeScanner("platform-a", [
-            ModelCandidate(
-                name="model-1", owner="team-a", model_type="ml_model",
-                platform="platform-a", platform_id="id-1",
-                metadata={"algo": "xgb"},
-            ),
-            ModelCandidate(
-                name="model-2", owner="team-b", model_type="heuristic",
-                platform="platform-a", platform_id="id-2", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "platform-a",
+            [
+                ModelCandidate(
+                    name="model-1",
+                    owner="team-a",
+                    model_type="ml_model",
+                    platform="platform-a",
+                    platform_id="id-1",
+                    metadata={"algo": "xgb"},
+                ),
+                ModelCandidate(
+                    name="model-2",
+                    owner="team-b",
+                    model_type="heuristic",
+                    platform="platform-a",
+                    platform_id="id-2",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         reports = inv.discover_all()
         assert len(reports) == 1
@@ -80,8 +90,11 @@ class TestDiscoverAll:
     def test_idempotent_scan(self, ledger):
         candidates = [
             ModelCandidate(
-                name="model-1", owner="team-a", model_type="ml_model",
-                platform="p", metadata={},
+                name="model-1",
+                owner="team-a",
+                model_type="ml_model",
+                platform="p",
+                metadata={},
             ),
         ]
         scanner = FakeScanner("p", candidates)
@@ -92,38 +105,60 @@ class TestDiscoverAll:
         assert len(ledger.list()) == 1
 
     def test_multiple_scanners(self, ledger):
-        s1 = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="ml-1", owner="t", model_type="ml_model",
-                platform="ml_platform", metadata={},
-            ),
-        ])
-        s2 = FakeScanner("etl_engine", [
-            ModelCandidate(
-                name="rule-1", owner="t", model_type="heuristic",
-                platform="etl_engine", metadata={},
-            ),
-        ])
+        s1 = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="ml-1",
+                    owner="t",
+                    model_type="ml_model",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
+        s2 = FakeScanner(
+            "etl_engine",
+            [
+                ModelCandidate(
+                    name="rule-1",
+                    owner="t",
+                    model_type="heuristic",
+                    platform="etl_engine",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [s1, s2])
         reports = inv.discover_all()
         assert len(reports) == 2
         assert len(ledger.list()) == 2
 
     def test_dedup_same_name_same_owner(self, ledger):
-        s1 = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="shared-model", owner="team-a",
-                model_type="ml_model", platform="ml_platform",
-                metadata={"source": "ml_platform"},
-            ),
-        ])
-        s2 = FakeScanner("etl_engine", [
-            ModelCandidate(
-                name="shared-model", owner="team-a",
-                model_type="ml_model", platform="etl_engine",
-                metadata={"source": "etl_engine"},
-            ),
-        ])
+        s1 = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="shared-model",
+                    owner="team-a",
+                    model_type="ml_model",
+                    platform="ml_platform",
+                    metadata={"source": "ml_platform"},
+                ),
+            ],
+        )
+        s2 = FakeScanner(
+            "etl_engine",
+            [
+                ModelCandidate(
+                    name="shared-model",
+                    owner="team-a",
+                    model_type="ml_model",
+                    platform="etl_engine",
+                    metadata={"source": "etl_engine"},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [s1, s2])
         inv.discover_all()
         assert len(ledger.list()) == 1
@@ -134,18 +169,30 @@ class TestDiscoverAll:
 
 class TestScanPlatform:
     def test_scan_single_platform(self, ledger):
-        s1 = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="ml-1", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
-        s2 = FakeScanner("etl_engine", [
-            ModelCandidate(
-                name="rule-1", owner="t", model_type="heuristic",
-                platform="etl_engine", metadata={},
-            ),
-        ])
+        s1 = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="ml-1",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
+        s2 = FakeScanner(
+            "etl_engine",
+            [
+                ModelCandidate(
+                    name="rule-1",
+                    owner="t",
+                    model_type="heuristic",
+                    platform="etl_engine",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [s1, s2])
         report = inv.scan_platform("ml_platform")
         assert report.total_found == 1
@@ -159,16 +206,25 @@ class TestScanPlatform:
 
 class TestFilterFn:
     def test_filter_excludes_candidates(self, ledger):
-        scanner = FakeScanner("etl_engine", [
-            ModelCandidate(
-                name="risk-job", owner="t", model_type="heuristic",
-                platform="etl_engine", metadata={"subject_area": "Risk"},
-            ),
-            ModelCandidate(
-                name="hr-job", owner="t", model_type="heuristic",
-                platform="etl_engine", metadata={"subject_area": "HR"},
-            ),
-        ])
+        scanner = FakeScanner(
+            "etl_engine",
+            [
+                ModelCandidate(
+                    name="risk-job",
+                    owner="t",
+                    model_type="heuristic",
+                    platform="etl_engine",
+                    metadata={"subject_area": "Risk"},
+                ),
+                ModelCandidate(
+                    name="hr-job",
+                    owner="t",
+                    model_type="heuristic",
+                    platform="etl_engine",
+                    metadata={"subject_area": "HR"},
+                ),
+            ],
+        )
 
         def risk_only(c: ModelCandidate) -> bool:
             return c.metadata.get("subject_area") == "Risk"
@@ -180,16 +236,25 @@ class TestFilterFn:
         assert ledger.get("risk-job").name == "risk-job"
 
     def test_no_filter_registers_all(self, ledger):
-        scanner = FakeScanner("p", [
-            ModelCandidate(
-                name="a", owner="t", model_type="ml",
-                platform="p", metadata={},
-            ),
-            ModelCandidate(
-                name="b", owner="t", model_type="ml",
-                platform="p", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "p",
+            [
+                ModelCandidate(
+                    name="a",
+                    owner="t",
+                    model_type="ml",
+                    platform="p",
+                    metadata={},
+                ),
+                ModelCandidate(
+                    name="b",
+                    owner="t",
+                    model_type="ml",
+                    platform="p",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         inv.discover_all()
         assert len(ledger.list()) == 2
@@ -197,24 +262,36 @@ class TestFilterFn:
 
 class TestScanRunId:
     def test_scan_run_id_in_report(self, ledger):
-        scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="m1", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="m1",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         reports = inv.discover_all()
         assert reports[0].scan_run_id is not None
         assert reports[0].scan_run_id.startswith("ml_platform:")
 
     def test_scan_run_id_in_snapshot_payloads(self, ledger):
-        scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="m1", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="m1",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         reports = inv.discover_all()
         scan_run_id = reports[0].scan_run_id
@@ -226,12 +303,18 @@ class TestScanRunId:
 
 class TestNotFoundTracking:
     def test_not_found_recorded_for_missing_model(self, ledger):
-        scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="model-a", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="model-a",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         inv.discover_all()
 
@@ -245,18 +328,30 @@ class TestNotFoundTracking:
         assert len(not_found) == 1
 
     def test_not_found_only_for_same_platform(self, ledger):
-        s1 = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="model-a", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
-        s2 = FakeScanner("etl_engine", [
-            ModelCandidate(
-                name="rule-b", owner="t", model_type="heuristic",
-                platform="etl_engine", metadata={},
-            ),
-        ])
+        s1 = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="model-a",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
+        s2 = FakeScanner(
+            "etl_engine",
+            [
+                ModelCandidate(
+                    name="rule-b",
+                    owner="t",
+                    model_type="heuristic",
+                    platform="etl_engine",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [s1, s2])
         inv.discover_all()
 
@@ -271,12 +366,18 @@ class TestNotFoundTracking:
         assert len(not_found) == 0
 
     def test_rediscovered_model_gets_confirmed(self, ledger):
-        scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="model-a", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="model-a",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         inv.discover_all()
 
@@ -287,8 +388,11 @@ class TestNotFoundTracking:
         # Reappear
         scanner._candidates = [
             ModelCandidate(
-                name="model-a", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
+                name="model-a",
+                owner="t",
+                model_type="ml",
+                platform="ml_platform",
+                metadata={},
             ),
         ]
         inv.discover_all()
@@ -302,23 +406,35 @@ class TestNotFoundTracking:
 class TestHasChanged:
     def test_skips_scanner_when_not_changed(self, ledger):
         # First scan to establish last_scan time
-        first_scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="existing", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        first_scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="existing",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv1 = InventoryScanner(ledger, [first_scanner])
         inv1.discover_all()
         assert len(ledger.list()) == 1
 
         # Second scan with changeless scanner — should be skipped
-        changeless = FakeChangelessScanner("ml_platform", [
-            ModelCandidate(
-                name="new-model", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        changeless = FakeChangelessScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="new-model",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv2 = InventoryScanner(ledger, [changeless])
         reports = inv2.discover_all()
         assert reports[0].total_found == 0
@@ -326,12 +442,18 @@ class TestHasChanged:
         assert len(ledger.list()) == 1
 
     def test_runs_scanner_when_changed(self, ledger):
-        scanner = FakeScanner("ml_platform", [
-            ModelCandidate(
-                name="m1", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="m1",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         reports = inv.discover_all()
         assert reports[0].total_found == 1
@@ -339,12 +461,18 @@ class TestHasChanged:
 
 class TestEnrichment:
     def test_enrichable_scanner_creates_enriched_snapshot(self, ledger):
-        scanner = FakeEnrichableScanner("ml_platform", [
-            ModelCandidate(
-                name="m1", owner="t", model_type="ml",
-                platform="ml_platform", metadata={},
-            ),
-        ])
+        scanner = FakeEnrichableScanner(
+            "ml_platform",
+            [
+                ModelCandidate(
+                    name="m1",
+                    owner="t",
+                    model_type="ml",
+                    platform="ml_platform",
+                    metadata={},
+                ),
+            ],
+        )
         inv = InventoryScanner(ledger, [scanner])
         inv.discover_all()
 

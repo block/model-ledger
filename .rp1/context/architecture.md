@@ -47,11 +47,30 @@ graph TB
     User -->|CLI| CLI
 
     CLI --> Ledger
-    MCP --> T_record & T_query & T_investigate & T_trace & T_changelog & T_discover
-    REST --> T_record & T_query & T_investigate & T_trace & T_changelog & T_discover
-    T_record & T_query & T_investigate & T_trace & T_changelog & T_discover --> Ledger
+    MCP --> T_record
+    MCP --> T_query
+    MCP --> T_investigate
+    MCP --> T_trace
+    MCP --> T_changelog
+    MCP --> T_discover
+    REST --> T_record
+    REST --> T_query
+    REST --> T_investigate
+    REST --> T_trace
+    REST --> T_changelog
+    REST --> T_discover
+    T_record --> Ledger
+    T_query --> Ledger
+    T_investigate --> Ledger
+    T_trace --> Ledger
+    T_changelog --> Ledger
+    T_discover --> Ledger
 
-    Ledger --> SQLite & Snowflake & HTTP_BE & JSON & Memory
+    Ledger --> SQLite
+    Ledger --> Snowflake
+    Ledger --> HTTP_BE
+    Ledger --> JSON
+    Ledger --> Memory
 
     Connectors --> Ledger
 

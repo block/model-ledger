@@ -119,17 +119,35 @@
 
 ```mermaid
 graph TD
-    cli --> sdk & backends & validate & introspect & mcp & rest
-    mcp --> tools & sdk & backends
-    rest --> tools & sdk & backends & core
-    tools --> sdk & core & graph
-    sdk --> core & backends & graph
-    connectors --> graph & adapters
+    cli --> sdk
+    cli --> backends
+    cli --> validate
+    cli --> introspect
+    cli --> mcp
+    cli --> rest
+    mcp --> tools
+    mcp --> sdk
+    mcp --> backends
+    rest --> tools
+    rest --> sdk
+    rest --> backends
+    rest --> core
+    tools --> sdk
+    tools --> core
+    tools --> graph
+    sdk --> core
+    sdk --> backends
+    sdk --> graph
+    connectors --> graph
+    connectors --> adapters
     adapters --> graph
-    scanner --> sdk & core
+    scanner --> sdk
+    scanner --> core
     validate --> core
     introspect --> core
-    export --> sdk & validate & core
+    export --> sdk
+    export --> validate
+    export --> core
     backends --> core
 ```
 

@@ -28,3 +28,16 @@ docs/superpowers/
 
 # Detailed internal blocklist (committed config is .gitleaks.toml)
 .gitleaks-internal.toml
+
+# rp1:start
+!.rp1/
+.rp1/*
+!.rp1/context/
+!.rp1/context/**
+!.rp1/config/
+!.rp1/config/**
+!.rp1/work/
+!.rp1/work/**
+.rp1/context/meta.json
+.rp1/settings.toml
+# rp1:end

@@ -1,0 +1,14 @@
+{
+  "strategy": "parallel-map-reduce",
+  "repo_type": "single-project",
+  "monorepo_projects": [],
+  "generated_at": "2026-04-16T00:00:00Z",
+  "git_commit": "2fa861ebe74982455a689ce687c9dfe41b8c8688",
+  "files_analyzed": 139,
+  "languages": ["Python"],
+  "metrics": {
+    "modules": 14,
+    "components": 37,
+    "concepts": 25
+  }
+}

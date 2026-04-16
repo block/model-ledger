@@ -64,3 +64,26 @@ This is an Apache-2.0 open-source project. All code must be generic and useful t
 - Tool-shaped SDK: every Ledger method works as an agent tool call
 - Append-only audit trail on every mutation
 - Plugin discovery via `importlib.metadata.entry_points()`
+
+<!-- rp1:start -->
+## rp1 Knowledge Base
+
+**Use Progressive Disclosure Pattern**
+
+Location: `.rp1/context/`
+
+Files:
+- index.md (always load first)
+- architecture.md
+- modules.md
+- patterns.md
+- concept_map.md
+
+Loading rules:
+1. Always read index.md first.
+2. Then load based on task type:
+   - Code review: patterns.md
+   - Bug investigation: architecture.md, modules.md
+   - Feature work: modules.md, patterns.md
+   - Strategic or system-wide analysis: all files
+<!-- rp1:end -->

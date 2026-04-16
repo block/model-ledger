@@ -688,6 +688,37 @@ class Ledger:
             payload.update(metadata)
         return self.record(composite, event="validated", payload=payload, actor=actor)
 
+    def composite_summary(self) -> list[dict[str, Any]]:
+        """Flat inventory of all composites with derived fields."""
+        composites = self._backend.list_models(model_type="composite")
+        result = []
+        for comp in composites:
+            snaps = self._backend.list_snapshots(comp.model_hash)
+            member_count = len(self.members(comp))
+            validated_snaps = [s for s in snaps if s.event_type == "validated"]
+            last_validated = (
+                max(s.timestamp for s in validated_snaps) if validated_snaps else None
+            )
+            issued_ids = set()
+            resolved_ids = set()
+            for s in sorted(snaps, key=lambda s: s.timestamp):
+                obs_id = s.payload.get("observation_id")
+                if not obs_id:
+                    continue
+                if s.event_type == "observation_issued":
+                    issued_ids.add(obs_id)
+                elif s.event_type == "observation_resolved":
+                    resolved_ids.add(obs_id)
+            open_observation_count = len(issued_ids - resolved_ids)
+            result.append({
+                "name": comp.name, "owner": comp.owner,
+                "tier": comp.tier, "status": comp.status,
+                "member_count": member_count,
+                "last_validated": last_validated,
+                "open_observation_count": open_observation_count,
+            })
+        return result
+
     def _load_discovered_nodes(self):
         """Rebuild DataNodes from stored discovery snapshots.
 

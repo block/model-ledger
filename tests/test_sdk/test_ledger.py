@@ -534,3 +534,76 @@ class TestGovernanceMethods:
         assert snap.payload["result"] == "conditional"
         assert snap.payload["report_url"] == "https://example.com/report"
         assert snap.payload["observation_count"] == 3
+
+
+class TestCompositeSummary:
+    def test_summary_returns_all_composites(self, ledger):
+        ledger.register_group(
+            name="pipeline-a", owner="team-a", model_type="composite",
+            tier="high", purpose="Pipeline A", members=[], actor="test",
+        )
+        ledger.register_group(
+            name="pipeline-b", owner="team-b", model_type="composite",
+            tier="medium", purpose="Pipeline B", members=[], actor="test",
+        )
+        ledger.register(
+            name="standalone-model", owner="t", model_type="ml_model",
+            tier="low", purpose="x",
+        )
+        summary = ledger.composite_summary()
+        names = [s["name"] for s in summary]
+        assert "pipeline-a" in names
+        assert "pipeline-b" in names
+        assert "standalone-model" not in names
+
+    def test_summary_includes_member_count(self, ledger):
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register(
+            name="model-b", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("pipeline", "model-a", actor="test")
+        ledger.add_member("pipeline", "model-b", actor="test")
+        summary = ledger.composite_summary()
+        pipeline = next(s for s in summary if s["name"] == "pipeline")
+        assert pipeline["member_count"] == 2
+
+    def test_summary_includes_last_validated(self, ledger):
+        ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.record_validation("pipeline", result="passed", actor="test")
+        summary = ledger.composite_summary()
+        pipeline = next(s for s in summary if s["name"] == "pipeline")
+        assert pipeline["last_validated"] is not None
+
+    def test_summary_includes_open_observation_count(self, ledger):
+        ledger.register_group(
+            name="pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.record_observation(
+            "pipeline", observation_id="OBS-1",
+            observation="Issue one", status="open", actor="test",
+        )
+        ledger.record_observation(
+            "pipeline", observation_id="OBS-2",
+            observation="Issue two", status="open", actor="test",
+        )
+        ledger.resolve_observation(
+            "pipeline", observation_id="OBS-1",
+            resolution="Fixed", actor="test",
+        )
+        summary = ledger.composite_summary()
+        pipeline = next(s for s in summary if s["name"] == "pipeline")
+        assert pipeline["open_observation_count"] == 1
+
+    def test_summary_no_composites(self, ledger):
+        summary = ledger.composite_summary()
+        assert summary == []

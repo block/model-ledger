@@ -148,7 +148,7 @@ sequenceDiagram
     participant Conn as Connector Factory
     participant Ext as External Source
     participant SDK as Ledger.add()
-    participant Link as Ledger.connect()
+    participant Linker as Ledger.connect()
     participant BE as LedgerBackend
 
     Conn->>Ext: Query (SQL/REST/GitHub/Prefect)
@@ -156,8 +156,8 @@ sequenceDiagram
     Conn->>Conn: Map to DataNodes with DataPorts
     Conn->>SDK: Register DataNodes as ModelRefs
     SDK->>BE: Content-hash dedup + append snapshots
-    Link->>Link: Match DataPort I/O across all nodes
-    Link->>BE: Create dependency links
+    Linker->>Linker: Match DataPort I/O across all nodes
+    Linker->>BE: Create dependency links
 ```
 
 ### Composite Change Propagation

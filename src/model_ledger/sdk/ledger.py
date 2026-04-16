@@ -645,6 +645,49 @@ class Ledger:
                 current.pop(member_hash, None)
         return list(current.values())
 
+    def record_observation(
+        self, composite: ModelRef | str, *,
+        observation_id: str, observation: str, status: str,
+        severity: str | None = None, actor: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Snapshot:
+        """Record an observation against a composite."""
+        payload: dict[str, Any] = {
+            "observation_id": observation_id,
+            "observation": observation,
+            "status": status,
+        }
+        if severity is not None:
+            payload["severity"] = severity
+        if metadata:
+            payload.update(metadata)
+        return self.record(composite, event="observation_issued", payload=payload, actor=actor)
+
+    def resolve_observation(
+        self, composite: ModelRef | str, *,
+        observation_id: str, resolution: str, actor: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Snapshot:
+        """Record the resolution of an observation."""
+        payload: dict[str, Any] = {
+            "observation_id": observation_id,
+            "resolution": resolution,
+        }
+        if metadata:
+            payload.update(metadata)
+        return self.record(composite, event="observation_resolved", payload=payload, actor=actor)
+
+    def record_validation(
+        self, composite: ModelRef | str, *,
+        result: str, actor: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Snapshot:
+        """Record a validation result against a composite."""
+        payload: dict[str, Any] = {"result": result}
+        if metadata:
+            payload.update(metadata)
+        return self.record(composite, event="validated", payload=payload, actor=actor)
+
     def _load_discovered_nodes(self):
         """Rebuild DataNodes from stored discovery snapshots.
 

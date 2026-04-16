@@ -464,3 +464,73 @@ class TestMemberChangedPropagation:
             payload={"result": "passed"}, actor="test",
         )
         assert snap.event_type == "validated"
+
+
+class TestGovernanceMethods:
+    @pytest.fixture
+    def composite(self, ledger):
+        return ledger.register_group(
+            name="risk-pipeline", owner="risk-team",
+            model_type="composite", tier="high",
+            purpose="End-to-end risk scoring",
+            members=[], actor="test",
+        )
+
+    def test_record_observation(self, ledger, composite):
+        snap = ledger.record_observation(
+            "risk-pipeline",
+            observation_id="OBS-001",
+            observation="Feature drift detected in scoring input",
+            status="open",
+            severity="P2",
+            actor="validation-team",
+            metadata={"pillar": "Input Data Validation"},
+        )
+        assert snap.event_type == "observation_issued"
+        assert snap.payload["observation_id"] == "OBS-001"
+        assert snap.payload["observation"] == "Feature drift detected in scoring input"
+        assert snap.payload["status"] == "open"
+        assert snap.payload["severity"] == "P2"
+        assert snap.payload["pillar"] == "Input Data Validation"
+
+    def test_record_observation_without_severity(self, ledger, composite):
+        snap = ledger.record_observation(
+            "risk-pipeline",
+            observation_id="OBS-002",
+            observation="Documentation outdated",
+            status="open",
+            actor="test",
+        )
+        assert "severity" not in snap.payload
+
+    def test_resolve_observation(self, ledger, composite):
+        ledger.record_observation(
+            "risk-pipeline",
+            observation_id="OBS-001",
+            observation="Feature drift detected",
+            status="open", actor="test",
+        )
+        snap = ledger.resolve_observation(
+            "risk-pipeline",
+            observation_id="OBS-001",
+            resolution="Retrained model with updated features",
+            actor="model-owner",
+        )
+        assert snap.event_type == "observation_resolved"
+        assert snap.payload["observation_id"] == "OBS-001"
+        assert snap.payload["resolution"] == "Retrained model with updated features"
+
+    def test_record_validation(self, ledger, composite):
+        snap = ledger.record_validation(
+            "risk-pipeline",
+            result="conditional",
+            actor="validation-team",
+            metadata={
+                "report_url": "https://example.com/report",
+                "observation_count": 3,
+            },
+        )
+        assert snap.event_type == "validated"
+        assert snap.payload["result"] == "conditional"
+        assert snap.payload["report_url"] == "https://example.com/report"
+        assert snap.payload["observation_count"] == 3

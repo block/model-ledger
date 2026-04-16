@@ -10,6 +10,15 @@ from model_ledger.backends.ledger_protocol import LedgerBackend
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
+# Events that are internal ledger bookkeeping or governance actions on the
+# composite itself.  These are NOT propagated as member_changed to parent
+# composites — only real domain events on member models should surface there.
+_INTERNAL_EVENTS: frozenset[str] = frozenset({
+    "registered", "has_dependent", "depends_on",
+    "member_added", "member_removed", "member_changed",
+    "observation_issued", "observation_resolved", "validated",
+})
+
 
 class Ledger:
     """The main entry point for model-ledger v0.3.0.
@@ -130,11 +139,8 @@ class Ledger:
         self._backend.append_snapshot(snapshot)
 
         # Propagate member_changed to parent composites (one level only).
-        # Skip internal ledger bookkeeping events — only propagate domain events.
-        _INTERNAL_EVENTS = frozenset({
-            "registered", "has_dependent", "depends_on",
-            "member_added", "member_removed", "member_changed",
-        })
+        # Skip internal ledger bookkeeping and governance events — only
+        # propagate domain events on member models.
         if not _propagating and event not in _INTERNAL_EVENTS:
             try:
                 parent_composites = self.groups(model)
@@ -617,30 +623,57 @@ class Ledger:
     ) -> list[ModelRef]:
         """Reconstruct composite membership at a point in time.
 
-        Replays member_added/member_removed snapshots up to the given
-        date to determine who was in the composite at that moment.
+        Seeds from dependency links established on or before *date* (so groups
+        created with register_group(members=[...]) are covered), then overlays
+        member_added/member_removed events up to *date*.  This mirrors the
+        strategy used by members() and handles every membership pathway.
         """
         ref = self._resolve_model(composite)
         snaps = self._backend.list_snapshots(ref.model_hash)
+
+        # Seed from dependency links that existed at or before the query date.
+        # depends_on snapshots on the composite record when each member_of link
+        # was established.
+        dep_link_snaps = [
+            s for s in snaps
+            if s.event_type == "depends_on"
+            and s.payload.get("relationship") == "member_of"
+            and s.timestamp <= date
+        ]
+        current: dict[str, ModelRef] = {}
+        for s in dep_link_snaps:
+            upstream_hash = s.payload.get("upstream_hash", "")
+            if upstream_hash and upstream_hash not in current:
+                try:
+                    current[upstream_hash] = self.get(upstream_hash)
+                except ModelNotFoundError:
+                    upstream_name = s.payload.get("upstream", "")
+                    if upstream_name:
+                        try:
+                            current[upstream_hash] = self.get(upstream_name)
+                        except ModelNotFoundError:
+                            continue
+
+        # Overlay explicit membership events on top of the dep-link baseline.
         membership_events = sorted(
             [s for s in snaps
              if s.event_type in ("member_added", "member_removed")
              and s.timestamp <= date],
             key=lambda s: s.timestamp,
         )
-        current: dict[str, ModelRef] = {}
         for s in membership_events:
             member_hash = s.payload.get("member_hash", "")
             if s.event_type == "member_added":
-                try:
-                    current[member_hash] = self.get(member_hash)
-                except ModelNotFoundError:
-                    member_name = s.payload.get("member_name", "")
-                    if member_name:
-                        try:
-                            current[member_hash] = self.get(member_name)
-                        except ModelNotFoundError:
-                            continue
+                if member_hash not in current:
+                    try:
+                        current[member_hash] = self.get(member_hash)
+                    except ModelNotFoundError:
+                        member_name = s.payload.get("member_name", "")
+                        if member_name:
+                            try:
+                                current[member_hash] = self.get(member_name)
+                            except ModelNotFoundError:
+                                continue
             elif s.event_type == "member_removed":
                 current.pop(member_hash, None)
         return list(current.values())
@@ -688,6 +721,26 @@ class Ledger:
             payload.update(metadata)
         return self.record(composite, event="validated", payload=payload, actor=actor)
 
+    @staticmethod
+    def _open_observation_count(snapshots: list[Snapshot]) -> int:
+        """Return the number of observations that have been issued but not resolved.
+
+        Accepts any iterable of Snapshots.  Only observation_issued and
+        observation_resolved events that carry an ``observation_id`` payload key
+        are considered; all other snapshots are ignored.
+        """
+        issued_ids: set[str] = set()
+        resolved_ids: set[str] = set()
+        for s in sorted(snapshots, key=lambda s: s.timestamp):
+            obs_id = s.payload.get("observation_id")
+            if not obs_id:
+                continue
+            if s.event_type == "observation_issued":
+                issued_ids.add(obs_id)
+            elif s.event_type == "observation_resolved":
+                resolved_ids.add(obs_id)
+        return len(issued_ids - resolved_ids)
+
     def composite_summary(self) -> list[dict[str, Any]]:
         """Flat inventory of all composites with derived fields."""
         composites = self._backend.list_models(model_type="composite")
@@ -699,23 +752,12 @@ class Ledger:
             last_validated = (
                 max(s.timestamp for s in validated_snaps) if validated_snaps else None
             )
-            issued_ids = set()
-            resolved_ids = set()
-            for s in sorted(snaps, key=lambda s: s.timestamp):
-                obs_id = s.payload.get("observation_id")
-                if not obs_id:
-                    continue
-                if s.event_type == "observation_issued":
-                    issued_ids.add(obs_id)
-                elif s.event_type == "observation_resolved":
-                    resolved_ids.add(obs_id)
-            open_observation_count = len(issued_ids - resolved_ids)
             result.append({
                 "name": comp.name, "owner": comp.owner,
                 "tier": comp.tier, "status": comp.status,
                 "member_count": member_count,
                 "last_validated": last_validated,
-                "open_observation_count": open_observation_count,
+                "open_observation_count": self._open_observation_count(snaps),
             })
         return result
 

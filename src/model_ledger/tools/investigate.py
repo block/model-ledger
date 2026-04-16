@@ -112,17 +112,7 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
         validated_snaps = [s for s in snapshots if s.event_type == "validated"]
         if validated_snaps:
             last_validated = max(s.timestamp for s in validated_snaps)
-        issued_ids = set()
-        resolved_ids = set()
-        for s in snapshots:
-            obs_id = s.payload.get("observation_id")
-            if not obs_id:
-                continue
-            if s.event_type == "observation_issued":
-                issued_ids.add(obs_id)
-            elif s.event_type == "observation_resolved":
-                resolved_ids.add(obs_id)
-        open_observation_count = len(issued_ids - resolved_ids)
+        open_observation_count = ledger._open_observation_count(snapshots)
 
     return InvestigateOutput(
         name=model.name,

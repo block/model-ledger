@@ -399,6 +399,20 @@ class TestCompositeMembers:
         )
         assert result == []
 
+    def test_membership_at_with_register_group_members(self, ledger):
+        """membership_at should include members added via register_group()."""
+        ledger.register(
+            name="model-x", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="group-rg", owner="t", model_type="composite",
+            tier="h", purpose="x", members=["model-x"], actor="test",
+        )
+        result = ledger.membership_at(
+            "group-rg", datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        assert any(m.name == "model-x" for m in result)
+
 
 class TestMemberChangedPropagation:
     def test_record_on_member_propagates_to_composite(self, ledger):
@@ -464,6 +478,28 @@ class TestMemberChangedPropagation:
             payload={"result": "passed"}, actor="test",
         )
         assert snap.event_type == "validated"
+
+    def test_governance_events_do_not_propagate(self, ledger):
+        """Observations/validations on a composite should not propagate to grandparents."""
+        ledger.register_group(
+            name="inner", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.register_group(
+            name="outer", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("outer", "inner", actor="test")
+
+        ledger.record_observation(
+            "inner", observation_id="OBS-1",
+            observation="Something", status="open", actor="test",
+        )
+        ledger.record_validation("inner", result="passed", actor="test")
+
+        outer_history = ledger.history("outer")
+        changed = [s for s in outer_history if s.event_type == "member_changed"]
+        assert len(changed) == 0
 
 
 class TestGovernanceMethods:

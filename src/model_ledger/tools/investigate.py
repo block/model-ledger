@@ -105,6 +105,25 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     except (KeyError, ValueError, Exception):
         member_names = []
 
+    # 9. Governance summary for composites
+    last_validated = None
+    open_observation_count = None
+    if model.model_type == "composite":
+        validated_snaps = [s for s in snapshots if s.event_type == "validated"]
+        if validated_snaps:
+            last_validated = max(s.timestamp for s in validated_snaps)
+        issued_ids = set()
+        resolved_ids = set()
+        for s in snapshots:
+            obs_id = s.payload.get("observation_id")
+            if not obs_id:
+                continue
+            if s.event_type == "observation_issued":
+                issued_ids.add(obs_id)
+            elif s.event_type == "observation_resolved":
+                resolved_ids.add(obs_id)
+        open_observation_count = len(issued_ids - resolved_ids)
+
     return InvestigateOutput(
         name=model.name,
         owner=model.owner,
@@ -120,4 +139,6 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
         downstream=downstream_nodes,
         groups=group_names,
         members=member_names,
+        last_validated=last_validated,
+        open_observation_count=open_observation_count,
     )

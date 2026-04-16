@@ -607,3 +607,30 @@ class TestCompositeSummary:
     def test_summary_no_composites(self, ledger):
         summary = ledger.composite_summary()
         assert summary == []
+
+
+class TestInvestigateComposite:
+    def test_investigate_composite_includes_governance(self, ledger):
+        from model_ledger.tools.investigate import investigate
+        from model_ledger.tools.schemas import InvestigateInput
+
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="pipeline", owner="risk-team", model_type="composite",
+            tier="high", purpose="Risk scoring", members=["model-a"], actor="test",
+        )
+        ledger.add_member("pipeline", "model-a", actor="test")
+        ledger.record_observation(
+            "pipeline", observation_id="OBS-1",
+            observation="Drift detected", status="open",
+            severity="P2", actor="test",
+        )
+        ledger.record_validation(
+            "pipeline", result="conditional", actor="test",
+        )
+
+        result = investigate(InvestigateInput(model_name="pipeline"), ledger)
+        assert result.last_validated is not None
+        assert result.open_observation_count == 1

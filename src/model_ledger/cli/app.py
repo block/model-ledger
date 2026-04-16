@@ -67,7 +67,7 @@ def _snowflake_backend(schema: str | None = None):
     """
     from model_ledger.backends.snowflake import SnowflakeLedgerBackend
 
-    sf_schema = schema or os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
+    sf_schema = schema if schema else os.environ.get("SNOWFLAKE_SCHEMA", "MODEL_LEDGER")
 
     try:
         import snowflake.connector

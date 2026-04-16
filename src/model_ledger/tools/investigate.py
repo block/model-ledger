@@ -122,10 +122,10 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     last_validated = None
     open_observation_count = None
     if model.model_type == "composite":
-        validated_snaps = [s for s in (snapshots or []) if s.event_type == "validated"]
+        validated_snaps = [s for s in snapshots if s.event_type == "validated"]
         if validated_snaps:
             last_validated = max(s.timestamp for s in validated_snaps)
-        open_observation_count = ledger._open_observation_count(snapshots)
+        open_observation_count = ledger.open_observation_count(snapshots)
 
     return InvestigateOutput(
         name=model.name,

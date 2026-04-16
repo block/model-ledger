@@ -163,7 +163,7 @@ class Ledger:
         # propagate domain events on member models.
         if not _propagating and event not in _INTERNAL_EVENTS:
             try:
-                parent_composites = self.groups(model)
+                parent_composites = self.groups(ref)
             except ModelNotFoundError:
                 parent_composites = []
             for composite in parent_composites or []:
@@ -614,9 +614,20 @@ class Ledger:
         return list(current.values())
 
     def groups(self, model: ModelRef | str) -> builtins.list[ModelRef]:
-        """Return all groups this model belongs to."""
+        """Return groups this model currently belongs to.
+
+        Replays member_added/member_removed events on each candidate group
+        to exclude composites the model has been removed from.
+        """
         deps = self.dependencies(model, direction="downstream") or []
-        return [d["model"] for d in deps if d.get("relationship") == "member_of"]
+        candidates = [d["model"] for d in deps if d.get("relationship") == "member_of"]
+        ref = self._resolve_model(model)
+        result: builtins.list[ModelRef] = []
+        for comp in candidates:
+            current_members = self.members(comp)
+            if any(m.model_hash == ref.model_hash for m in current_members):
+                result.append(comp)
+        return result
 
     def add_member(
         self,
@@ -686,6 +697,8 @@ class Ledger:
         composite: ModelRef | str,
         date: datetime,
     ) -> builtins.list[ModelRef]:
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
         """Reconstruct composite membership at a point in time.
 
         Seeds from dependency links established on or before *date* (so groups
@@ -802,7 +815,7 @@ class Ledger:
         return self.record(composite, event="validated", payload=payload, actor=actor)
 
     @staticmethod
-    def _open_observation_count(snapshots: builtins.list[Snapshot]) -> int:
+    def open_observation_count(snapshots: builtins.list[Snapshot]) -> int:
         """Return the number of observations that have been issued but not resolved.
 
         Accepts any iterable of Snapshots.  Only observation_issued and
@@ -838,7 +851,7 @@ class Ledger:
                     "status": comp.status,
                     "member_count": member_count,
                     "last_validated": last_validated,
-                    "open_observation_count": self._open_observation_count(snaps),
+                    "open_observation_count": self.open_observation_count(snaps),
                 }
             )
         return result

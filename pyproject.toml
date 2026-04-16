@@ -115,6 +115,18 @@ module = [
     "pandas.*",
     "snowflake",
     "snowflake.*",
+    "fastapi",
+    "fastapi.*",
+    "uvicorn",
+    "uvicorn.*",
+    "typer",
+    "typer.*",
+    "rich",
+    "rich.*",
+    "mcp",
+    "mcp.*",
+    "numpy",
+    "numpy.*",
 ]
 ignore_missing_imports = true
 
@@ -128,6 +140,10 @@ module = [
     "model_ledger.introspect.sklearn",
     "model_ledger.introspect.lightgbm",
     "model_ledger.connectors.prefect",
+    "model_ledger.mcp.server",
+    "model_ledger.rest.app",
+    "model_ledger.cli.app",
+    "model_ledger.datasets.samples",
 ]
 disable_error_code = ["import-not-found"]
 

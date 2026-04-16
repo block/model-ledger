@@ -750,6 +750,33 @@ class TestMemberChangedPropagation:
         changed = [s for s in outer_history if s.event_type == "member_changed"]
         assert len(changed) == 0
 
+    def test_no_propagation_after_member_removed(self, ledger):
+        ledger.register(
+            name="model-x",
+            owner="t",
+            model_type="ml",
+            tier="h",
+            purpose="x",
+        )
+        ledger.register_group(
+            name="comp",
+            owner="t",
+            model_type="composite",
+            tier="h",
+            purpose="x",
+            members=[],
+            actor="test",
+        )
+        ledger.add_member("comp", "model-x", actor="test")
+        ledger.remove_member("comp", "model-x", actor="test")
+
+        # Record a domain event on the removed member
+        ledger.record("model-x", event="retrained", payload={}, actor="test")
+
+        comp_history = ledger.history("comp")
+        changed_after_removal = [s for s in comp_history if s.event_type == "member_changed"]
+        assert len(changed_after_removal) == 0
+
 
 class TestGovernanceMethods:
     @pytest.fixture
@@ -960,7 +987,7 @@ class TestInvestigateComposite:
             model_type="composite",
             tier="high",
             purpose="Risk scoring",
-            members=["model-a"],
+            members=[],
             actor="test",
         )
         ledger.add_member("pipeline", "model-a", actor="test")

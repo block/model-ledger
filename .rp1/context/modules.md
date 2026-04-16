@@ -119,36 +119,36 @@
 
 ```mermaid
 graph TD
-    cli --> sdk
-    cli --> backends
-    cli --> validate
-    cli --> introspect
-    cli --> mcp
-    cli --> rest
-    mcp --> tools
-    mcp --> sdk
-    mcp --> backends
-    rest --> tools
-    rest --> sdk
-    rest --> backends
-    rest --> core
-    tools --> sdk
-    tools --> core
-    tools --> graph
-    sdk --> core
-    sdk --> backends
-    sdk --> graph
-    connectors --> graph
-    connectors --> adapters
-    adapters --> graph
-    scanner --> sdk
-    scanner --> core
-    validate --> core
-    introspect --> core
-    export --> sdk
-    export --> validate
-    export --> core
-    backends --> core
+    mod_cli[cli] --> mod_sdk[sdk]
+    mod_cli --> mod_backends[backends]
+    mod_cli --> mod_validate[validate]
+    mod_cli --> mod_introspect[introspect]
+    mod_cli --> mod_mcp[mcp]
+    mod_cli --> mod_rest[rest]
+    mod_mcp --> mod_tools[tools]
+    mod_mcp --> mod_sdk
+    mod_mcp --> mod_backends
+    mod_rest --> mod_tools
+    mod_rest --> mod_sdk
+    mod_rest --> mod_backends
+    mod_rest --> mod_core[core]
+    mod_tools --> mod_sdk
+    mod_tools --> mod_core
+    mod_tools --> mod_graph[graph]
+    mod_sdk --> mod_core
+    mod_sdk --> mod_backends
+    mod_sdk --> mod_graph
+    mod_connectors[connectors] --> mod_graph
+    mod_connectors --> mod_adapters[adapters]
+    mod_adapters --> mod_graph
+    mod_scanner[scanner] --> mod_sdk
+    mod_scanner --> mod_core
+    mod_validate --> mod_core
+    mod_introspect --> mod_core
+    mod_export[export] --> mod_sdk
+    mod_export --> mod_validate
+    mod_export --> mod_core
+    mod_backends --> mod_core
 ```
 
 ## Module Metrics

@@ -112,6 +112,7 @@ class Ledger:
         parent: str | None = None,
         tags: dict[str, str] | None = None,
         timestamp: datetime | None = None,
+        _propagating: bool = False,
     ) -> Snapshot:
         ref = self._resolve_model(model)
         kwargs: dict[str, Any] = {
@@ -127,6 +128,32 @@ class Ledger:
             kwargs["timestamp"] = timestamp
         snapshot = Snapshot(**kwargs)
         self._backend.append_snapshot(snapshot)
+
+        # Propagate member_changed to parent composites (one level only).
+        # Skip internal ledger bookkeeping events — only propagate domain events.
+        _INTERNAL_EVENTS = frozenset({
+            "registered", "has_dependent", "depends_on",
+            "member_added", "member_removed", "member_changed",
+        })
+        if not _propagating and event not in _INTERNAL_EVENTS:
+            try:
+                parent_composites = self.groups(model)
+            except ModelNotFoundError:
+                parent_composites = []
+            for composite in parent_composites:
+                self.record(
+                    composite,
+                    event="member_changed",
+                    payload={
+                        "member_name": ref.name,
+                        "member_hash": ref.model_hash,
+                        "original_event_type": event,
+                        "original_snapshot_hash": snapshot.snapshot_hash,
+                    },
+                    actor=actor,
+                    _propagating=True,
+                )
+
         return snapshot
 
     def tag(self, model: ModelRef | str, name: str) -> Tag:

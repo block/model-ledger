@@ -398,3 +398,69 @@ class TestCompositeMembers:
             "empty-group", datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         assert result == []
+
+
+class TestMemberChangedPropagation:
+    def test_record_on_member_propagates_to_composite(self, ledger):
+        member = ledger.register(
+            name="scoring-model", owner="t", model_type="ml",
+            tier="h", purpose="x",
+        )
+        ledger.register_group(
+            name="risk-pipeline", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("risk-pipeline", "scoring-model", actor="test")
+
+        ledger.record(
+            "scoring-model", event="retrained",
+            payload={"accuracy": 0.95}, actor="ml-platform",
+        )
+
+        history = ledger.history("risk-pipeline")
+        changed = [s for s in history if s.event_type == "member_changed"]
+        assert len(changed) == 1
+        assert changed[0].payload["member_name"] == "scoring-model"
+        assert changed[0].payload["original_event_type"] == "retrained"
+
+    def test_propagation_does_not_recurse(self, ledger):
+        """member_changed on a composite should NOT propagate further."""
+        ledger.register(
+            name="model-a", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        comp_inner = ledger.register_group(
+            name="inner-composite", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("inner-composite", "model-a", actor="test")
+        comp_outer = ledger.register_group(
+            name="outer-composite", owner="t", model_type="composite",
+            tier="h", purpose="x", members=[], actor="test",
+        )
+        ledger.add_member("outer-composite", "inner-composite", actor="test")
+
+        ledger.record(
+            "model-a", event="retrained",
+            payload={"accuracy": 0.9}, actor="test",
+        )
+
+        # inner-composite should get member_changed
+        inner_history = ledger.history("inner-composite")
+        inner_changed = [s for s in inner_history if s.event_type == "member_changed"]
+        assert len(inner_changed) == 1
+
+        # outer-composite should NOT get member_changed (no recursion)
+        outer_history = ledger.history("outer-composite")
+        outer_changed = [s for s in outer_history if s.event_type == "member_changed"]
+        assert len(outer_changed) == 0
+
+    def test_no_propagation_when_no_groups(self, ledger):
+        """Models without parent groups should not cause errors."""
+        ledger.register(
+            name="standalone", owner="t", model_type="ml", tier="h", purpose="x",
+        )
+        snap = ledger.record(
+            "standalone", event="validated",
+            payload={"result": "passed"}, actor="test",
+        )
+        assert snap.event_type == "validated"

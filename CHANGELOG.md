@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- feat: `RecordOutput.model_hash` — the `/record` response now carries the server's canonical model hash so HTTP clients can reconcile their local `ModelRef` with authoritative server state
+- fix: `HttpLedgerBackend.save_model` adopts the server's canonical hash (reassigns `model.model_hash` on the incoming `ModelRef` and caches only the server hash) so follow-up hash-based flows like `Ledger.tag()` round-trip correctly even from a fresh backend instance
 - feat: `POST /tag` and `GET /tags/{model_name}` REST endpoints — create, move, and list tags over HTTP
 - feat: `tag` and `list_tags` MCP tools — bring the total tool count to 8
 - feat: `HttpLedgerBackend.set_tag`, `get_tag`, `list_tags` — replace the previous silent no-op stubs with real implementations that round-trip through the REST API

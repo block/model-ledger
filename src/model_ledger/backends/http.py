@@ -41,7 +41,7 @@ class HttpLedgerBackend:
     # ── Models ──
 
     def save_model(self, model: ModelRef) -> None:
-        self._client.post(
+        resp = self._client.post(
             "/record",
             json={
                 "model_name": model.name,
@@ -52,7 +52,25 @@ class HttpLedgerBackend:
                 "payload": {},
             },
         )
-        self._hash_to_name[model.model_hash] = model.name
+        # Fail loudly on HTTP errors rather than caching a model that was
+        # never persisted.
+        resp.raise_for_status()
+
+        # The server computes its own model_hash from a fresh created_at,
+        # which differs from whatever hash the caller precomputed locally.
+        # Adopt the server's canonical hash on the incoming ModelRef (so
+        # callers who retain the reference see the authoritative identity)
+        # and cache only the server hash for name resolution.
+        body = resp.json()
+        server_hash = body.get("model_hash") if isinstance(body, dict) else None
+        if not isinstance(server_hash, str) or not server_hash:
+            raise ValueError(
+                "Successful /record response is missing a valid 'model_hash'. "
+                "The server may be running an older version that predates the "
+                "required RecordOutput.model_hash field."
+            )
+        model.model_hash = server_hash
+        self._hash_to_name[server_hash] = model.name
 
     def get_model(self, model_hash: str) -> ModelRef | None:
         name = self._hash_to_name.get(model_hash)

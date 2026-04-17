@@ -22,6 +22,9 @@ from model_ledger.tools.schemas import (
     QueryOutput,
     RecordInput,
     RecordOutput,
+    TagInput,
+    TagListOutput,
+    TagOutput,
     TraceInput,
     TraceOutput,
 )
@@ -620,6 +623,87 @@ class TestDiscoverOutput:
 # ---------------------------------------------------------------------------
 
 
+class TestTagInput:
+    def test_all_fields(self):
+        t = TagInput(model_name="credit-scorecard", tag_name="v1.0")
+        assert t.model_name == "credit-scorecard"
+        assert t.tag_name == "v1.0"
+
+    def test_json_roundtrip(self):
+        t = TagInput(model_name="fraud-detector", tag_name="prod")
+        data = t.model_dump(mode="json")
+        assert TagInput(**data) == t
+
+    def test_both_fields_required(self):
+        schema = TagInput.model_json_schema()
+        required = schema.get("required", [])
+        assert "model_name" in required
+        assert "tag_name" in required
+
+
+class TestTagOutput:
+    def test_all_fields(self):
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        t = TagOutput(
+            model_name="credit-scorecard",
+            tag_name="v1.0",
+            model_hash="abc123",
+            snapshot_hash="def456",
+            updated_at=ts,
+        )
+        assert t.model_name == "credit-scorecard"
+        assert t.tag_name == "v1.0"
+        assert t.model_hash == "abc123"
+        assert t.snapshot_hash == "def456"
+        assert t.updated_at == ts
+
+    def test_json_roundtrip(self):
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        t = TagOutput(
+            model_name="test",
+            tag_name="latest",
+            model_hash="h1",
+            snapshot_hash="s1",
+            updated_at=ts,
+        )
+        data = t.model_dump(mode="json")
+        assert TagOutput(**data) == t
+
+
+class TestTagListOutput:
+    def test_defaults(self):
+        t = TagListOutput(model_name="test")
+        assert t.tags == []
+
+    def test_with_tags(self):
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        tag = TagOutput(
+            model_name="test",
+            tag_name="v1.0",
+            model_hash="h1",
+            snapshot_hash="s1",
+            updated_at=ts,
+        )
+        t = TagListOutput(model_name="test", tags=[tag])
+        assert len(t.tags) == 1
+        assert t.tags[0].tag_name == "v1.0"
+
+    def test_json_roundtrip(self):
+        ts = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        tag = TagOutput(
+            model_name="test",
+            tag_name="v1.0",
+            model_hash="h1",
+            snapshot_hash="s1",
+            updated_at=ts,
+        )
+        t = TagListOutput(model_name="test", tags=[tag])
+        data = t.model_dump(mode="json")
+        reconstructed = TagListOutput(**data)
+        assert reconstructed.model_name == "test"
+        assert len(reconstructed.tags) == 1
+
+
 ALL_SCHEMAS = [
     ModelSummary,
     EventSummary,
@@ -637,6 +721,9 @@ ALL_SCHEMAS = [
     ChangelogOutput,
     DiscoverInput,
     DiscoverOutput,
+    TagInput,
+    TagOutput,
+    TagListOutput,
 ]
 
 

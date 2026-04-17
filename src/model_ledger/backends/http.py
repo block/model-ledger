@@ -18,6 +18,7 @@ from typing import Any
 
 import httpx
 
+from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
 
@@ -31,6 +32,11 @@ class HttpLedgerBackend:
             headers=headers or {},
             timeout=30.0,
         )
+        # The REST API exchanges model_name (not model_hash) in every payload.
+        # The SDK protocol uses model_hash. Without preserving the mapping we
+        # cannot reverse-resolve on writes like set_tag. Populated lazily
+        # whenever a name lookup succeeds (get_model_by_name, save_model, etc.).
+        self._hash_to_name: dict[str, str] = {}
 
     # ── Models ──
 
@@ -46,12 +52,16 @@ class HttpLedgerBackend:
                 "payload": {},
             },
         )
+        self._hash_to_name[model.model_hash] = model.name
 
     def get_model(self, model_hash: str) -> ModelRef | None:
-        # HTTP backend searches by name via query, not by hash directly.
-        # This is a fallback — investigate is the primary read path.
-        models = self.list_models()
-        for m in models:
+        name = self._hash_to_name.get(model_hash)
+        if name is not None:
+            return self.get_model_by_name(name)
+        # Fallback: iterate. Model identity reconstruction via /query is lossy
+        # (ModelSummary omits created_at), so matches only work for models
+        # whose name lookup has already populated the cache.
+        for m in self.list_models():
             if m.model_hash == model_hash:
                 return m
         return None
@@ -61,7 +71,7 @@ class HttpLedgerBackend:
         if resp.status_code == 404:
             return None
         data = resp.json()
-        return ModelRef(
+        ref = ModelRef(
             name=data["name"],
             owner=data.get("owner") or "unknown",
             model_type=data.get("model_type") or "unknown",
@@ -70,6 +80,8 @@ class HttpLedgerBackend:
             status=data.get("status") or "active",
             created_at=data.get("created_at", datetime.now().isoformat()),
         )
+        self._hash_to_name[ref.model_hash] = ref.name
+        return ref
 
     def list_models(self, **filters: str) -> list[ModelRef]:
         params: dict[str, Any] = {"limit": 10000}
@@ -168,13 +180,37 @@ class HttpLedgerBackend:
     # ── Tags ──
 
     def set_tag(self, tag: Tag) -> None:
-        pass  # Tags not exposed via REST yet
+        model = self.get_model(tag.model_hash)
+        if model is None:
+            raise ModelNotFoundError(tag.model_hash)
+        self._client.post(
+            "/tag",
+            json={"model_name": model.name, "tag_name": tag.name},
+        )
 
     def get_tag(self, model_hash: str, name: str) -> Tag | None:
+        for t in self.list_tags(model_hash):
+            if t.name == name:
+                return t
         return None
 
     def list_tags(self, model_hash: str) -> list[Tag]:
-        return []
+        model = self.get_model(model_hash)
+        if model is None:
+            return []
+        resp = self._client.get(f"/tags/{model.name}")
+        if resp.status_code == 404:
+            return []
+        data = resp.json()
+        return [
+            Tag(
+                name=t["tag_name"],
+                model_hash=t["model_hash"],
+                snapshot_hash=t["snapshot_hash"],
+                updated_at=t["updated_at"],
+            )
+            for t in data.get("tags", [])
+        ]
 
     # ── Cleanup ──
 

@@ -189,6 +189,60 @@ class TestChangelogEndpoint:
         assert len(data["events"]) >= 1
 
 
+class TestTagEndpoints:
+    """POST /tag — create or move a tag; GET /tags/{model_name} — list tags."""
+
+    def _register(self, client):
+        client.post(
+            "/record",
+            json={
+                "model_name": "credit-scorecard",
+                "event": "registered",
+                "actor": "alice",
+                "owner": "risk-team",
+                "model_type": "ml_model",
+            },
+        )
+
+    def test_post_tag_creates_tag(self, client):
+        self._register(client)
+        resp = client.post("/tag", json={"model_name": "credit-scorecard", "tag_name": "v1.0"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["model_name"] == "credit-scorecard"
+        assert data["tag_name"] == "v1.0"
+        assert data["model_hash"]
+        assert data["snapshot_hash"]
+        assert data["updated_at"]
+
+    def test_post_tag_404_on_unknown_model(self, client):
+        resp = client.post("/tag", json={"model_name": "missing", "tag_name": "v1.0"})
+        assert resp.status_code == 404
+        assert "missing" in resp.json()["detail"]
+
+    def test_get_tags_empty(self, client):
+        self._register(client)
+        resp = client.get("/tags/credit-scorecard")
+        assert resp.status_code == 200
+        assert resp.json() == {"model_name": "credit-scorecard", "tags": []}
+
+    def test_get_tags_returns_all_tags(self, client):
+        self._register(client)
+        client.post("/tag", json={"model_name": "credit-scorecard", "tag_name": "v1.0"})
+        client.post("/tag", json={"model_name": "credit-scorecard", "tag_name": "prod"})
+
+        resp = client.get("/tags/credit-scorecard")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["model_name"] == "credit-scorecard"
+        names = {t["tag_name"] for t in data["tags"]}
+        assert names == {"v1.0", "prod"}
+
+    def test_get_tags_404_on_unknown_model(self, client):
+        resp = client.get("/tags/missing")
+        assert resp.status_code == 404
+
+
 class TestDiscoverEndpoint:
     """POST /discover — bulk ingestion."""
 

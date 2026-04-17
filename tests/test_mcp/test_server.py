@@ -41,18 +41,27 @@ class TestCreateServer:
 
 
 class TestToolRegistration:
-    """All 6 tools are registered."""
+    """All tools are registered."""
 
-    EXPECTED_TOOLS = {"discover", "record", "investigate", "query", "trace", "changelog"}
+    EXPECTED_TOOLS = {
+        "discover",
+        "record",
+        "investigate",
+        "query",
+        "trace",
+        "changelog",
+        "tag",
+        "list_tags",
+    }
 
     def test_all_tools_registered(self, server):
         tools = asyncio.run(server.list_tools())
         tool_names = {t.name for t in tools}
         assert tool_names >= self.EXPECTED_TOOLS
 
-    def test_exactly_six_tools(self, server):
+    def test_expected_tool_count(self, server):
         tools = asyncio.run(server.list_tools())
-        assert len(tools) == 6
+        assert len(tools) == len(self.EXPECTED_TOOLS)
 
     def test_each_tool_has_description(self, server):
         tools = asyncio.run(server.list_tools())
@@ -112,6 +121,49 @@ class TestToolExecution:
             )
         )
         result = asyncio.run(server.call_tool("query", {}))
+        assert len(result) > 0
+
+    def test_tag_tool_creates_tag(self, server):
+        asyncio.run(
+            server.call_tool(
+                "record",
+                {
+                    "model_name": "credit-scorecard",
+                    "event": "registered",
+                    "owner": "risk-team",
+                    "model_type": "ml_model",
+                },
+            )
+        )
+        result = asyncio.run(
+            server.call_tool(
+                "tag",
+                {"model_name": "credit-scorecard", "tag_name": "v1.0"},
+            )
+        )
+        assert len(result) > 0
+
+    def test_list_tags_tool_returns_tags(self, server):
+        asyncio.run(
+            server.call_tool(
+                "record",
+                {
+                    "model_name": "credit-scorecard",
+                    "event": "registered",
+                    "owner": "risk-team",
+                    "model_type": "ml_model",
+                },
+            )
+        )
+        asyncio.run(
+            server.call_tool(
+                "tag",
+                {"model_name": "credit-scorecard", "tag_name": "v1.0"},
+            )
+        )
+        result = asyncio.run(
+            server.call_tool("list_tags", {"model_name": "credit-scorecard"}),
+        )
         assert len(result) > 0
 
 

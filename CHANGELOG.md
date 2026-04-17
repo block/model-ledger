@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- feat: `POST /tag` and `GET /tags/{model_name}` REST endpoints — create, move, and list tags over HTTP
+- feat: `tag` and `list_tags` MCP tools — bring the total tool count to 8
+- feat: `HttpLedgerBackend.set_tag`, `get_tag`, `list_tags` — replace the previous silent no-op stubs with real implementations that round-trip through the REST API
+- feat: `TagInput`, `TagOutput`, `TagListOutput` Pydantic schemas
+- fix: `HttpLedgerBackend` caches `model_hash` → `model_name` on successful name lookups so `get_model(model_hash)` resolves correctly for models that were resolved by name (previously returned `None` because `ModelSummary` omits `created_at`)
 - feat: `prefect_connector()` — discover deployments from Prefect Cloud with optional tag filtering
 - feat: `last_seen` timestamp on `ModelRef` — updated every sync run, even for unchanged models
 - feat: dual change timestamps — `change_detected` (UTC, always set) and `change_occurred` (from source, optional via `source_updated_at` metadata)

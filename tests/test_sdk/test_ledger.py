@@ -65,6 +65,32 @@ class TestRegister:
         )
         assert model.model_origin == "vendor"
 
+    def test_register_stores_metadata_on_modelref(self, ledger):
+        ref = ledger.register(
+            name="Credit Scorecard v2",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Credit risk scoring",
+            actor="test",
+            metadata={"version": "2.0", "region": "us"},
+        )
+        assert ref.metadata == {"version": "2.0", "region": "us"}
+        # persists across backend round-trip
+        retrieved = ledger.get("Credit Scorecard v2")
+        assert retrieved.metadata == {"version": "2.0", "region": "us"}
+
+    def test_register_defaults_to_empty_metadata(self, ledger):
+        ref = ledger.register(
+            name="Fraud Scorecard",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="medium",
+            purpose="Legacy model",
+            actor="test",
+        )
+        assert ref.metadata == {}
+
 
 class TestRecord:
     def test_record_snapshot(self, ledger):

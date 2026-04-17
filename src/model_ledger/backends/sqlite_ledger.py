@@ -36,7 +36,8 @@ class SQLiteLedgerBackend:
                 purpose TEXT,
                 status TEXT DEFAULT 'active',
                 created_at TEXT NOT NULL,
-                last_seen TEXT
+                last_seen TEXT,
+                metadata TEXT
             );
             CREATE TABLE IF NOT EXISTS snapshots (
                 snapshot_hash TEXT PRIMARY KEY,
@@ -60,6 +61,12 @@ class SQLiteLedgerBackend:
             CREATE INDEX IF NOT EXISTS idx_snapshots_event ON snapshots(event_type);
             CREATE INDEX IF NOT EXISTS idx_snapshots_model_ts ON snapshots(model_hash, timestamp);
         """)
+        # Add metadata column to existing databases (backward compat).
+        # ALTER TABLE ADD COLUMN is idempotent-check via pragma.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(models)").fetchall()}
+        if "metadata" not in cols:
+            self._conn.execute("ALTER TABLE models ADD COLUMN metadata TEXT")
+        self._conn.commit()
 
     def _model_to_row(self, m: ModelRef) -> tuple:
         return (
@@ -73,6 +80,7 @@ class SQLiteLedgerBackend:
             m.status,
             m.created_at.isoformat(),
             m.last_seen.isoformat() if m.last_seen else None,
+            json.dumps(m.metadata, default=str) if m.metadata else None,
         )
 
     def _row_to_model(self, row: sqlite3.Row) -> ModelRef:
@@ -80,6 +88,13 @@ class SQLiteLedgerBackend:
         try:
             if row["last_seen"]:
                 last_seen = datetime.fromisoformat(row["last_seen"])
+        except (KeyError, IndexError):
+            pass
+        metadata: dict = {}
+        try:
+            raw_meta = row["metadata"]
+            if raw_meta:
+                metadata = json.loads(raw_meta)
         except (KeyError, IndexError):
             pass
         return ModelRef(
@@ -93,6 +108,7 @@ class SQLiteLedgerBackend:
             status=row["status"] or "active",
             created_at=datetime.fromisoformat(row["created_at"]),
             last_seen=last_seen,
+            metadata=metadata,
         )
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> Snapshot:
@@ -112,7 +128,10 @@ class SQLiteLedgerBackend:
 
     def save_model(self, model: ModelRef) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO models "
+            "(model_hash, name, owner, model_type, model_origin, tier, purpose, "
+            "status, created_at, last_seen, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self._model_to_row(model),
         )
         self._conn.commit()

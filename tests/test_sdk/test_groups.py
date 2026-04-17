@@ -91,6 +91,48 @@ class TestRegisterGroup:
         assert trace[0] == "feature_pipeline"
         assert trace[-1] == "Credit Scorecard"
 
+    def test_register_group_stores_metadata_on_composite(self, ledger):
+        ref = ledger.register_group(
+            name="Fraud Detection Suite",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Aggregate fraud signals",
+            members=[],
+            actor="test",
+            metadata={"version": "1.0", "business_unit": "lending"},
+        )
+        assert ref.metadata == {"version": "1.0", "business_unit": "lending"}
+
+    def test_register_group_does_not_broadcast_metadata_to_members(self, ledger):
+        ledger.register_group(
+            name="Scoring Suite",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="high",
+            purpose="Production suite",
+            members=["feature_pipeline"],
+            actor="test",
+            metadata={"suite_version": "3.0"},
+        )
+        # Verify the composite carries the metadata
+        suite = ledger.get("Scoring Suite")
+        assert suite.metadata == {"suite_version": "3.0"}
+        # Verify the member's link_dependency snapshot did NOT carry the broadcast metadata.
+        # Inspect the has_dependent snapshot on feature_pipeline, which is the
+        # upstream side of the member_of link and holds the link's payload.
+        pipeline = ledger.get("feature_pipeline")
+        pipeline_snaps = ledger.history(pipeline)
+        member_of_snaps = [
+            s
+            for s in pipeline_snaps
+            if s.event_type == "has_dependent"
+            and s.payload.get("relationship") == "member_of"
+            and s.payload.get("downstream") == "Scoring Suite"
+        ]
+        assert len(member_of_snaps) == 1
+        assert "suite_version" not in member_of_snaps[0].payload
+
 
 class TestMembers:
     def test_returns_member_models(self, ledger):

@@ -95,6 +95,7 @@ class Ledger:
         model_origin: str = "internal",
         status: str = "active",
         actor: str = "system",
+        metadata: dict[str, Any] | None = None,
     ) -> ModelRef:
         if name in self._name_cache:
             return self._name_cache[name]
@@ -111,6 +112,7 @@ class Ledger:
             tier=tier,
             purpose=purpose,
             status=status,
+            metadata=metadata or {},
         )
         self._backend.save_model(model)
         self._backend.append_snapshot(
@@ -558,6 +560,7 @@ class Ledger:
             tier=tier,
             purpose=purpose,
             actor=actor,
+            metadata=metadata,
         )
         for member in members or []:
             self.link_dependency(
@@ -565,7 +568,6 @@ class Ledger:
                 downstream=name,
                 relationship="member_of",
                 actor=actor,
-                metadata=metadata,
             )
         return ref
 

@@ -27,6 +27,8 @@ from model_ledger.tools.discover import discover as _discover
 from model_ledger.tools.investigate import investigate as _investigate
 from model_ledger.tools.query import query as _query
 from model_ledger.tools.record import record as _record
+from model_ledger.tools.tag import list_tags as _list_tags
+from model_ledger.tools.tag import tag as _tag
 from model_ledger.tools.trace import trace as _trace
 
 
@@ -229,6 +231,22 @@ def create_server(
         )
         return _changelog(inp, ledger).model_dump(mode="json")
 
+    @mcp.tool()
+    def tag(model_name: str, tag_name: str) -> dict:
+        """Create or move a named tag to the latest snapshot of a model.
+
+        Tags are mutable pointers used for release markers, version labels,
+        or "latest-X" references. Calling with the same ``tag_name`` moves
+        the tag forward to the current latest snapshot.
+        """
+        inp = schemas.TagInput(model_name=model_name, tag_name=tag_name)
+        return _tag(inp, ledger).model_dump(mode="json")
+
+    @mcp.tool()
+    def list_tags(model_name: str) -> dict:
+        """Return all tags attached to a model."""
+        return _list_tags(model_name, ledger).model_dump(mode="json")
+
     # ------------------------------------------------------------------
     # Resources (3)
     # ------------------------------------------------------------------
@@ -268,6 +286,9 @@ def create_server(
             schemas.TraceOutput,
             schemas.ChangelogInput,
             schemas.ChangelogOutput,
+            schemas.TagInput,
+            schemas.TagOutput,
+            schemas.TagListOutput,
         ]:
             all_schemas[cls.__name__] = cls.model_json_schema()  # type: ignore[attr-defined]
         return json.dumps(all_schemas, indent=2)
@@ -441,6 +462,21 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         resp = client.get("/changelog", params=params)
         return resp.json()  # type: ignore[no-any-return]
 
+    @mcp.tool()
+    def tag(model_name: str, tag_name: str) -> dict:
+        """Create or move a named tag to the latest snapshot of a model."""
+        resp = client.post(
+            "/tag",
+            json={"model_name": model_name, "tag_name": tag_name},
+        )
+        return resp.json()  # type: ignore[no-any-return]
+
+    @mcp.tool()
+    def list_tags(model_name: str) -> dict:
+        """Return all tags attached to a model."""
+        resp = client.get(f"/tags/{model_name}")
+        return resp.json()  # type: ignore[no-any-return]
+
     @mcp.resource("ledger://overview")
     def overview() -> str:
         """Inventory statistics — model count, event count, type breakdown."""
@@ -464,6 +500,9 @@ def _create_http_server(http_backend: Any) -> FastMCP:
             schemas.TraceOutput,
             schemas.ChangelogInput,
             schemas.ChangelogOutput,
+            schemas.TagInput,
+            schemas.TagOutput,
+            schemas.TagListOutput,
         ]:
             all_schemas[cls.__name__] = cls.model_json_schema()  # type: ignore[attr-defined]
         return json.dumps(all_schemas, indent=2)

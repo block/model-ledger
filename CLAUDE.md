@@ -57,6 +57,20 @@ This is an Apache-2.0 open-source project. All code must be generic and useful t
 
 **Examples in code, tests, and docstrings must be generic** — use names like "Credit Scorecard", "feature_pipeline", "risk-team", "scoring_model". Never use organization-specific system names, team names, queue names, or person names in OSS code.
 
+## Extension Points
+
+The project is designed to be wrapped by downstream packages that add organization-specific connectors, auth, envelope schemas, or REST wrappers. Changes that affect the public surface require coordinated updates in those packages:
+
+- `LedgerBackend` protocol (`backends/ledger_protocol.py`) — adding a method requires implementing it in every backend and any third-party backend.
+- `Snapshot` / `Tag` / `ModelRef` models (`core/ledger_models.py`) — schema changes propagate through all serialization paths.
+- REST API schemas (`tools/schemas.py`) and endpoints (`rest/app.py`) — version the API surface when breaking changes land.
+- MCP tool signatures (`mcp/server.py`) — downstream agents pin tool names and argument shapes.
+
+## Known Gaps
+
+- `Ledger.record()` accepts arbitrary `payload: dict` — envelope validation is the caller's responsibility. Downstream packages can layer schema validation on top.
+- `HttpLedgerBackend.list_models()` can't reconstruct `model_hash` from `/query` responses because `ModelSummary` omits `created_at`. `get_model(model_hash)` falls back to a lazy `name`-to-`hash` cache populated on successful name lookups.
+
 ## Key Patterns
 
 - Event-log paradigm: models are identities (ModelRef), everything else is immutable Snapshots

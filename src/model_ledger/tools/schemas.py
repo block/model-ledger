@@ -186,6 +186,35 @@ class ChangelogOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# tag tool
+# ---------------------------------------------------------------------------
+
+
+class TagInput(BaseModel):
+    """Input for the tag tool — create or move a tag to the latest snapshot."""
+
+    model_name: str
+    tag_name: str
+
+
+class TagOutput(BaseModel):
+    """Output from the tag tool — a tag pointing at a snapshot."""
+
+    model_name: str
+    tag_name: str
+    model_hash: str
+    snapshot_hash: str
+    updated_at: datetime
+
+
+class TagListOutput(BaseModel):
+    """Output from the list-tags endpoint — all tags for a model."""
+
+    model_name: str
+    tags: list[TagOutput] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # discover tool
 # ---------------------------------------------------------------------------
 

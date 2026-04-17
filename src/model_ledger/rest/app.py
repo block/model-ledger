@@ -42,9 +42,14 @@ from model_ledger.tools.schemas import (
     QueryOutput,
     RecordInput,
     RecordOutput,
+    TagInput,
+    TagListOutput,
+    TagOutput,
     TraceInput,
     TraceOutput,
 )
+from model_ledger.tools.tag import list_tags as list_tags_fn
+from model_ledger.tools.tag import tag as tag_fn
 from model_ledger.tools.trace import trace as trace_fn
 
 
@@ -151,6 +156,20 @@ def create_app(
         )
         try:
             return changelog_fn(inp, ledger)
+        except ModelNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/tag", response_model=TagOutput)
+    def tag_endpoint(body: TagInput) -> TagOutput:
+        try:
+            return tag_fn(body, ledger)
+        except ModelNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/tags/{model_name}", response_model=TagListOutput)
+    def list_tags_endpoint(model_name: str) -> TagListOutput:
+        try:
+            return list_tags_fn(model_name, ledger)
         except ModelNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

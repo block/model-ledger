@@ -41,7 +41,7 @@ class HttpLedgerBackend:
     # ── Models ──
 
     def save_model(self, model: ModelRef) -> None:
-        self._client.post(
+        resp = self._client.post(
             "/record",
             json={
                 "model_name": model.name,
@@ -52,7 +52,18 @@ class HttpLedgerBackend:
                 "payload": {},
             },
         )
-        self._hash_to_name[model.model_hash] = model.name
+        # The server computes its own model_hash from a fresh created_at,
+        # which differs from whatever hash the caller precomputed locally.
+        # Reconcile by adopting the server's canonical hash on the incoming
+        # ModelRef (so callers who retain the reference see the authoritative
+        # identity) and caching only the server hash for name resolution.
+        server_hash = model.model_hash
+        if resp.status_code == 200:
+            body = resp.json()
+            if isinstance(body, dict) and body.get("model_hash"):
+                server_hash = body["model_hash"]
+                model.model_hash = server_hash
+        self._hash_to_name[server_hash] = model.name
 
     def get_model(self, model_hash: str) -> ModelRef | None:
         name = self._hash_to_name.get(model_hash)

@@ -154,3 +154,91 @@ class TestLedgerTagOverHttp:
         # Must be retrievable via list_tags (previously was a silent no-op)
         tags = http_backend.list_tags(registered_model.model_hash)
         assert {t.name for t in tags} == {"v1.0"}
+
+
+class TestSaveModelCanonicalHash:
+    """save_model adopts the server's canonical model_hash.
+
+    Client-side ModelRef hashes depend on a locally generated ``created_at``
+    that differs from the server's — caching the client hash would make
+    later tag writes round-trip to a nonexistent identity.
+    """
+
+    def test_save_model_mutates_ref_to_server_hash(self, http_backend):
+        from datetime import datetime, timezone
+
+        from model_ledger.core.ledger_models import ModelRef
+
+        # Construct a ref with an *old* created_at so the client hash is
+        # guaranteed to differ from whatever the server computes.
+        ref = ModelRef(
+            name="credit-scorecard",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="unclassified",
+            purpose="Credit risk scoring",
+            created_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        client_hash = ref.model_hash
+
+        http_backend.save_model(ref)
+
+        # Server stored its own hash (with its own created_at).
+        server_side = http_backend.get_model_by_name("credit-scorecard")
+        assert server_side is not None
+        assert server_side.model_hash != client_hash
+
+        # The incoming ref was reconciled to the server's canonical hash.
+        assert ref.model_hash == server_side.model_hash
+
+    def test_cache_stores_server_hash_not_client_hash(self, http_backend):
+        from datetime import datetime, timezone
+
+        from model_ledger.core.ledger_models import ModelRef
+
+        ref = ModelRef(
+            name="fraud-detector",
+            owner="security-team",
+            model_type="ml_model",
+            tier="unclassified",
+            purpose="Fraud detection",
+            created_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        client_hash = ref.model_hash
+
+        http_backend.save_model(ref)
+
+        server_side = http_backend.get_model_by_name("fraud-detector")
+        assert server_side.model_hash != client_hash
+
+        # The hash-to-name cache contains the server hash only.
+        assert http_backend._hash_to_name.get(server_side.model_hash) == "fraud-detector"
+        # The stale client hash is NOT in the cache.
+        assert client_hash not in http_backend._hash_to_name
+
+    def test_tag_flow_survives_fresh_backend_instance(self, http_backend):
+        """A fresh client (empty cache) tagging by name must round-trip."""
+        from model_ledger.core.ledger_models import ModelRef
+
+        ref = ModelRef(
+            name="scoring-model",
+            owner="data-team",
+            model_type="ml_model",
+            tier="unclassified",
+            purpose="Score applicants",
+        )
+        http_backend.save_model(ref)
+
+        # Simulate a new client sharing the same underlying transport.
+        fresh_backend = HttpLedgerBackend.__new__(HttpLedgerBackend)
+        fresh_backend._base_url = http_backend._base_url
+        fresh_backend._client = http_backend._client
+        fresh_backend._hash_to_name = {}
+
+        ledger = Ledger(backend=fresh_backend)
+        created = ledger.tag("scoring-model", "v1.0")
+        assert created.name == "v1.0"
+
+        model = fresh_backend.get_model_by_name("scoring-model")
+        tags = fresh_backend.list_tags(model.model_hash)
+        assert {t.name for t in tags} == {"v1.0"}

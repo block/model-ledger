@@ -225,20 +225,33 @@ class TestRecordOutput:
         ts = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
         r = RecordOutput(
             model_name="credit-scorecard",
+            model_hash="abc123def456",
             event_id="abc123",
             timestamp=ts,
             is_new_model=True,
         )
         assert r.model_name == "credit-scorecard"
+        assert r.model_hash == "abc123def456"
         assert r.event_id == "abc123"
         assert r.timestamp == ts
         assert r.is_new_model is True
 
     def test_json_roundtrip(self):
         ts = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
-        r = RecordOutput(model_name="test", event_id="x", timestamp=ts, is_new_model=False)
+        r = RecordOutput(
+            model_name="test",
+            model_hash="h1",
+            event_id="x",
+            timestamp=ts,
+            is_new_model=False,
+        )
         data = r.model_dump(mode="json")
         assert RecordOutput(**data) == r
+
+    def test_model_hash_is_required(self):
+        schema = RecordOutput.model_json_schema()
+        required = schema.get("required", [])
+        assert "model_hash" in required
 
 
 # ---------------------------------------------------------------------------

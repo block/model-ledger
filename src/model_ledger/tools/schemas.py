@@ -71,9 +71,18 @@ class RecordInput(BaseModel):
 
 
 class RecordOutput(BaseModel):
-    """Output from the record tool."""
+    """Output from the record tool.
+
+    The ``model_hash`` field carries the server-side canonical identity of
+    the model, which may differ from a hash the caller computed locally —
+    ModelRef hashes include ``created_at``, and whichever side calls
+    ``Ledger.register()`` first determines that value. HTTP clients use
+    this field to reconcile their local ModelRef with the authoritative
+    server state.
+    """
 
     model_name: str
+    model_hash: str
     event_id: str
     timestamp: datetime
     is_new_model: bool

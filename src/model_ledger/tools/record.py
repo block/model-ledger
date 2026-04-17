@@ -34,6 +34,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
         )
         return RecordOutput(
             model_name=input.model_name,
+            model_hash=model.model_hash,
             event_id=snapshot.snapshot_hash,
             timestamp=snapshot.timestamp,
             is_new_model=True,
@@ -49,6 +50,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
     )
     return RecordOutput(
         model_name=input.model_name,
+        model_hash=model.model_hash,
         event_id=snapshot.snapshot_hash,
         timestamp=snapshot.timestamp,
         is_new_model=False,

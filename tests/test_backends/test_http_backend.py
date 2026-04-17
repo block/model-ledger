@@ -240,5 +240,76 @@ class TestSaveModelCanonicalHash:
         assert created.name == "v1.0"
 
         model = fresh_backend.get_model_by_name("scoring-model")
+        assert model is not None
         tags = fresh_backend.list_tags(model.model_hash)
         assert {t.name for t in tags} == {"v1.0"}
+
+
+class TestSaveModelErrorPaths:
+    """save_model fails loudly instead of silently caching bad state."""
+
+    def test_http_error_raises_and_does_not_cache(self):
+        """4xx/5xx responses must raise and leave the cache untouched."""
+        import httpx
+
+        from model_ledger.core.ledger_models import ModelRef
+
+        def _always_500(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, json={"detail": "boom"})
+
+        backend = HttpLedgerBackend.__new__(HttpLedgerBackend)
+        backend._base_url = "http://testserver"
+        backend._client = httpx.Client(
+            base_url="http://testserver",
+            transport=httpx.MockTransport(_always_500),
+        )
+        backend._hash_to_name = {}
+
+        ref = ModelRef(
+            name="credit-scorecard",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="unclassified",
+            purpose="Credit risk scoring",
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            backend.save_model(ref)
+        assert backend._hash_to_name == {}
+        backend._client.close()
+
+    def test_success_without_model_hash_raises(self):
+        """A 2xx response missing model_hash is a protocol violation."""
+        import httpx
+
+        from model_ledger.core.ledger_models import ModelRef
+
+        def _missing_hash(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "model_name": "credit-scorecard",
+                    "event_id": "abc",
+                    "timestamp": "2026-04-17T00:00:00+00:00",
+                    "is_new_model": True,
+                },
+            )
+
+        backend = HttpLedgerBackend.__new__(HttpLedgerBackend)
+        backend._base_url = "http://testserver"
+        backend._client = httpx.Client(
+            base_url="http://testserver",
+            transport=httpx.MockTransport(_missing_hash),
+        )
+        backend._hash_to_name = {}
+
+        ref = ModelRef(
+            name="credit-scorecard",
+            owner="risk-team",
+            model_type="ml_model",
+            tier="unclassified",
+            purpose="Credit risk scoring",
+        )
+        with pytest.raises(ValueError, match="model_hash"):
+            backend.save_model(ref)
+        assert backend._hash_to_name == {}
+        backend._client.close()

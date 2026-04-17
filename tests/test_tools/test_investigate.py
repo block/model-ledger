@@ -87,8 +87,6 @@ class TestBasicInvestigation:
 
         result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
 
-        # register creates 2 snapshots (internal register + record tool's record),
-        # plus the metadata_updated event
         assert result.total_events >= 3
 
     def test_days_since_last_event(self, ledger):
@@ -105,7 +103,6 @@ class TestBasicInvestigation:
 
         result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
 
-        # Just registered, should be 0 days
         assert result.days_since_last_event is not None
         assert result.days_since_last_event == 0
 
@@ -145,7 +142,6 @@ class TestMetadataMerge:
 
         result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
 
-        # Both payload keys should be present in merged metadata
         assert result.metadata["accuracy"] == 0.92
         assert result.metadata["environment"] == "production"
 
@@ -181,7 +177,6 @@ class TestMetadataMerge:
 
         result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
 
-        # Newest value wins
         assert result.metadata["accuracy"] == 0.92
 
 
@@ -216,7 +211,6 @@ class TestRecentEvents:
             assert isinstance(ev, EventSummary)
             assert ev.event_type  # non-empty
 
-        # Should contain the event types we recorded
         event_types = [e.event_type for e in result.recent_events]
         assert "registered" in event_types
         assert "metadata_updated" in event_types
@@ -232,7 +226,6 @@ class TestRecentEvents:
             ),
             ledger,
         )
-        # Create 15 extra events
         for i in range(15):
             record(
                 RecordInput(
@@ -278,7 +271,6 @@ class TestRecentEvents:
             ledger,
         )
 
-        # Should have all events, not capped at 10
         assert len(result.recent_events) > 10
 
 
@@ -288,6 +280,46 @@ class TestNonexistentModel:
     def test_raises_model_not_found(self, ledger):
         with pytest.raises(ModelNotFoundError):
             investigate(InvestigateInput(model_name="does_not_exist"), ledger)
+
+
+class TestInvestigateBatchDispatch:
+    """Investigate produces correct output via fallback batch dispatch."""
+
+    def test_dependencies_via_fallback(self, ledger):
+        ledger.add(
+            [
+                DataNode("data_source", platform="database", outputs=["raw"]),
+                DataNode("scoring_model", platform="ml", inputs=["raw"], outputs=["scores"]),
+                DataNode("alert_queue", platform="alerting", inputs=["scores"]),
+            ]
+        )
+        ledger.connect()
+
+        assert not hasattr(ledger._backend, "batch_dependencies")
+
+        result = investigate(InvestigateInput(model_name="scoring_model"), ledger)
+
+        upstream_names = [d.name for d in result.upstream]
+        downstream_names = [d.name for d in result.downstream]
+        assert "data_source" in upstream_names
+        assert "alert_queue" in downstream_names
+
+    def test_no_dependencies_via_fallback(self, ledger):
+        record(
+            RecordInput(
+                model_name="standalone",
+                event="registered",
+                owner="team",
+                model_type="ml_model",
+                purpose="test",
+            ),
+            ledger,
+        )
+
+        result = investigate(InvestigateInput(model_name="standalone"), ledger)
+
+        assert result.upstream == []
+        assert result.downstream == []
 
 
 class TestDependencies:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from model_ledger.backends import batch_fallbacks
 from model_ledger.core.ledger_models import ModelRef
 from model_ledger.sdk.ledger import Ledger
 from model_ledger.tools.schemas import ModelSummary, QueryInput, QueryOutput
@@ -45,7 +46,6 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     Pushes limit, offset, and text filters to the backend when supported
     (e.g., Snowflake SQL) to avoid fetching all rows.
     """
-    # Build filter dict — only include non-None values
     filters: dict[str, str] = {}
     if input.model_type is not None:
         filters["model_type"] = input.model_type
@@ -54,7 +54,6 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     if input.status is not None:
         filters["status"] = input.status
 
-    # Get total count (uses SQL COUNT when supported)
     count_filters = dict(filters)
     if input.text:
         count_filters["text"] = input.text
@@ -72,7 +71,6 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
             ]
         total = len(models_all)
 
-    # Fetch paginated results (uses SQL LIMIT/OFFSET when supported)
     page_filters = dict(filters)
     if input.text:
         page_filters["text"] = input.text
@@ -82,6 +80,23 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     models = ledger.list(**page_filters)
 
     has_more = (input.offset + input.limit) < total
-    summaries = [_model_to_summary(m, ledger) for m in models]
+
+    model_hashes = [m.model_hash for m in models]
+    if hasattr(backend, "model_summaries"):
+        enrichment = backend.model_summaries(model_hashes)
+    else:
+        enrichment = batch_fallbacks.model_summaries(backend, model_hashes)
+    summaries = [
+        ModelSummary(
+            name=m.name,
+            owner=m.owner,
+            model_type=m.model_type,
+            status=m.status,
+            platform=enrichment.get(m.model_hash, {}).get("platform"),
+            last_event=enrichment.get(m.model_hash, {}).get("last_event"),
+            event_count=enrichment.get(m.model_hash, {}).get("event_count", 0),
+        )
+        for m in models
+    ]
 
     return QueryOutput(total=total, models=summaries, has_more=has_more)

@@ -30,6 +30,36 @@ class TestOverview:
         assert data["total_events"] == 0
 
 
+class TestOverviewWithData:
+    """GET /overview with a populated inventory uses count_all_snapshots dispatch."""
+
+    def test_overview_counts_events(self, client):
+        client.post(
+            "/record",
+            json={
+                "model_name": "scoring-model",
+                "event": "registered",
+                "actor": "alice",
+                "owner": "data-team",
+                "model_type": "ml_model",
+            },
+        )
+        client.post(
+            "/record",
+            json={
+                "model_name": "scoring-model",
+                "event": "retrained",
+                "actor": "pipeline",
+            },
+        )
+
+        resp = client.get("/overview")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_models"] == 1
+        assert data["total_events"] >= 2
+
+
 class TestRecordEndpoint:
     """POST /record — register a model."""
 
@@ -56,7 +86,6 @@ class TestQueryAfterRegister:
     """GET /query — search after registering a model."""
 
     def test_query_finds_registered_model(self, client):
-        # Register first
         client.post(
             "/record",
             json={
@@ -88,7 +117,6 @@ class TestInvestigateEndpoint:
     """GET /investigate/{model_name} — deep-dive into a model."""
 
     def test_investigate_registered_model(self, client):
-        # Register
         client.post(
             "/record",
             json={

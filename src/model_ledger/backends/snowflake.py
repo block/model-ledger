@@ -124,8 +124,6 @@ class SnowflakeLedgerBackend:
     def __exit__(self, *args):
         self.flush()
 
-    # --- Batched write helpers ---
-
     def flush(self) -> None:
         """Flush all buffered writes to Snowflake."""
         self._flush_models()
@@ -134,7 +132,6 @@ class SnowflakeLedgerBackend:
     def _flush_models(self) -> None:
         if not self._model_buffer:
             return
-        # Try write_pandas (fast, bulk) → fall back to SQL MERGE (works with any session)
         if self._flush_models_pandas():
             self._model_buffer.clear()
             return
@@ -340,8 +337,6 @@ class SnowflakeLedgerBackend:
                 PRIMARY KEY (MODEL_HASH, NAME))""",
         )
 
-    # --- Model methods (buffered) ---
-
     def save_model(self, model: ModelRef) -> None:
         self._model_buffer.append(model)
 
@@ -354,7 +349,6 @@ class SnowflakeLedgerBackend:
         return _row_to_model_ref(rows[0]) if rows else None
 
     def get_model_by_name(self, name: str) -> ModelRef | None:
-        # Check buffer first
         for m in self._model_buffer:
             if m.name == name:
                 return m
@@ -365,7 +359,6 @@ class SnowflakeLedgerBackend:
 
     def list_models(self, **filters: str) -> list[ModelRef]:
         self._flush_models()
-        # Extract pagination and text search from filters
         limit = filters.pop("limit", None)
         offset = filters.pop("offset", None)
         text = filters.pop("text", None)
@@ -407,8 +400,6 @@ class SnowflakeLedgerBackend:
 
     def update_model(self, model: ModelRef) -> None:
         self.save_model(model)
-
-    # --- Snapshot methods (buffered) ---
 
     def append_snapshot(self, snapshot: Snapshot) -> None:
         self._snapshot_buffer.append(snapshot)
@@ -485,8 +476,6 @@ class SnowflakeLedgerBackend:
         sql += " ORDER BY TIMESTAMP"
         return [_row_to_snapshot(r) for r in _exec(self._session, sql)]
 
-    # --- Tag methods ---
-
     def set_tag(self, tag: Tag) -> None:
         _exec_no_result(
             self._session,
@@ -516,3 +505,275 @@ class SnowflakeLedgerBackend:
                 f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY NAME",
             )
         ]
+
+    def count_all_snapshots(self) -> int:
+        """Count all snapshots in a single query."""
+        self._flush_snapshots()
+        rows = _exec(
+            self._session,
+            f"SELECT COUNT(*) AS CNT FROM {self._schema}.SNAPSHOTS",
+        )
+        return rows[0]["CNT"] if rows else 0
+
+    def model_summaries(
+        self,
+        model_hashes: list[str],
+    ) -> dict[str, dict]:
+        """Batch enrichment: last_event, event_count, platform per model."""
+        if not model_hashes:
+            return {}
+        self._flush_snapshots()
+        in_clause = ", ".join(_esc(h) for h in model_hashes)
+
+        agg_rows = _exec(
+            self._session,
+            f"""
+            SELECT MODEL_HASH,
+                   MAX(TIMESTAMP) AS LAST_EVENT,
+                   COUNT(*) AS EVENT_COUNT
+            FROM {self._schema}.SNAPSHOTS
+            WHERE MODEL_HASH IN ({in_clause})
+            GROUP BY MODEL_HASH""",
+        )
+
+        plat_rows = _exec(
+            self._session,
+            f"""
+            SELECT MODEL_HASH,
+                   COALESCE(PAYLOAD:platform::VARCHAR, SOURCE) AS PLATFORM
+            FROM {self._schema}.SNAPSHOTS
+            WHERE MODEL_HASH IN ({in_clause})
+              AND (
+                  (EVENT_TYPE = 'discovered'
+                   AND PAYLOAD:platform::VARCHAR IS NOT NULL)
+                  OR SOURCE IS NOT NULL
+              )
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY MODEL_HASH
+                ORDER BY
+                    CASE WHEN EVENT_TYPE = 'discovered'
+                              AND PAYLOAD:platform::VARCHAR IS NOT NULL
+                         THEN 0 ELSE 1 END,
+                    TIMESTAMP DESC
+            ) = 1""",
+        )
+
+        platform_map: dict[str, str | None] = {r["MODEL_HASH"]: r["PLATFORM"] for r in plat_rows}
+        agg_map = {r["MODEL_HASH"]: r for r in agg_rows}
+
+        result: dict[str, dict] = {}
+        for mh in model_hashes:
+            if mh in agg_map:
+                row = agg_map[mh]
+                last_event = row["LAST_EVENT"]
+                if last_event is not None and not isinstance(last_event, datetime):
+                    last_event = datetime.fromisoformat(str(last_event))
+                result[mh] = {
+                    "last_event": last_event,
+                    "event_count": row["EVENT_COUNT"],
+                    "platform": platform_map.get(mh),
+                }
+            else:
+                result[mh] = {
+                    "last_event": None,
+                    "event_count": 0,
+                    "platform": None,
+                }
+        return result
+
+    def changelog_page(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        event_type: str | None = None,
+        model_hash: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Server-side filtered, sorted, paginated changelog."""
+        self._flush_snapshots()
+        self._flush_models()
+
+        conditions: list[str] = []
+        if since is not None:
+            conditions.append(f"s.TIMESTAMP >= {_esc(since.isoformat())}")
+        if until is not None:
+            conditions.append(f"s.TIMESTAMP <= {_esc(until.isoformat())}")
+        if event_type is not None:
+            conditions.append(f"s.EVENT_TYPE = {_esc(event_type)}")
+        if model_hash is not None:
+            conditions.append(f"s.MODEL_HASH = {_esc(model_hash)}")
+
+        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        count_rows = _exec(
+            self._session,
+            f"SELECT COUNT(*) AS CNT FROM {self._schema}.SNAPSHOTS s{where}",
+        )
+        total = count_rows[0]["CNT"] if count_rows else 0
+
+        data_rows = _exec(
+            self._session,
+            f"""
+            SELECT s.SNAPSHOT_HASH, s.MODEL_HASH, s.PARENT_HASH,
+                   s.TIMESTAMP, s.ACTOR, s.EVENT_TYPE, s.SOURCE,
+                   s.PAYLOAD, s.TAGS, m.NAME AS MODEL_NAME
+            FROM {self._schema}.SNAPSHOTS s
+            JOIN {self._schema}.MODELS m ON s.MODEL_HASH = m.MODEL_HASH
+            {where}
+            ORDER BY s.TIMESTAMP DESC, s.SNAPSHOT_HASH DESC
+            LIMIT {int(limit)} OFFSET {int(offset)}""",
+        )
+
+        events: list[dict] = []
+        for row in data_rows:
+            payload = row.get("PAYLOAD") or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            ts = row.get("TIMESTAMP")
+            if not isinstance(ts, datetime):
+                ts = datetime.fromisoformat(str(ts)) if ts else datetime.now(timezone.utc)
+            events.append(
+                {
+                    "model_hash": row["MODEL_HASH"],
+                    "model_name": row["MODEL_NAME"],
+                    "event_type": row["EVENT_TYPE"],
+                    "timestamp": ts,
+                    "actor": row.get("ACTOR"),
+                    "summary": payload.get("summary") if isinstance(payload, dict) else None,
+                    "payload": payload,
+                }
+            )
+
+        return events, total
+
+    def batch_dependencies(
+        self,
+        model_hash: str,
+    ) -> dict[str, list[dict]]:
+        """All dependency edges for a model via VARIANT path extraction."""
+        self._flush_snapshots()
+        self._flush_models()
+
+        dep_rows = _exec(
+            self._session,
+            f"""
+            SELECT
+                EVENT_TYPE,
+                PAYLOAD:upstream_hash::VARCHAR AS UPSTREAM_HASH,
+                PAYLOAD:upstream::VARCHAR AS UPSTREAM_NAME,
+                PAYLOAD:downstream_hash::VARCHAR AS DOWNSTREAM_HASH,
+                PAYLOAD:downstream::VARCHAR AS DOWNSTREAM_NAME,
+                COALESCE(PAYLOAD:relationship::VARCHAR, 'depends_on') AS RELATIONSHIP
+            FROM {self._schema}.SNAPSHOTS
+            WHERE MODEL_HASH = {_esc(model_hash)}
+              AND EVENT_TYPE IN ('depends_on', 'has_dependent')""",
+        )
+
+        if not dep_rows:
+            return {"upstream": [], "downstream": []}
+
+        lookup_hashes: set[str] = set()
+        lookup_names: set[str] = set()
+        for row in dep_rows:
+            if row["EVENT_TYPE"] == "depends_on":
+                if row.get("UPSTREAM_HASH"):
+                    lookup_hashes.add(row["UPSTREAM_HASH"])
+                if row.get("UPSTREAM_NAME"):
+                    lookup_names.add(row["UPSTREAM_NAME"])
+            else:
+                if row.get("DOWNSTREAM_HASH"):
+                    lookup_hashes.add(row["DOWNSTREAM_HASH"])
+                if row.get("DOWNSTREAM_NAME"):
+                    lookup_names.add(row["DOWNSTREAM_NAME"])
+
+        model_by_hash: dict[str, str] = {}
+        model_by_name: dict[str, dict[str, str]] = {}
+        all_lookups = lookup_hashes | lookup_names
+        if all_lookups:
+            hash_cond = (
+                f"MODEL_HASH IN ({', '.join(_esc(h) for h in lookup_hashes)})"
+                if lookup_hashes
+                else None
+            )
+            name_cond = (
+                f"NAME IN ({', '.join(_esc(n) for n in lookup_names)})" if lookup_names else None
+            )
+            or_clause = " OR ".join(filter(None, [hash_cond, name_cond]))
+            model_rows = _exec(
+                self._session,
+                f"SELECT MODEL_HASH, NAME FROM {self._schema}.MODELS WHERE {or_clause}",
+            )
+            model_by_hash = {r["MODEL_HASH"]: r["NAME"] for r in model_rows}
+            model_by_name = {
+                r["NAME"]: {"MODEL_HASH": r["MODEL_HASH"], "NAME": r["NAME"]} for r in model_rows
+            }
+
+        upstream: list[dict[str, Any]] = []
+        downstream: list[dict[str, Any]] = []
+        for row in dep_rows:
+            if row["EVENT_TYPE"] == "depends_on":
+                rh = row.get("UPSTREAM_HASH") or ""
+                rn = row.get("UPSTREAM_NAME") or ""
+            else:
+                rh = row.get("DOWNSTREAM_HASH") or ""
+                rn = row.get("DOWNSTREAM_NAME") or ""
+
+            if rh and rh in model_by_hash:
+                verified_hash = rh
+                verified_name = model_by_hash[rh]
+            elif rn and rn in model_by_name:
+                verified_hash = model_by_name[rn]["MODEL_HASH"]
+                verified_name = model_by_name[rn]["NAME"]
+            else:
+                continue
+
+            entry = {
+                "model_hash": verified_hash,
+                "model_name": verified_name,
+                "relationship": row["RELATIONSHIP"],
+            }
+            if row["EVENT_TYPE"] == "depends_on":
+                upstream.append(entry)
+            else:
+                downstream.append(entry)
+
+        return {"upstream": upstream, "downstream": downstream}
+
+    def batch_platforms(
+        self,
+        model_hashes: list[str],
+    ) -> dict[str, str | None]:
+        """Platform lookup for multiple models via VARIANT path extraction."""
+        if not model_hashes:
+            return {}
+        self._flush_snapshots()
+        in_clause = ", ".join(_esc(h) for h in model_hashes)
+
+        plat_rows = _exec(
+            self._session,
+            f"""
+            SELECT MODEL_HASH,
+                   COALESCE(PAYLOAD:platform::VARCHAR, SOURCE) AS PLATFORM
+            FROM {self._schema}.SNAPSHOTS
+            WHERE MODEL_HASH IN ({in_clause})
+              AND (
+                  (EVENT_TYPE = 'discovered'
+                   AND PAYLOAD:platform::VARCHAR IS NOT NULL)
+                  OR SOURCE IS NOT NULL
+              )
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY MODEL_HASH
+                ORDER BY
+                    CASE WHEN EVENT_TYPE = 'discovered'
+                              AND PAYLOAD:platform::VARCHAR IS NOT NULL
+                         THEN 0 ELSE 1 END,
+                    TIMESTAMP DESC
+            ) = 1""",
+        )
+
+        result: dict[str, str | None] = {mh: None for mh in model_hashes}
+        for row in plat_rows:
+            result[row["MODEL_HASH"]] = row["PLATFORM"]
+        return result

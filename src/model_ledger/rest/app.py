@@ -23,6 +23,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from model_ledger.backends import batch_fallbacks
 from model_ledger.backends.ledger_protocol import LedgerBackend
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.sdk.ledger import Ledger
@@ -76,9 +77,6 @@ def create_app(
         version="0.5.0",
     )
 
-    # ------------------------------------------------------------------
-    # POST /record
-    # ------------------------------------------------------------------
     @app.post("/record", response_model=RecordOutput)
     def record_endpoint(body: RecordInput) -> RecordOutput:
         try:
@@ -86,16 +84,10 @@ def create_app(
         except ModelNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # ------------------------------------------------------------------
-    # POST /discover
-    # ------------------------------------------------------------------
     @app.post("/discover", response_model=DiscoverOutput)
     def discover_endpoint(body: DiscoverInput) -> DiscoverOutput:
         return discover_fn(body, ledger)
 
-    # ------------------------------------------------------------------
-    # GET /investigate/{model_name}
-    # ------------------------------------------------------------------
     @app.get("/investigate/{model_name}", response_model=InvestigateOutput)
     def investigate_endpoint(model_name: str) -> InvestigateOutput:
         from model_ledger.tools.schemas import InvestigateInput
@@ -105,9 +97,6 @@ def create_app(
         except ModelNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # ------------------------------------------------------------------
-    # GET /query
-    # ------------------------------------------------------------------
     @app.get("/query", response_model=QueryOutput)
     def query_endpoint(
         text: str | None = None,
@@ -129,9 +118,6 @@ def create_app(
         )
         return query_fn(inp, ledger)
 
-    # ------------------------------------------------------------------
-    # GET /trace/{name}
-    # ------------------------------------------------------------------
     @app.get("/trace/{name}", response_model=TraceOutput)
     def trace_endpoint(
         name: str,
@@ -144,9 +130,6 @@ def create_app(
         except ModelNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # ------------------------------------------------------------------
-    # GET /changelog
-    # ------------------------------------------------------------------
     @app.get("/changelog", response_model=ChangelogOutput)
     def changelog_endpoint(
         since: str | None = None,
@@ -171,15 +154,14 @@ def create_app(
         except ModelNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # ------------------------------------------------------------------
-    # GET /overview
-    # ------------------------------------------------------------------
     @app.get("/overview")
     def overview_endpoint() -> dict[str, Any]:
         models = ledger.list()
-        total_events = 0
-        for model in models:
-            total_events += len(ledger.history(model))
+        backend = ledger._backend
+        if hasattr(backend, "count_all_snapshots"):
+            total_events = backend.count_all_snapshots()
+        else:
+            total_events = batch_fallbacks.count_all_snapshots(backend)
         return {
             "total_models": len(models),
             "total_events": total_events,
@@ -188,5 +170,4 @@ def create_app(
     return app
 
 
-# Module-level app for `uvicorn model_ledger.rest.app:app`
 app = create_app()

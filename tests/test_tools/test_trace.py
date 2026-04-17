@@ -201,9 +201,29 @@ class TestTraceDepthFilter:
         )
 
         upstream_names = [n.name for n in result.upstream]
-        # feature_pipeline is depth 1, raw_data is depth 2
         assert "feature_pipeline" in upstream_names
         assert "raw_data" not in upstream_names
+
+
+class TestTraceBatchDispatch:
+    """Trace produces correct output via fallback batch platform dispatch."""
+
+    def test_platforms_resolved_via_fallback(self, graph_ledger):
+        assert not hasattr(graph_ledger._backend, "batch_platforms")
+
+        result = trace(TraceInput(name="scoring_model"), graph_ledger)
+
+        for node in result.upstream + result.downstream:
+            assert isinstance(node, DependencyNode)
+
+    def test_trace_structure_via_fallback(self, graph_ledger):
+        result = trace(TraceInput(name="scoring_model"), graph_ledger)
+
+        upstream_names = [n.name for n in result.upstream]
+        downstream_names = [n.name for n in result.downstream]
+        assert "feature_pipeline" in upstream_names
+        assert "alert_engine" in downstream_names
+        assert result.total_nodes == len(result.upstream) + len(result.downstream)
 
 
 class TestTraceNonexistentModel:

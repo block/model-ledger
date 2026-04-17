@@ -22,6 +22,7 @@ class SQLiteLedgerBackend:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.row_factory = sqlite3.Row
         self._ensure_tables()
+        self._has_json_extract = self._check_json_extract()
 
     def _ensure_tables(self) -> None:
         self._conn.executescript("""
@@ -57,6 +58,7 @@ class SQLiteLedgerBackend:
             );
             CREATE INDEX IF NOT EXISTS idx_snapshots_model ON snapshots(model_hash);
             CREATE INDEX IF NOT EXISTS idx_snapshots_event ON snapshots(event_type);
+            CREATE INDEX IF NOT EXISTS idx_snapshots_model_ts ON snapshots(model_hash, timestamp);
         """)
 
     def _model_to_row(self, m: ModelRef) -> tuple:
@@ -108,8 +110,6 @@ class SQLiteLedgerBackend:
             tags=tags,
         )
 
-    # --- Models ---
-
     def save_model(self, model: ModelRef) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -141,8 +141,6 @@ class SQLiteLedgerBackend:
 
     def update_model(self, model: ModelRef) -> None:
         self.save_model(model)
-
-    # --- Snapshots ---
 
     def append_snapshot(self, snapshot: Snapshot) -> None:
         self._conn.execute(
@@ -218,8 +216,6 @@ class SQLiteLedgerBackend:
         sql += " ORDER BY timestamp"
         return [self._row_to_snapshot(r) for r in self._conn.execute(sql, params)]
 
-    # --- Tags ---
-
     def set_tag(self, tag: Tag) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO tags VALUES (?, ?, ?, ?)",
@@ -255,3 +251,255 @@ class SQLiteLedgerBackend:
             )
             for r in rows
         ]
+
+    def _check_json_extract(self) -> bool:
+        try:
+            self._conn.execute("SELECT json_extract('{}', '$')").fetchone()
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def _resolve_platforms_sql(
+        self,
+        model_hashes: list[str],
+    ) -> dict[str, str | None]:
+        """Resolve platform for each model hash using SQL.
+
+        Priority: discovered event payload.platform > snapshot.source > None.
+        Matches the resolution logic in ``batch_fallbacks._resolve_platform``.
+        """
+        if not model_hashes:
+            return {}
+
+        result: dict[str, str | None] = {mh: None for mh in model_hashes}
+        placeholders = ",".join("?" * len(model_hashes))
+
+        if self._has_json_extract:
+            rows = self._conn.execute(
+                f"SELECT s.model_hash, s.event_type, s.source, "
+                f"json_extract(s.payload, '$.platform') AS platform "
+                f"FROM snapshots s "
+                f"WHERE s.model_hash IN ({placeholders}) "
+                f"AND (s.event_type = 'discovered' OR s.source IS NOT NULL) "
+                f"ORDER BY s.timestamp DESC",
+                model_hashes,
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"SELECT s.model_hash, s.event_type, s.source, s.payload "
+                f"FROM snapshots s "
+                f"WHERE s.model_hash IN ({placeholders}) "
+                f"AND (s.event_type = 'discovered' OR s.source IS NOT NULL) "
+                f"ORDER BY s.timestamp DESC",
+                model_hashes,
+            ).fetchall()
+
+        platform_found: set[str] = set()
+        source_fallback: dict[str, str] = {}
+
+        for row in rows:
+            mh = row["model_hash"]
+            if mh in platform_found:
+                continue
+
+            if self._has_json_extract:
+                platform = row["platform"]
+            else:
+                payload = json.loads(row["payload"]) if row["payload"] else {}
+                platform = payload.get("platform")
+
+            if row["event_type"] == "discovered" and platform:
+                result[mh] = str(platform)
+                platform_found.add(mh)
+            elif row["source"] and mh not in source_fallback:
+                source_fallback[mh] = str(row["source"])
+
+        for mh, source in source_fallback.items():
+            if mh not in platform_found:
+                result[mh] = source
+
+        return result
+
+    def count_all_snapshots(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS cnt FROM snapshots").fetchone()
+        return int(row["cnt"])
+
+    def model_summaries(
+        self,
+        model_hashes: list[str],
+    ) -> dict[str, dict]:
+        if not model_hashes:
+            return {}
+
+        result: dict[str, dict] = {}
+        for mh in model_hashes:
+            result[mh] = {"last_event": None, "event_count": 0, "platform": None}
+
+        placeholders = ",".join("?" * len(model_hashes))
+        rows = self._conn.execute(
+            f"SELECT s.model_hash, MAX(s.timestamp) AS last_event, COUNT(*) AS event_count "
+            f"FROM snapshots s "
+            f"WHERE s.model_hash IN ({placeholders}) "
+            f"GROUP BY s.model_hash",
+            model_hashes,
+        ).fetchall()
+
+        for row in rows:
+            mh = row["model_hash"]
+            result[mh]["last_event"] = datetime.fromisoformat(row["last_event"])
+            result[mh]["event_count"] = row["event_count"]
+
+        platforms = self._resolve_platforms_sql(model_hashes)
+        for mh, platform in platforms.items():
+            if mh in result:
+                result[mh]["platform"] = platform
+
+        return result
+
+    def changelog_page(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        event_type: str | None = None,
+        model_hash: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        conditions: list[str] = []
+        params: list[str | int] = []
+
+        if since is not None:
+            conditions.append("s.timestamp >= ?")
+            params.append(since.isoformat())
+        if until is not None:
+            conditions.append("s.timestamp <= ?")
+            params.append(until.isoformat())
+        if event_type is not None:
+            conditions.append("s.event_type = ?")
+            params.append(event_type)
+        if model_hash is not None:
+            conditions.append("s.model_hash = ?")
+            params.append(model_hash)
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        count_row = self._conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM snapshots s WHERE {where}",
+            params,
+        ).fetchone()
+        total: int = count_row["cnt"]
+
+        data_rows = self._conn.execute(
+            f"SELECT s.*, m.name AS model_name FROM snapshots s "
+            f"LEFT JOIN models m ON s.model_hash = m.model_hash "
+            f"WHERE {where} "
+            f"ORDER BY s.timestamp DESC, s.snapshot_hash DESC "
+            f"LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+
+        events: list[dict] = []
+        for row in data_rows:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+            events.append(
+                {
+                    "model_hash": row["model_hash"],
+                    "model_name": row["model_name"] or row["model_hash"],
+                    "event_type": row["event_type"],
+                    "timestamp": datetime.fromisoformat(row["timestamp"]),
+                    "actor": row["actor"],
+                    "summary": payload.get("summary"),
+                    "payload": payload,
+                }
+            )
+
+        return events, total
+
+    def batch_dependencies(
+        self,
+        model_hash: str,
+    ) -> dict[str, list[dict]]:
+        upstream: list[dict] = []
+        downstream: list[dict] = []
+
+        if self._has_json_extract:
+            rows = self._conn.execute(
+                "SELECT s.event_type, "
+                "json_extract(s.payload, '$.upstream_hash') AS upstream_hash, "
+                "json_extract(s.payload, '$.upstream') AS upstream_name, "
+                "json_extract(s.payload, '$.downstream_hash') AS downstream_hash, "
+                "json_extract(s.payload, '$.downstream') AS downstream_name, "
+                "json_extract(s.payload, '$.relationship') AS relationship "
+                "FROM snapshots s "
+                "WHERE s.model_hash = ? "
+                "AND s.event_type IN ('depends_on', 'has_dependent')",
+                (model_hash,),
+            ).fetchall()
+
+            for row in rows:
+                if row["event_type"] == "depends_on":
+                    related_hash = row["upstream_hash"] or ""
+                    related_name = row["upstream_name"] or ""
+                else:
+                    related_hash = row["downstream_hash"] or ""
+                    related_name = row["downstream_name"] or ""
+                relationship = row["relationship"] or "depends_on"
+
+                related = self.get_model(related_hash) if related_hash else None
+                if related is None and related_name:
+                    related = self.get_model_by_name(related_name)
+                if related is None:
+                    continue
+
+                entry = {
+                    "model_hash": related.model_hash,
+                    "model_name": related.name,
+                    "relationship": relationship,
+                }
+                if row["event_type"] == "depends_on":
+                    upstream.append(entry)
+                else:
+                    downstream.append(entry)
+        else:
+            rows = self._conn.execute(
+                "SELECT s.event_type, s.payload "
+                "FROM snapshots s "
+                "WHERE s.model_hash = ? "
+                "AND s.event_type IN ('depends_on', 'has_dependent')",
+                (model_hash,),
+            ).fetchall()
+
+            for row in rows:
+                payload = json.loads(row["payload"]) if row["payload"] else {}
+                if row["event_type"] == "depends_on":
+                    related_hash = payload.get("upstream_hash", "")
+                    related_name = payload.get("upstream", "")
+                else:
+                    related_hash = payload.get("downstream_hash", "")
+                    related_name = payload.get("downstream", "")
+                relationship = payload.get("relationship", "depends_on")
+
+                related = self.get_model(related_hash) if related_hash else None
+                if related is None and related_name:
+                    related = self.get_model_by_name(related_name)
+                if related is None:
+                    continue
+
+                entry = {
+                    "model_hash": related.model_hash,
+                    "model_name": related.name,
+                    "relationship": relationship,
+                }
+                if row["event_type"] == "depends_on":
+                    upstream.append(entry)
+                else:
+                    downstream.append(entry)
+
+        return {"upstream": upstream, "downstream": downstream}
+
+    def batch_platforms(
+        self,
+        model_hashes: list[str],
+    ) -> dict[str, str | None]:
+        return self._resolve_platforms_sql(model_hashes)

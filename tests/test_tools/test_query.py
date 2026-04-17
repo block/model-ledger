@@ -186,6 +186,35 @@ class TestQueryEmptyInventory:
         assert result.has_more is False
 
 
+class TestQueryBatchDispatch:
+    """Query produces correct output via fallback batch dispatch (InMemory backend)."""
+
+    def test_model_summaries_populated_via_fallback(self, populated_ledger):
+        result = query(QueryInput(), populated_ledger)
+
+        assert not hasattr(populated_ledger._backend, "model_summaries")
+        for m in result.models:
+            assert isinstance(m, ModelSummary)
+            assert m.event_count >= 1
+            assert m.last_event is not None
+
+    def test_platform_set_via_batch_dispatch(self, ledger):
+        _register(ledger, "platform-model", owner="data-team", model_type="ml_model")
+        model = ledger.get("platform-model")
+        ledger.record(
+            model,
+            event="discovered",
+            payload={"platform": "mlflow"},
+            actor="connector",
+            source="mlflow",
+        )
+
+        result = query(QueryInput(), ledger)
+
+        platform_model = [m for m in result.models if m.name == "platform-model"][0]
+        assert platform_model.platform == "mlflow"
+
+
 class TestModelToSummary:
     """_model_to_summary helper builds ModelSummary from ModelRef."""
 
@@ -216,7 +245,6 @@ class TestModelToSummary:
             model_type="ml_model",
             purpose="Score",
         )
-        # Add more events
         record(
             RecordInput(model_name="scoring-model", event="retrained", actor="pipeline"),
             ledger,
@@ -229,8 +257,6 @@ class TestModelToSummary:
         model = ledger.get("scoring-model")
         summary = _model_to_summary(model, ledger)
 
-        # register creates 2 snapshots (register call + record call in record tool),
-        # plus retrained + deployed
         assert summary.event_count >= 3
 
     def test_summary_platform_from_source(self, ledger):
@@ -242,7 +268,6 @@ class TestModelToSummary:
             purpose="Test",
         )
         model = ledger.get("platform-model")
-        # Record an event with a source
         ledger.record(
             model,
             event="discovered",

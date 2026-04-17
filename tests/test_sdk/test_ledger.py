@@ -994,6 +994,66 @@ class TestCompositeSummary:
         summary = ledger.composite_summary()
         assert summary == []
 
+    def test_composite_summary_default_filters_composite_type(self, ledger):
+        """Default behavior: only model_type='composite' returned."""
+        ledger.register_group(
+            name="Group A",
+            owner="team-a",
+            model_type="composite",
+            tier="high",
+            purpose="test",
+            members=[],
+            actor="t",
+        )
+        ledger.register_group(
+            name="Group B",
+            owner="team-b",
+            model_type="ml_model",
+            tier="high",
+            purpose="test",
+            members=[],
+            actor="t",
+        )
+        summary = ledger.composite_summary()
+        names = {row["name"] for row in summary}
+        assert "Group A" in names
+        assert "Group B" not in names
+
+    def test_composite_summary_custom_model_types(self, ledger):
+        """Passing model_types includes matching types."""
+        ledger.register_group(
+            name="Group A",
+            owner="team-a",
+            model_type="composite",
+            tier="high",
+            purpose="test",
+            members=[],
+            actor="t",
+        )
+        ledger.register_group(
+            name="Group B",
+            owner="team-b",
+            model_type="ml_model",
+            tier="high",
+            purpose="test",
+            members=[],
+            actor="t",
+        )
+        ledger.register_group(
+            name="Group C",
+            owner="team-c",
+            model_type="heuristic",
+            tier="high",
+            purpose="test",
+            members=[],
+            actor="t",
+        )
+        summary = ledger.composite_summary(model_types=["ml_model", "heuristic"])
+        names = {row["name"] for row in summary}
+        assert "Group A" not in names
+        assert "Group B" in names
+        assert "Group C" in names
+
 
 class TestInvestigateComposite:
     def test_investigate_composite_includes_governance(self, ledger):

@@ -3,6 +3,7 @@
 ## v0.7.3
 
 - Add `metadata: dict` field to `ModelRef`. Thread through `register()` and `register_group()`. Replaces the unintended per-link broadcast of `register_group(metadata=...)` to member links; metadata now lives on the composite ModelRef itself. Backward compatible: existing data loads with `metadata={}`.
+- Add optional `model_types` parameter to `composite_summary()` so callers can include custom composite-shaped types (e.g., `ml_model`, `heuristic`) beyond the default `"composite"`. Backward compatible.
 
 ## Unreleased
 

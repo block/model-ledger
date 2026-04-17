@@ -2,9 +2,11 @@
 
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from model_ledger.backends import batch_fallbacks
 from model_ledger.backends.sqlite_ledger import SQLiteLedgerBackend
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
@@ -162,6 +164,143 @@ class TestPersistence:
         backend2 = SQLiteLedgerBackend(db_path)
         assert backend2.get_model_by_name("test-model") is not None
         assert len(backend2.list_snapshots(m.model_hash)) == 1
+
+
+class TestBatchMethodEquivalence:
+    """Verify SQLite optimized batch methods return identical results to fallbacks."""
+
+    @pytest.fixture
+    def populated_backend(self, db_path):
+        """Backend with models, snapshots, and dependencies for batch tests."""
+        backend = SQLiteLedgerBackend(db_path)
+        t0 = datetime(2026, 4, 1, tzinfo=timezone.utc)
+
+        scorecard = _make_model("credit-scorecard")
+        detector = _make_model("fraud-detector")
+        empty = _make_model("empty-model")
+        backend.save_model(scorecard)
+        backend.save_model(detector)
+        backend.save_model(empty)
+
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=scorecard.model_hash,
+                actor="test",
+                event_type="registered",
+                timestamp=t0,
+                payload={"name": "credit-scorecard"},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=scorecard.model_hash,
+                actor="test",
+                event_type="discovered",
+                timestamp=t0 + timedelta(hours=1),
+                source="mlflow",
+                payload={"platform": "mlflow"},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=scorecard.model_hash,
+                actor="pipeline",
+                event_type="retrained",
+                timestamp=t0 + timedelta(hours=2),
+                payload={"accuracy": 0.95},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=detector.model_hash,
+                actor="test",
+                event_type="registered",
+                timestamp=t0,
+                payload={"name": "fraud-detector"},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=detector.model_hash,
+                actor="test",
+                event_type="discovered",
+                timestamp=t0 + timedelta(hours=1),
+                source="sagemaker",
+                payload={"features": ["amount"]},
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=scorecard.model_hash,
+                actor="test",
+                event_type="depends_on",
+                timestamp=t0 + timedelta(hours=3),
+                payload={
+                    "upstream_hash": detector.model_hash,
+                    "upstream": "fraud-detector",
+                    "relationship": "feeds",
+                },
+            )
+        )
+        backend.append_snapshot(
+            Snapshot(
+                model_hash=detector.model_hash,
+                actor="test",
+                event_type="has_dependent",
+                timestamp=t0 + timedelta(hours=3),
+                payload={
+                    "downstream_hash": scorecard.model_hash,
+                    "downstream": "credit-scorecard",
+                    "relationship": "feeds",
+                },
+            )
+        )
+        return backend
+
+    def test_count_all_snapshots_matches_fallback(self, populated_backend):
+        optimized = populated_backend.count_all_snapshots()
+        fallback = batch_fallbacks.count_all_snapshots(populated_backend)
+        assert optimized == fallback
+
+    def test_model_summaries_matches_fallback(self, populated_backend):
+        hashes = [m.model_hash for m in populated_backend.list_models()]
+        optimized = populated_backend.model_summaries(hashes)
+        fallback = batch_fallbacks.model_summaries(populated_backend, hashes)
+        assert optimized == fallback
+
+    def test_changelog_page_matches_fallback(self, populated_backend):
+        optimized_events, optimized_total = populated_backend.changelog_page()
+        fallback_events, fallback_total = batch_fallbacks.changelog_page(populated_backend)
+        assert optimized_total == fallback_total
+        opt_set = {(e["model_hash"], e["event_type"], e["timestamp"]) for e in optimized_events}
+        fb_set = {(e["model_hash"], e["event_type"], e["timestamp"]) for e in fallback_events}
+        assert opt_set == fb_set
+
+    def test_changelog_page_filtered_matches_fallback(self, populated_backend):
+        scorecard = populated_backend.get_model_by_name("credit-scorecard")
+        opt_events, opt_total = populated_backend.changelog_page(
+            event_type="discovered",
+            model_hash=scorecard.model_hash,
+        )
+        fb_events, fb_total = batch_fallbacks.changelog_page(
+            populated_backend,
+            event_type="discovered",
+            model_hash=scorecard.model_hash,
+        )
+        assert opt_total == fb_total
+        assert len(opt_events) == len(fb_events)
+
+    def test_batch_dependencies_matches_fallback(self, populated_backend):
+        scorecard = populated_backend.get_model_by_name("credit-scorecard")
+        optimized = populated_backend.batch_dependencies(scorecard.model_hash)
+        fallback = batch_fallbacks.batch_dependencies(populated_backend, scorecard.model_hash)
+        assert optimized == fallback
+
+    def test_batch_platforms_matches_fallback(self, populated_backend):
+        hashes = [m.model_hash for m in populated_backend.list_models()]
+        optimized = populated_backend.batch_platforms(hashes)
+        fallback = batch_fallbacks.batch_platforms(populated_backend, hashes)
+        assert optimized == fallback
 
 
 class TestLedgerIntegration:

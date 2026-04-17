@@ -50,9 +50,6 @@ class TestAllEvents:
         result = changelog(ChangelogInput(), ledger)
 
         assert isinstance(result, ChangelogOutput)
-        # 3 registrations + 1 retrained + 1 deployed = 5 tool-level events
-        # (register() internally also creates a snapshot, but the tool-level
-        # record() creates the one we see via ledger.history too — count all)
         assert result.total >= 5
         assert len(result.events) >= 5
         for ev in result.events:
@@ -142,7 +139,6 @@ class TestPagination:
         page2 = changelog(ChangelogInput(limit=2, offset=2), ledger)
 
         assert page2.total == full.total
-        # Events on page 2 should be different from page 1
         page1 = changelog(ChangelogInput(limit=2, offset=0), ledger)
         page1_ids = [(e.model_name, e.timestamp) for e in page1.events]
         page2_ids = [(e.model_name, e.timestamp) for e in page2.events]
@@ -184,13 +180,45 @@ class TestEmptyInventory:
         assert result.has_more is False
 
 
+class TestChangelogBatchDispatch:
+    """Changelog produces correct output via fallback batch dispatch."""
+
+    def test_fallback_dispatch_returns_events(self, ledger):
+        _seed(ledger)
+        assert not hasattr(ledger._backend, "changelog_page")
+
+        result = changelog(ChangelogInput(), ledger)
+
+        assert result.total >= 5
+        for ev in result.events:
+            assert isinstance(ev, EventDetail)
+
+    def test_model_name_filter_via_fallback(self, ledger):
+        _seed(ledger)
+
+        result = changelog(ChangelogInput(model_name="model_a"), ledger)
+
+        for ev in result.events:
+            assert ev.model_name == "model_a"
+
+    def test_pagination_via_fallback(self, ledger):
+        _seed(ledger)
+
+        page1 = changelog(ChangelogInput(limit=2, offset=0), ledger)
+        page2 = changelog(ChangelogInput(limit=2, offset=2), ledger)
+
+        assert page1.total == page2.total
+        p1_ids = [(e.model_name, e.timestamp) for e in page1.events]
+        p2_ids = [(e.model_name, e.timestamp) for e in page2.events]
+        assert p1_ids != p2_ids
+
+
 class TestTimeRangeFiltering:
     """Time range filtering with since/until."""
 
     def test_since_filters_old_events(self, ledger):
         _seed(ledger)
 
-        # All events were just created, so a future 'since' should exclude them
         future = datetime.now(timezone.utc) + timedelta(hours=1)
         result = changelog(ChangelogInput(since=future), ledger)
 
@@ -199,7 +227,6 @@ class TestTimeRangeFiltering:
     def test_until_filters_future_events(self, ledger):
         _seed(ledger)
 
-        # 'until' set to the past should exclude all just-created events
         past = datetime.now(timezone.utc) - timedelta(hours=1)
         result = changelog(ChangelogInput(until=past), ledger)
 

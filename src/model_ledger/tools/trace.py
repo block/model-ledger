@@ -2,23 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+
+from model_ledger.backends import batch_fallbacks
 from model_ledger.sdk.ledger import Ledger
 from model_ledger.tools.schemas import DependencyNode, TraceInput, TraceOutput
-
-
-def _get_platform(name: str, ledger: Ledger) -> str | None:
-    """Try to extract platform from the model's snapshot history."""
-    try:
-        model = ledger.get(name)
-        for snap in ledger.history(model) or []:
-            if snap.source:
-                return str(snap.source)
-            # Also check payload for platform from discovered events
-            if snap.payload.get("platform"):
-                return str(snap.payload["platform"])
-    except Exception:
-        pass
-    return None
 
 
 def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
@@ -31,56 +19,69 @@ def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
     Raises:
         ModelNotFoundError: If the target model does not exist.
     """
-    # 1. Verify model exists — raises ModelNotFoundError if missing
     ledger.get(input.name)
+    backend = ledger._backend
 
-    # 2. Build upstream list
-    upstream_nodes: list[DependencyNode] = []
+    upstream_names: list[str] = []
     if input.direction in ("upstream", "both"):
         try:
             upstream_names = ledger.upstream(input.name)
         except (KeyError, ValueError):
             upstream_names = []
 
-        # upstream() returns topological order (sources first, nearest last),
-        # so reverse depth: nearest dependency = depth 1, furthest = len.
-        total_up = len(upstream_names)
-        for idx, name in enumerate(upstream_names):
-            platform = _get_platform(name, ledger)
-            upstream_nodes.append(
-                DependencyNode(
-                    name=name,
-                    platform=platform,
-                    depth=total_up - idx,
-                    relationship="depends_on",
-                )
-            )
-
-    # 3. Build downstream list
-    downstream_nodes: list[DependencyNode] = []
+    downstream_names: list[str] = []
     if input.direction in ("downstream", "both"):
         try:
             downstream_names = ledger.downstream(input.name)
         except (KeyError, ValueError):
             downstream_names = []
 
-        for idx, name in enumerate(downstream_names):
-            platform = _get_platform(name, ledger)
-            downstream_nodes.append(
-                DependencyNode(
-                    name=name,
-                    platform=platform,
-                    depth=idx + 1,
-                    relationship="feeds_into",
-                )
-            )
+    all_names = upstream_names + downstream_names
+    name_to_hash: dict[str, str] = {}
+    for n in all_names:
+        with contextlib.suppress(Exception):
+            name_to_hash[n] = ledger.get(n).model_hash
 
-    # 4. Apply depth filter
+    all_model_hashes = list(name_to_hash.values())
+    if all_model_hashes:
+        if hasattr(backend, "batch_platforms"):
+            platforms = backend.batch_platforms(all_model_hashes)
+        else:
+            platforms = batch_fallbacks.batch_platforms(backend, all_model_hashes)
+    else:
+        platforms = {}
+
+    upstream_nodes: list[DependencyNode] = []
+    total_up = len(upstream_names)
+    for idx, name in enumerate(upstream_names):
+        mh = name_to_hash.get(name)
+        platform = platforms.get(mh) if mh else None
+        upstream_nodes.append(
+            DependencyNode(
+                name=name,
+                platform=platform,
+                depth=total_up - idx,
+                relationship="depends_on",
+            )
+        )
+
+    downstream_nodes: list[DependencyNode] = []
+    for idx, name in enumerate(downstream_names):
+        mh = name_to_hash.get(name)
+        platform = platforms.get(mh) if mh else None
+        downstream_nodes.append(
+            DependencyNode(
+                name=name,
+                platform=platform,
+                depth=idx + 1,
+                relationship="feeds_into",
+            )
+        )
+
     if input.depth is not None:
         upstream_nodes = [n for n in upstream_nodes if n.depth <= input.depth]
         downstream_nodes = [n for n in downstream_nodes if n.depth <= input.depth]
 
-    # 5. Return result
     total = len(upstream_nodes) + len(downstream_nodes)
     return TraceOutput(
         root=input.name,

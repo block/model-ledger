@@ -6,7 +6,6 @@ SQL statements → ~50 batched statements).
 
 from __future__ import annotations
 
-import contextlib
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -327,13 +326,18 @@ class SnowflakeLedgerBackend:
                 LAST_SEEN TIMESTAMP_TZ,
                 METADATA VARIANT)""",
         )
-        # Add METADATA column to existing tables (backward compat). Snowflake
-        # raises if the column already exists; swallow that specific failure.
-        with contextlib.suppress(Exception):
+        # Add METADATA column to existing tables (backward compat). New deployments
+        # include METADATA in CREATE TABLE; this ALTER is a no-op there. Only swallow
+        # the "already exists" case — other DDL errors (missing permission, transient
+        # failure) must surface so startup doesn't silently leave MERGEs broken.
+        try:
             _exec_no_result(
                 self._session,
                 f"ALTER TABLE {self._schema}.MODELS ADD COLUMN METADATA VARIANT",
             )
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                raise
         _exec_no_result(
             self._session,
             f"""

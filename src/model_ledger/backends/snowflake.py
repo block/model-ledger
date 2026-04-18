@@ -43,6 +43,9 @@ def _esc(value: str | None) -> str:
 
 
 def _row_to_model_ref(row: dict[str, Any]) -> ModelRef:
+    metadata = row.get("METADATA") or {}
+    if isinstance(metadata, str):
+        metadata = json.loads(metadata) if metadata else {}
     return ModelRef(
         model_hash=row["MODEL_HASH"],
         name=row["NAME"],
@@ -56,6 +59,7 @@ def _row_to_model_ref(row: dict[str, Any]) -> ModelRef:
         if isinstance(row["CREATED_AT"], datetime)
         else datetime.now(timezone.utc),
         last_seen=row.get("LAST_SEEN") if isinstance(row.get("LAST_SEEN"), datetime) else None,
+        metadata=metadata if isinstance(metadata, dict) else {},
     )
 
 
@@ -163,6 +167,7 @@ class SnowflakeLedgerBackend:
                     "STATUS": m.status,
                     "CREATED_AT": m.created_at.isoformat(),
                     "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
+                    "METADATA": json.dumps(m.metadata, default=str) if m.metadata else None,
                 }
                 for m in self._model_buffer
             ]
@@ -183,11 +188,11 @@ class SnowflakeLedgerBackend:
             WHEN MATCHED THEN UPDATE SET
                 NAME=s.NAME, OWNER=s.OWNER, MODEL_TYPE=s.MODEL_TYPE,
                 MODEL_ORIGIN=s.MODEL_ORIGIN, TIER=s.TIER, PURPOSE=s.PURPOSE, STATUS=s.STATUS,
-                LAST_SEEN=s.LAST_SEEN
+                LAST_SEEN=s.LAST_SEEN, METADATA=PARSE_JSON(s.METADATA)
             WHEN NOT MATCHED THEN INSERT
-                (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
+                (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN, METADATA)
                 VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
-                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN)""",
+                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN, PARSE_JSON(s.METADATA))""",
         )
         _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
         return True
@@ -204,7 +209,8 @@ class SnowflakeLedgerBackend:
                 f"{_esc(m.model_origin)} AS model_origin, {_esc(m.tier)} AS tier, "
                 f"{_esc(m.purpose)} AS purpose, {_esc(m.status)} AS status, "
                 f"{_esc(m.created_at.isoformat())} AS created_at, "
-                f"{_esc(m.last_seen.isoformat()) if m.last_seen else 'NULL'} AS last_seen"
+                f"{_esc(m.last_seen.isoformat()) if m.last_seen else 'NULL'} AS last_seen, "
+                f"{_esc(json.dumps(m.metadata, default=str)) if m.metadata else 'NULL'} AS metadata"
                 for m in batch
             )
             _exec_no_result(
@@ -214,11 +220,11 @@ class SnowflakeLedgerBackend:
                 WHEN MATCHED THEN UPDATE SET
                     NAME=s.name, OWNER=s.owner, MODEL_TYPE=s.model_type,
                     MODEL_ORIGIN=s.model_origin, TIER=s.tier, PURPOSE=s.purpose, STATUS=s.status,
-                    LAST_SEEN=s.last_seen
+                    LAST_SEEN=s.last_seen, METADATA=PARSE_JSON(s.metadata)
                 WHEN NOT MATCHED THEN INSERT
-                    (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN)
+                    (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN, METADATA)
                     VALUES (s.model_hash, s.name, s.owner, s.model_type, s.model_origin,
-                            s.tier, s.purpose, s.status, s.created_at, s.last_seen)""",
+                            s.tier, s.purpose, s.status, s.created_at, s.last_seen, PARSE_JSON(s.metadata))""",
             )
 
     def _flush_snapshots(self) -> None:
@@ -317,8 +323,21 @@ class SnowflakeLedgerBackend:
                 MODEL_ORIGIN VARCHAR DEFAULT 'internal', TIER VARCHAR NOT NULL,
                 PURPOSE VARCHAR, STATUS VARCHAR DEFAULT 'active',
                 CREATED_AT TIMESTAMP_TZ NOT NULL,
-                LAST_SEEN TIMESTAMP_TZ)""",
+                LAST_SEEN TIMESTAMP_TZ,
+                METADATA VARIANT)""",
         )
+        # Add METADATA column to existing tables (backward compat). New deployments
+        # include METADATA in CREATE TABLE; this ALTER is a no-op there. Only swallow
+        # the "already exists" case — other DDL errors (missing permission, transient
+        # failure) must surface so startup doesn't silently leave MERGEs broken.
+        try:
+            _exec_no_result(
+                self._session,
+                f"ALTER TABLE {self._schema}.MODELS ADD COLUMN METADATA VARIANT",
+            )
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                raise
         _exec_no_result(
             self._session,
             f"""

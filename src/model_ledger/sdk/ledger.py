@@ -95,6 +95,7 @@ class Ledger:
         model_origin: str = "internal",
         status: str = "active",
         actor: str = "system",
+        metadata: dict[str, Any] | None = None,
     ) -> ModelRef:
         if name in self._name_cache:
             return self._name_cache[name]
@@ -111,6 +112,7 @@ class Ledger:
             tier=tier,
             purpose=purpose,
             status=status,
+            metadata=metadata or {},
         )
         self._backend.save_model(model)
         self._backend.append_snapshot(
@@ -558,6 +560,7 @@ class Ledger:
             tier=tier,
             purpose=purpose,
             actor=actor,
+            metadata=metadata,
         )
         for member in members or []:
             self.link_dependency(
@@ -565,7 +568,6 @@ class Ledger:
                 downstream=name,
                 relationship="member_of",
                 actor=actor,
-                metadata=metadata,
             )
         return ref
 
@@ -834,9 +836,19 @@ class Ledger:
                 resolved_ids.add(obs_id)
         return len(issued_ids - resolved_ids)
 
-    def composite_summary(self) -> builtins.list[dict[str, Any]]:
-        """Flat inventory of all composites with derived fields."""
-        composites = self._backend.list_models(model_type="composite")
+    def composite_summary(
+        self,
+        model_types: builtins.list[str] | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Flat inventory of all composites with derived fields.
+
+        By default, returns models whose ``model_type == "composite"``. Pass
+        ``model_types=["composite", "ml_model", "heuristic"]`` (or any subset)
+        to include other types the caller treats as composites.
+        """
+        target_types = set(model_types) if model_types else {"composite"}
+        all_models = self._backend.list_models()
+        composites = [m for m in all_models if m.model_type in target_types]
         result = []
         for comp in composites:
             snaps = self._backend.list_snapshots(comp.model_hash)

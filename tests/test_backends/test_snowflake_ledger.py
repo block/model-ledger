@@ -247,3 +247,41 @@ def test_list_tags(backend):
             )
         )
     assert len(backend.list_tags("m1")) == 2
+
+
+def test_alter_table_swallows_already_exists_error(monkeypatch):
+    """The 'already exists' error during ALTER TABLE is swallowed; others bubble up."""
+    from model_ledger.backends import snowflake as sf_module
+
+    # Collect _exec_no_result calls; raise for the ALTER TABLE specifically.
+    call_log: list[str] = []
+
+    def fake_exec(session, sql: str, *args, **kwargs):
+        call_log.append(sql)
+        if "ALTER TABLE" in sql and "METADATA VARIANT" in sql:
+            raise RuntimeError("Column 'METADATA' already exists")
+
+    monkeypatch.setattr(sf_module, "_exec_no_result", fake_exec)
+
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    # Construction triggers the DDL path. Should not raise.
+    SnowflakeLedgerBackend(connection=object(), schema="TEST.LEDGER")
+    # Confirm ALTER TABLE was attempted at least once
+    assert any("ALTER TABLE" in sql for sql in call_log)
+
+
+def test_alter_table_reraises_non_duplicate_error(monkeypatch):
+    """Any error other than 'already exists' must propagate."""
+    from model_ledger.backends import snowflake as sf_module
+
+    def fake_exec(session, sql: str, *args, **kwargs):
+        if "ALTER TABLE" in sql and "METADATA VARIANT" in sql:
+            raise RuntimeError("insufficient privileges for ALTER TABLE")
+
+    monkeypatch.setattr(sf_module, "_exec_no_result", fake_exec)
+
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    with pytest.raises(RuntimeError, match="insufficient privileges"):
+        SnowflakeLedgerBackend(connection=object(), schema="TEST.LEDGER")

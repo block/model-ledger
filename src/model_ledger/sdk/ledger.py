@@ -846,7 +846,14 @@ class Ledger:
         ``model_types=["composite", "ml_model", "heuristic"]`` (or any subset)
         to include other types the caller treats as composites.
         """
-        target_types = set(model_types) if model_types else {"composite"}
+        types_list = model_types or ["composite"]
+        if hasattr(self._backend, "composite_summary"):
+            result: builtins.list[dict[str, Any]] = self._backend.composite_summary(
+                model_types=types_list
+            )
+            return result
+
+        target_types = set(types_list)
         all_models = self._backend.list_models()
         composites = [m for m in all_models if m.model_type in target_types]
         result = []
@@ -861,9 +868,11 @@ class Ledger:
                     "owner": comp.owner,
                     "tier": comp.tier,
                     "status": comp.status,
+                    "model_type": comp.model_type,
                     "member_count": member_count,
                     "last_validated": last_validated,
                     "open_observation_count": self.open_observation_count(snaps),
+                    "metadata": comp.metadata or {},
                 }
             )
         return result

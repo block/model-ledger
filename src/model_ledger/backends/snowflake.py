@@ -466,6 +466,39 @@ class SnowflakeLedgerBackend:
             if r.get("CONTENT_HASH")
         }
 
+    def composite_summary(
+        self,
+        model_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query V_COMPOSITES view — single query replaces N+1 per-model calls."""
+        target_types = model_types or ["composite"]
+        placeholders = ", ".join(_esc(t) for t in target_types)
+        sql = (
+            f"SELECT NAME, OWNER, TIER, STATUS, MODEL_TYPE, MEMBER_COUNT,"
+            f" LAST_VALIDATED, OPEN_OBSERVATION_COUNT,"
+            f" VERSION, BUSINESS_UNIT, IN_504_SCOPE"
+            f" FROM {self._schema}.V_COMPOSITES"
+            f" WHERE MODEL_TYPE IN ({placeholders})"
+            f" ORDER BY NAME"
+        )
+        rows = _exec(self._session, sql)
+        return [
+            {
+                "name": r["NAME"],
+                "owner": r["OWNER"],
+                "tier": r["TIER"],
+                "status": r["STATUS"],
+                "model_type": r["MODEL_TYPE"],
+                "member_count": r["MEMBER_COUNT"] or 0,
+                "last_validated": r.get("LAST_VALIDATED"),
+                "open_observation_count": r["OPEN_OBSERVATION_COUNT"] or 0,
+                "version": r.get("VERSION"),
+                "business_unit": r.get("BUSINESS_UNIT"),
+                "in_504_scope": r.get("IN_504_SCOPE"),
+            }
+            for r in rows
+        ]
+
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None:
         self._flush_snapshots()
         if tag:

@@ -476,30 +476,34 @@ class SnowflakeLedgerBackend:
         target_types = model_types or ["composite"]
         placeholders = ", ".join(_esc(t) for t in target_types)
         sql = (
-            f"SELECT NAME, OWNER, TIER, STATUS, MODEL_TYPE, MEMBER_COUNT,"
-            f" LAST_VALIDATED, OPEN_OBSERVATION_COUNT,"
-            f" VERSION, BUSINESS_UNIT, IN_504_SCOPE"
-            f" FROM {self._schema}.V_COMPOSITES"
-            f" WHERE MODEL_TYPE IN ({placeholders})"
-            f" ORDER BY NAME"
+            f"SELECT v.NAME, v.OWNER, v.TIER, v.STATUS, v.MODEL_TYPE,"
+            f" v.MEMBER_COUNT, v.LAST_VALIDATED, v.OPEN_OBSERVATION_COUNT,"
+            f" m.METADATA"
+            f" FROM {self._schema}.V_COMPOSITES v"
+            f" JOIN {self._schema}.MODELS m ON m.NAME = v.NAME"
+            f" WHERE v.MODEL_TYPE IN ({placeholders})"
+            f" ORDER BY v.NAME"
         )
         rows = _exec(self._session, sql)
-        return [
-            {
-                "name": r["NAME"],
-                "owner": r["OWNER"],
-                "tier": r["TIER"],
-                "status": r["STATUS"],
-                "model_type": r["MODEL_TYPE"],
-                "member_count": r["MEMBER_COUNT"] or 0,
-                "last_validated": r.get("LAST_VALIDATED"),
-                "open_observation_count": r["OPEN_OBSERVATION_COUNT"] or 0,
-                "version": r.get("VERSION"),
-                "business_unit": r.get("BUSINESS_UNIT"),
-                "in_504_scope": r.get("IN_504_SCOPE"),
-            }
-            for r in rows
-        ]
+        results = []
+        for r in rows:
+            raw = r.get("METADATA") or {}
+            if isinstance(raw, str):
+                raw = json.loads(raw) if raw else {}
+            results.append(
+                {
+                    "name": r["NAME"],
+                    "owner": r["OWNER"],
+                    "tier": r["TIER"],
+                    "status": r["STATUS"],
+                    "model_type": r["MODEL_TYPE"],
+                    "member_count": r["MEMBER_COUNT"] or 0,
+                    "last_validated": r.get("LAST_VALIDATED"),
+                    "open_observation_count": r["OPEN_OBSERVATION_COUNT"] or 0,
+                    "metadata": raw if isinstance(raw, dict) else {},
+                }
+            )
+        return results
 
     def latest_snapshot(self, model_hash: str, tag: str | None = None) -> Snapshot | None:
         self._flush_snapshots()

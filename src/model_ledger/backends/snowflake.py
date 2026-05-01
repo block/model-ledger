@@ -471,6 +471,8 @@ class SnowflakeLedgerBackend:
         model_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Query V_COMPOSITES view — single query replaces N+1 per-model calls."""
+        self._flush_models()
+        self._flush_snapshots()
         target_types = model_types or ["composite"]
         placeholders = ", ".join(_esc(t) for t in target_types)
         sql = (

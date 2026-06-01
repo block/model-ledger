@@ -285,3 +285,40 @@ def test_alter_table_reraises_non_duplicate_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="insufficient privileges"):
         SnowflakeLedgerBackend(connection=object(), schema="TEST.LEDGER")
+
+
+def test_flush_dedups_model_buffer_by_hash():
+    """register() and update_model() both buffer the same new model in one
+    Ledger.add() pass. Without dedup, the MERGE inserts both copies because the
+    target row doesn't exist yet (empty-target INSERT fires per source row),
+    producing duplicate rows. _flush_models must collapse the buffer by
+    model_hash so each model reaches the MERGE exactly once.
+    """
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    seen_hashes: list[str] = []
+
+    class RecordingSession:
+        """Captures every model_hash that appears in a MODELS MERGE source."""
+
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            if "MERGE INTO" in query.upper() and ".MODELS " in query.upper():
+                for m in re.finditer(r"'([^']+)'\s+AS\s+model_hash", query):
+                    seen_hashes.append(m.group(1))
+            return MockCollectResult([])
+
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=RecordingSession())
+    model = ModelRef(
+        name="fraud_scorer",
+        owner="risk-team",
+        model_type="scoring_model",
+        tier="unclassified",
+        purpose="",
+    )
+    backend.save_model(model)  # register() path
+    backend.save_model(model)  # update_model() path (same hash)
+    backend.flush()
+
+    assert seen_hashes.count(model.model_hash) == 1, (
+        f"model written {seen_hashes.count(model.model_hash)}x to MERGE source, expected 1"
+    )

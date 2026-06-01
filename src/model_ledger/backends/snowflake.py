@@ -136,6 +136,15 @@ class SnowflakeLedgerBackend:
     def _flush_models(self) -> None:
         if not self._model_buffer:
             return
+        # Dedup by model_hash (last write wins). A single Ledger.add() pass can
+        # buffer the same new model twice — register() saves it, then
+        # update_model() saves it again. The MERGE is idempotent only once the
+        # target row exists; for a brand-new model the empty-target INSERT fires
+        # per source row, so an undeduped buffer produces duplicate rows.
+        deduped: dict[str, ModelRef] = {}
+        for model in self._model_buffer:
+            deduped[model.model_hash] = model
+        self._model_buffer = list(deduped.values())
         if self._flush_models_pandas():
             self._model_buffer.clear()
             return

@@ -3,14 +3,30 @@ title: model-ledger
 description: git for models — discover every model, rule, and pipeline across all your platforms as one immutable, queryable graph.
 ---
 
-<div class="ml-hero" markdown>
-<span class="ml-kicker">Open-source model governance</span>
-<h1 class="ml-hero__title">git for models.</h1>
-<p class="ml-hero__tagline">
-Know what models you have deployed, where they run, what they depend on, and
-what changed — across <em>every</em> platform, as one immutable, queryable graph.
-Built for the regulators' real question: <em>show me everything that ever changed.</em>
-</p>
+<div class="ml-hero">
+  <div class="ml-hero__text">
+    <span class="ml-kicker">Open-source model governance</span>
+    <h1 class="ml-hero__title">git for models.</h1>
+    <p class="ml-hero__tagline">
+      Know what models you have deployed, where they run, what they depend on, and
+      what changed &mdash; across <em>every</em> platform, as one immutable, queryable graph.
+      Built for the regulator&rsquo;s real question: <em>show me everything that ever changed.</em>
+    </p>
+  </div>
+  <div class="ml-hero__art">
+    <svg viewBox="0 0 520 300" role="img" aria-label="A dependency graph assembling itself from its nodes">
+      <path class="ml-edge" pathLength="1" style="animation-delay:.80s" d="M138,60 L196,60"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.00s" d="M256,77 Q260,116 268,151"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.10s" d="M138,250 Q196,232 230,185"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.30s" d="M328,168 L386,168"/>
+      <g class="ml-node" style="animation-delay:0s"><rect x="18" y="43" width="120" height="34" rx="7"/><text x="78" y="60">raw_txns</text></g>
+      <g class="ml-node" style="animation-delay:.12s"><rect x="196" y="43" width="120" height="34" rx="7"/><text x="256" y="60">features</text></g>
+      <g class="ml-node" style="animation-delay:.24s"><rect x="18" y="233" width="120" height="34" rx="7"/><text x="78" y="250">rules</text></g>
+      <g class="ml-node" style="animation-delay:.36s"><rect x="208" y="151" width="120" height="34" rx="7"/><text x="268" y="168">fraud_model</text></g>
+      <g class="ml-node" style="animation-delay:.48s"><rect x="386" y="151" width="120" height="34" rx="7"/><text x="446" y="168">review_queue</text></g>
+    </svg>
+    <p class="ml-hero__caption">declare nodes &middot; <code>connect()</code> &middot; the graph builds itself</p>
+  </div>
 </div>
 
 `model-ledger` is a model inventory for any organization with deployed models. It

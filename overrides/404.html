@@ -1,0 +1,14 @@
+{% extends "main.html" %}
+
+{% block content %}
+<div class="md-content md-typeset ml-404">
+  <p class="ml-kicker">Error 404</p>
+  <h1 class="ml-hero__title">This node isn&rsquo;t in the graph.</h1>
+  <p>The page you&rsquo;re looking for has no inbound edges &mdash; it moved, or it never existed.</p>
+  <p class="ml-404__actions">
+    <a class="md-button md-button--primary" href="{{ '/' | url }}">Back to home</a>
+    <a class="md-button" href="{{ 'quickstart/' | url }}">Quickstart</a>
+    <a class="md-button" href="{{ 'reference/' | url }}">API reference</a>
+  </p>
+</div>
+{% endblock %}

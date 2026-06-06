@@ -152,3 +152,44 @@
 
 /* ---------- Footer: quiet ---------- */
 .md-footer-meta { background: var(--md-primary-fg-color--dark); }
+
+/* ---------- Hero: two columns + a self-building graph ---------- */
+.ml-hero { display: flex; gap: 2.5rem; align-items: center; flex-wrap: wrap; }
+.ml-hero__text { flex: 1 1 21rem; }
+.ml-hero__art  { flex: 1 1 17rem; min-width: 248px; }
+.ml-hero__art svg { width: 100%; height: auto; max-width: 480px; display: block; margin: 0 auto; }
+.ml-hero__caption {
+  margin: .5rem 0 0; text-align: center;
+  font-family: "JetBrains Mono", monospace; font-size: .68rem;
+  letter-spacing: .04em; color: var(--md-default-fg-color--lighter);
+}
+.ml-hero__caption code { font-size: .9em; background: transparent; padding: 0; }
+
+/* Nodes pop in (declared), then edges draw (connect() links them). */
+.ml-node {
+  opacity: 0; transform: translateY(6px) scale(.96); transform-origin: center;
+  animation: ml-pop .5s cubic-bezier(.2, .7, .3, 1) forwards;
+}
+.ml-node rect { fill: var(--md-code-bg-color); stroke: var(--ml-hairline); stroke-width: 1; }
+.ml-node text {
+  fill: var(--md-default-fg-color); font-family: "JetBrains Mono", monospace;
+  font-size: 12px; text-anchor: middle; dominant-baseline: central;
+}
+.ml-edge {
+  fill: none; stroke: var(--md-accent-fg-color); stroke-width: 2;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: ml-draw .8s ease forwards;
+}
+@keyframes ml-pop  { to { opacity: 1; transform: none; } }
+@keyframes ml-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ml-node, .ml-edge { animation: none; opacity: 1; transform: none; stroke-dashoffset: 0; }
+}
+
+/* ---------- 404 ---------- */
+.ml-404 { text-align: center; padding: 4rem 1rem 5rem; }
+.ml-404 .ml-hero__title { font-size: 2.4rem; margin-top: .3rem; }
+.ml-404__actions {
+  margin-top: 1.6rem; display: flex; gap: .6rem;
+  justify-content: center; flex-wrap: wrap;
+}

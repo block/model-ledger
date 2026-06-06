@@ -5,6 +5,9 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/model-ledger)](https://pypi.org/project/model-ledger/)
+[![Docs](https://img.shields.io/badge/docs-block.github.io/model--ledger-7a1a1a.svg)](https://block.github.io/model-ledger/)
+
+📖 **[Read the documentation →](https://block.github.io/model-ledger/)**
 
 ---
 

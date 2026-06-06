@@ -193,3 +193,53 @@
   margin-top: 1.6rem; display: flex; gap: .6rem;
   justify-content: center; flex-wrap: wrap;
 }
+
+/* ---------- Responsive display type ---------- */
+.ml-hero__title { font-size: clamp(2rem, 7vw, 2.9rem); }
+.ml-404 .ml-hero__title { font-size: clamp(1.7rem, 6vw, 2.4rem); }
+
+/* ---------- Per-page Markdown actions (Copy / View / Open in Claude) ---------- */
+.md-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: -.2rem 0 1.5rem; }
+.md-action {
+  font-family: "JetBrains Mono", monospace; font-size: .66rem; letter-spacing: .02em;
+  line-height: 1; padding: .42rem .62rem; cursor: pointer; text-decoration: none;
+  background: transparent; color: var(--md-default-fg-color--light);
+  border: 1px solid var(--ml-hairline); border-radius: 3px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.md-action:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
+
+/* ---------- API reference: extend the theme into mkdocstrings output ---------- */
+.md-typeset .doc-heading { font-family: "Spectral", Georgia, serif; font-weight: 600; }
+.md-typeset .doc-object > .doc-heading {
+  border-top: 1px solid var(--ml-hairline); padding-top: .7em; margin-top: 1.6em;
+}
+.md-typeset .doc-section-title {
+  font-family: "Spectral", Georgia, serif;
+  text-transform: uppercase; letter-spacing: .07em; font-size: .78rem;
+  color: var(--md-default-fg-color--light);
+}
+.md-typeset .doc-label {
+  font-family: "JetBrains Mono", monospace; font-size: .62rem; letter-spacing: .02em;
+  background: var(--md-code-bg-color); color: var(--md-accent-fg-color);
+  border: 1px solid var(--ml-hairline); border-radius: 3px; padding: .1rem .4rem;
+}
+.doc-symbol { color: var(--md-accent-fg-color) !important; opacity: .8; }
+
+/* ---------- Blockquote: signature treatment (the agent transcript) ---------- */
+.md-typeset blockquote {
+  border-left: 2px solid var(--md-accent-fg-color);
+  background: var(--md-code-bg-color);
+  border-radius: 0 3px 3px 0;
+  color: var(--md-default-fg-color);
+}
+
+/* ---------- Code-fence filename labels (when title= is set) ---------- */
+.md-typeset .highlight span.filename {
+  font-family: "JetBrains Mono", monospace; font-size: .68rem;
+  background: var(--md-code-bg-color); color: var(--md-default-fg-color--light);
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Glossary / definition lists ---------- */
+.md-typeset dl dt { font-family: "Spectral", Georgia, serif; font-weight: 600; }

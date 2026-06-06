@@ -1,0 +1,51 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "docs_hooks/**"
+      - "mkdocs.yml"
+      - "src/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "docs_hooks/**"
+      - "mkdocs.yml"
+      - "src/**"
+
+# Allow one concurrent deployment; cancel superseded runs.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # mkdocs gh-deploy pushes the built site to the gh-pages branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: tags are pinned to digests by Renovate (see renovate.json) on its next run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gh-deploy needs full history to update gh-pages
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[docs]"
+
+      # Always validate: a broken link, a missing nav entry, or a bad
+      # mkdocstrings reference fails the build (and therefore the PR).
+      - name: Build (strict)
+        run: mkdocs build --strict
+
+      # Deploy only from main, only on push (not PRs).
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: mkdocs gh-deploy --force --no-history

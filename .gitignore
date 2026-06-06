@@ -26,6 +26,10 @@ uv.lock
 # Internal design docs (contain org-specific context)
 docs/superpowers/
 
+# MkDocs build output (the docs site is built + deployed in CI)
+/site/
+.cache/
+
 # Detailed internal blocklist (committed config is .gitleaks.toml)
 .gitleaks-internal.toml
 

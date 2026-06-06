@@ -41,6 +41,10 @@ dev = [
     "mypy>=1.0",
 ]
 snowflake = ["snowflake-connector-python>=3.0", "pandas>=2.0"]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+]
 mcp = ["mcp[cli]>=1.7.1,<2"]
 rest = ["httpx>=0.28"]
 rest-api = ["fastapi>=0.115", "uvicorn>=0.30"]

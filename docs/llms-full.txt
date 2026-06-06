@@ -1,0 +1,5 @@
+# model-ledger — full documentation
+
+> This file is regenerated on every build by docs_hooks/llms_txt.py with the full
+> concatenated docs corpus for deep ingestion by AI agents. If you are reading this
+> placeholder, the build hook did not run.

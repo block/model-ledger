@@ -1,0 +1,154 @@
+/* ============================================================
+   model-ledger — "technical-archive" theme
+   A reference book that happens to be interactive.
+   Serif display · warm paper · oxblood accent · hairline rules.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+
+/* ---------- Light scheme: warm paper, ink, oxblood ---------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #1c1a17;  /* ink masthead */
+  --md-primary-fg-color--light: #2c2924;
+  --md-primary-fg-color--dark:  #0f0e0c;
+  --md-primary-bg-color:        #f7f3ec;  /* paper text on masthead */
+  --md-primary-bg-color--light: #f7f3eccc;
+
+  --md-accent-fg-color:         #9b2222;
+  --md-accent-fg-color--transparent: #9b22221a;
+
+  --md-default-bg-color:        #f7f3ec;  /* warm paper */
+  --md-default-fg-color:        #1c1a17;
+  --md-default-fg-color--light:   #1c1a17b3;
+  --md-default-fg-color--lighter: #1c1a1759;
+  --md-default-fg-color--lightest:#1c1a1721;
+
+  --md-typeset-a-color:         #7a1a1a;  /* oxblood links */
+  --md-code-bg-color:           #efe8da;
+  --md-code-fg-color:           #2c2924;
+
+  --ml-hairline: #1c1a1726;
+}
+
+/* ---------- Dark scheme: warm dark, paper text ---------- */
+[data-md-color-scheme="slate"] {
+  --md-hue: 30;
+  --md-primary-fg-color:        #100f0c;
+  --md-primary-bg-color:        #e8e2d4;
+  --md-accent-fg-color:         #e0a08f;
+
+  --md-default-bg-color:        #16140f;
+  --md-default-fg-color:        #e8e2d4;
+  --md-default-fg-color--light:   #e8e2d4c2;
+  --md-default-fg-color--lighter: #e8e2d473;
+  --md-default-fg-color--lightest:#e8e2d426;
+
+  --md-typeset-a-color:         #d98c7a;  /* warm oxblood */
+  --md-code-bg-color:           #211e18;
+  --md-code-fg-color:           #e3ddcf;
+
+  --ml-hairline: #e8e2d41f;
+}
+
+/* ---------- Display type: serif headings ---------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-header__topic .md-ellipsis,
+.ml-hero__title {
+  font-family: "Spectral", Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.md-typeset h1 { font-weight: 600; font-size: 2.1rem; line-height: 1.15; }
+
+/* Hairline rule above every section heading — editorial rhythm */
+.md-typeset h2 {
+  margin-top: 2.4em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--ml-hairline);
+}
+
+.md-typeset hr {
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Hero (landing) ---------- */
+.ml-hero {
+  margin: 1.2rem 0 2.2rem;
+  padding-bottom: 1.8rem;
+  border-bottom: 1px solid var(--ml-hairline);
+}
+.ml-hero__title {
+  font-size: 2.9rem;
+  line-height: 1.08;
+  margin: 0 0 0.4rem;
+}
+.ml-hero__tagline {
+  font-size: 1.15rem;
+  color: var(--md-default-fg-color--light);
+  max-width: 42rem;
+  line-height: 1.5;
+}
+.ml-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+}
+
+/* ---------- Grid cards: hairline, no shadow, editorial ---------- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border: 1px solid var(--ml-hairline);
+  border-radius: 2px;
+  box-shadow: none;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  transform: translateY(-2px);
+}
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.6em 0;
+}
+
+/* ---------- Recipe numbering, like a chef's notebook ---------- */
+.recipe-num {
+  display: inline-block;
+  font-family: "Spectral", Georgia, serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--md-accent-fg-color);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Code: sharper, paper-toned ---------- */
+.md-typeset code,
+.md-typeset pre > code {
+  border-radius: 2px;
+}
+.md-typeset .tabbed-set {
+  border: 1px solid var(--ml-hairline);
+  border-radius: 3px;
+}
+
+/* ---------- Tables: hairlines only ---------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--ml-hairline);
+  box-shadow: none;
+}
+.md-typeset table:not([class]) th {
+  background: var(--md-code-bg-color);
+  font-family: "Spectral", Georgia, serif;
+}
+
+/* ---------- Subtle masthead hairline ---------- */
+.md-header {
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Footer: quiet ---------- */
+.md-footer-meta { background: var(--md-primary-fg-color--dark); }

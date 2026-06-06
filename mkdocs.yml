@@ -1,0 +1,144 @@
+site_name: model-ledger
+site_url: https://block.github.io/model-ledger/
+site_description: >-
+  git for models — the open, agent-native source of truth that discovers every
+  model, rule, and pipeline across all your platforms as one immutable graph.
+site_author: Block
+repo_url: https://github.com/block/model-ledger
+repo_name: block/model-ledger
+edit_uri: edit/main/docs/
+copyright: >-
+  Apache-2.0 &middot; Built in the open by
+  <a href="https://opensource.block.xyz/">Block</a>
+
+# Keep internal planning specs out of the public site.
+exclude_docs: |
+  superpowers/
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/graph-outline
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      title: On this page
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            docstring_section_style: table
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_source: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+
+# Custom hook: emit llms.txt + llms-full.txt + per-page .md for AI agents.
+hooks:
+  - docs_hooks/llms_txt.py
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/block/model-ledger
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/model-ledger/
+  generator: false
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts:
+      - concepts/index.md
+      - DataNode & the graph: concepts/datanode.md
+      - Snapshots & the event log: concepts/snapshot.md
+      - Composites: concepts/composite.md
+  - Guides:
+      - Agents (MCP): guides/agents.md
+      - Choosing a backend: guides/backends.md
+      - Connectors & discovery: guides/connectors.md
+  - Recipes:
+      - recipes/index.md
+      - Impact analysis: recipes/impact-analysis.md
+      - Point-in-time inventory: recipes/point-in-time.md
+      - Discover from a SQL registry: recipes/discover-sql.md
+  - Reference: reference/index.md

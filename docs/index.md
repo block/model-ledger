@@ -183,6 +183,9 @@ every config change, every validation — is an immutable, content-addressed
 [`Snapshot`](concepts/snapshot.md). You get full history and point-in-time
 reconstruction for free, because nothing is ever overwritten.
 
+That's exactly what a model-risk program needs — see how it maps to SR 26‑2, the EU AI
+Act, and NIST in [**Governance**](governance.md).
+
 <div class="grid" markdown>
 
 :material-graph-outline: &nbsp;**Cross-platform** — ML models, heuristic rules, ETL, and queues are all one `DataNode`. The graph spans MLflow, SageMaker, your warehouse, your scheduler.

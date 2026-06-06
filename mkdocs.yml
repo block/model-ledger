@@ -140,8 +140,9 @@ extra:
 
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - Installation: installation.md
+  - Get started:
+      - Quickstart: quickstart.md
+      - Installation: installation.md
   - Concepts:
       - concepts/index.md
       - DataNode & the graph: concepts/datanode.md
@@ -158,5 +159,6 @@ nav:
       - Point-in-time inventory: recipes/point-in-time.md
       - Discover from a SQL registry: recipes/discover-sql.md
   - Governance: governance.md
-  - Reference: reference/index.md
-  - Glossary: glossary.md
+  - Reference:
+      - reference/index.md
+      - Glossary: glossary.md

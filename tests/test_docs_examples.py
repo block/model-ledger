@@ -97,3 +97,13 @@ def test_doc_examples_run(md_path: Path, tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)  # any file writes (e.g. ./inventory.db) land in tmp
     namespace: dict = {}
     exec(compile(code, str(md_path), "exec"), namespace)  # noqa: S102
+
+
+def test_readme_examples_run(tmp_path, monkeypatch) -> None:
+    """The README's code example runs too — the repo/PyPI front door can't drift either."""
+    readme = DOCS.parent / "README.md"
+    code = _runnable(readme.read_text(encoding="utf-8"))
+    if not code.strip():
+        pytest.skip("no runnable python blocks in README")
+    monkeypatch.chdir(tmp_path)
+    exec(compile(code, str(readme), "exec"), {})  # noqa: S102

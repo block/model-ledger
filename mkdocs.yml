@@ -11,9 +11,10 @@ copyright: >-
   Apache-2.0 &middot; Built in the open by
   <a href="https://opensource.block.xyz/">Block</a>
 
-# Keep internal planning specs out of the public site.
+# Keep internal planning specs and snippet-only includes out of the built site.
 exclude_docs: |
   superpowers/
+  includes/
 
 theme:
   name: material
@@ -57,9 +58,16 @@ theme:
     - content.code.annotate
     - content.tabs.link
     - content.tooltips
+    - content.code.select
+    - navigation.path
+    - navigation.instant.prefetch
+    - navigation.instant.preview
 
 extra_css:
   - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/md-actions.js
 
 markdown_extensions:
   - abbr
@@ -78,7 +86,11 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+      auto_append:
+        - docs/includes/abbreviations.md
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -129,6 +141,7 @@ extra:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Installation: installation.md
   - Concepts:
       - concepts/index.md
       - DataNode & the graph: concepts/datanode.md
@@ -136,6 +149,7 @@ nav:
       - Composites: concepts/composite.md
   - Guides:
       - Agents (MCP): guides/agents.md
+      - CLI: guides/cli.md
       - Choosing a backend: guides/backends.md
       - Connectors & discovery: guides/connectors.md
   - Recipes:
@@ -143,4 +157,6 @@ nav:
       - Impact analysis: recipes/impact-analysis.md
       - Point-in-time inventory: recipes/point-in-time.md
       - Discover from a SQL registry: recipes/discover-sql.md
+  - Governance: governance.md
   - Reference: reference/index.md
+  - Glossary: glossary.md

@@ -1,5 +1,16 @@
 {% extends "base.html" %}
 
+<!-- Clean <title>: the homepage gets a tagline instead of "model-ledger - model-ledger". -->
+{% block htmltitle %}
+  {%- if page and page.is_homepage -%}
+    <title>{{ config.site_name }} — git for models</title>
+  {%- elif page and page.title and page.title | string != config.site_name -%}
+    <title>{{ page.title | striptags }} · {{ config.site_name }}</title>
+  {%- else -%}
+    <title>{{ config.site_name }}</title>
+  {%- endif -%}
+{% endblock %}
+
 <!--
   Inject Open Graph + Twitter card metadata so shared links render as a rich
   preview. Uses the static card at docs/assets/og-image.png (regenerate with

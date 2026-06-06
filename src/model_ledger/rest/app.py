@@ -23,6 +23,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from model_ledger import __version__
 from model_ledger.backends import batch_fallbacks
 from model_ledger.backends.ledger_protocol import LedgerBackend
 from model_ledger.core.exceptions import ModelNotFoundError
@@ -79,7 +80,7 @@ def create_app(
     app = FastAPI(
         title="Model Ledger API",
         description="REST API for model inventory and governance",
-        version="0.5.0",
+        version=__version__,
     )
 
     @app.post("/record", response_model=RecordOutput)

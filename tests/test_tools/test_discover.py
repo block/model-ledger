@@ -158,13 +158,80 @@ class TestDiscoverFile:
 
 
 class TestDiscoverConnector:
-    """Connector source_type — should raise NotImplementedError."""
+    """Connector source_type — config-drivable connectors run; others return
+    a graceful error in DiscoverOutput.errors rather than raising."""
 
-    def test_connector_raises(self, ledger):
+    def test_unknown_connector_returns_error(self, ledger):
         inp = DiscoverInput(
             source_type="connector",
             connector_name="databricks",
             connector_config={"workspace": "test"},
         )
-        with pytest.raises(NotImplementedError, match="not yet supported"):
-            discover(inp, ledger)
+        result = discover(inp, ledger)
+        assert result.models_added == 0
+        assert result.errors and "databricks" in result.errors[0]
+
+    def test_missing_connector_name_returns_error(self, ledger):
+        inp = DiscoverInput(source_type="connector", connector_name=None)
+        result = discover(inp, ledger)
+        assert result.models_added == 0
+        assert result.errors and "connector_name" in result.errors[0]
+
+    def test_sql_connector_directs_to_sdk(self, ledger):
+        """sql needs a live connection — can't come from JSON; point to the SDK."""
+        inp = DiscoverInput(
+            source_type="connector",
+            connector_name="sql",
+            connector_config={"query": "SELECT 1"},
+        )
+        result = discover(inp, ledger)
+        assert result.models_added == 0
+        assert result.errors
+        msg = result.errors[0].lower()
+        assert "sdk" in msg or "connection" in msg
+
+    def test_github_connector_directs_to_sdk(self, ledger):
+        inp = DiscoverInput(source_type="connector", connector_name="github")
+        result = discover(inp, ledger)
+        assert result.models_added == 0
+        assert result.errors
+
+    def test_rest_bad_config_returns_error(self, ledger):
+        """Missing required rest config is caught, not raised."""
+        inp = DiscoverInput(source_type="connector", connector_name="rest", connector_config={})
+        result = discover(inp, ledger)
+        assert result.models_added == 0
+        assert result.errors and "rest" in result.errors[0]
+
+    def test_config_connector_runs_and_ingests(self, ledger, monkeypatch):
+        """A config-drivable connector is built from config, run, and ingested."""
+        from importlib import import_module
+
+        from model_ledger.graph.models import DataNode
+
+        # tools/__init__ rebinds `discover` to the function, so fetch the module
+        # object itself to monkeypatch its connector registry.
+        discover_mod = import_module("model_ledger.tools.discover")
+
+        class _StubConnector:
+            name = "rest"
+
+            def discover(self):
+                return [
+                    DataNode("feature_pipeline", platform="rest", outputs=["feature_table"]),
+                    DataNode("scoring_model", platform="rest", inputs=["feature_table"]),
+                ]
+
+        monkeypatch.setitem(
+            discover_mod._CONFIG_CONNECTORS, "rest", lambda config: _StubConnector()
+        )
+        inp = DiscoverInput(
+            source_type="connector",
+            connector_name="rest",
+            connector_config={"url": "https://x", "items_path": "i", "name_field": "n"},
+            auto_connect=True,
+        )
+        result = discover(inp, ledger)
+        assert result.models_added == 2
+        assert result.links_created >= 1
+        assert result.errors == []

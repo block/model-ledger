@@ -95,19 +95,24 @@ over the event log, not a static table.
 
 ## Discovering at scale
 
-The `discover` tool imports inline model lists or a JSON file:
+The `discover` tool imports inline model lists, a JSON file, or a config-drivable connector:
 
 ```json
 // discover(source_type="inline", models=[{"name": "...", "platform": "..."}])
 { "added": 12, "skipped": 0, "links_created": 8 }
+
+// discover(source_type="connector", connector_name="rest",
+//          connector_config={"name": "mlflow", "url": "...", "items_path": "...", "name_field": "..."})
+{ "models_added": 40, "links_created": 12, "errors": [] }
 ```
 
-!!! info "Connector-based discovery runs from the SDK"
-    Pulling models *live* from SQL registries, REST APIs, or GitHub repos is done
-    through the SDK connectors (see [Connectors & discovery](connectors.md)) and then
-    persisted to a shared backend the agent reads. Wiring connector execution directly
-    into the `discover` tool is on the roadmap — until then, agents read the inventory
-    that scheduled connector runs populate.
+!!! info "Which connectors an agent can run"
+    `rest` and `prefect` are pure-config connectors, so an agent can run them directly
+    through `discover`. `sql` and `github` need a live database connection or a parser
+    callable that can't be expressed as JSON — for those, `discover` returns a message in
+    the result's `errors` field pointing you to the SDK (see
+    [Connectors & discovery](connectors.md)). Connector problems come back as `errors`
+    rather than raising, so the agent always gets a usable response.
 
 ## Your docs are an agent surface, too
 

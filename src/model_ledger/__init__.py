@@ -11,6 +11,8 @@ against compliance profiles (SR 11-7, EU AI Act, NIST AI RMF).
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING, Any
 
 from model_ledger.connectors import github_connector, rest_connector, sql_connector
@@ -120,7 +122,10 @@ __all__ = [
     "TraceOutput",
 ]
 
-__version__ = "0.6.0"
+try:
+    __version__ = _pkg_version("model-ledger")
+except PackageNotFoundError:  # running from a source checkout without an install
+    __version__ = "0.0.0+unknown"
 
 
 def introspect(obj: Any, *, introspector: str | None = None) -> IntrospectionResult:

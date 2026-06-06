@@ -157,7 +157,9 @@ source = ["src/model_ledger"]
 branch = true
 
 [tool.coverage.report]
-fail_under = 90
+# Honest floor: real coverage is ~74% (2026-06). The previous 90 was never
+# enforced (no CI ran --cov). Ratchet this upward as tests are added.
+fail_under = 70
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

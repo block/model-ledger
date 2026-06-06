@@ -8,6 +8,7 @@ on:
       - "docs_hooks/**"
       - "mkdocs.yml"
       - "src/**"
+      - "tests/test_docs_examples.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - "docs_hooks/**"
       - "mkdocs.yml"
       - "src/**"
+      - "tests/test_docs_examples.py"
 
 # Allow one concurrent deployment; cancel superseded runs.
 concurrency:
@@ -38,12 +40,26 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install -e ".[docs]"
+        run: pip install -e ".[docs,dev]"
+
+      # The docs cannot drift from the SDK: every runnable code example in the
+      # docs is executed against the installed package. A renamed param or
+      # removed method breaks a snippet here and fails the PR.
+      - name: Test docs examples
+        run: pytest tests/test_docs_examples.py -q
 
       # Always validate: a broken link, a missing nav entry, or a bad
       # mkdocstrings reference fails the build (and therefore the PR).
       - name: Build (strict)
         run: mkdocs build --strict
+
+      # Advisory radar: flag breaking public-API changes vs. the base branch so
+      # they're noticed and changelog'd. Non-blocking during alpha.
+      - name: Check public API (griffe)
+        continue-on-error: true
+        run: |
+          git fetch origin main --depth=1 || true
+          python -m griffe check model_ledger -s src -a origin/main
 
       # Deploy only from main, only on push (not PRs).
       - name: Deploy to GitHub Pages

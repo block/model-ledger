@@ -44,6 +44,7 @@ snowflake = ["snowflake-connector-python>=3.0", "pandas>=2.0"]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.26",
+    "griffecli>=0.1",          # `griffe check` CLI — detects breaking public-API changes
 ]
 mcp = ["mcp[cli]>=1.7.1,<2"]
 rest = ["httpx>=0.28"]

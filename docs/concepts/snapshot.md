@@ -36,10 +36,10 @@ ref.model_hash   # stable identity, derived from name + owner + created_at
 matters, no migrations:
 
 ```python
-ledger.record("fraud_scoring", "retrained",
+ledger.record("fraud_scoring", event="retrained", actor="ml-pipeline",
               payload={"accuracy": 0.94, "auc": 0.98, "features_added": ["velocity_24h"]})
 
-ledger.record("fraud_scoring", "validated",
+ledger.record("fraud_scoring", event="validated", actor="mrm-team",
               payload={"profile": "sr_11_7", "validator": "mrm-team", "result": "pass"})
 
 for s in ledger.history("fraud_scoring"):
@@ -65,10 +65,10 @@ Because nothing is overwritten, you can ask the inventory what it looked like on
 date — the answer an examiner actually wants:
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 
-snapshot = ledger.inventory_at(datetime(2025, 12, 31))
-# every model and its state as of year-end — reconstructed from the log
+inventory = ledger.inventory_at(datetime.now(timezone.utc))
+# pass any datetime — a past date reconstructs the inventory as it stood then
 ```
 
 See the recipe: [Point-in-time inventory](../recipes/point-in-time.md).

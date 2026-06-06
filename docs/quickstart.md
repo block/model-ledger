@@ -93,7 +93,7 @@ ledger.register(
 )
 
 # Record an event — any payload you like, no schema to maintain
-ledger.record("fraud_scoring", "retrained",
+ledger.record("fraud_scoring", event="retrained", actor="ml-pipeline",
               payload={"accuracy": 0.94, "features_added": ["velocity_24h"]})
 
 for snap in ledger.history("fraud_scoring"):

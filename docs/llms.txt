@@ -1,0 +1,5 @@
+# model-ledger
+
+> This file is regenerated on every build by docs_hooks/llms_txt.py with a curated,
+> grouped index of every page. If you are reading this placeholder, the build hook did
+> not run. See https://llmstxt.org/ for the spec.

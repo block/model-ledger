@@ -1,0 +1,67 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "docs_hooks/**"
+      - "mkdocs.yml"
+      - "src/**"
+      - "tests/test_docs_examples.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "docs_hooks/**"
+      - "mkdocs.yml"
+      - "src/**"
+      - "tests/test_docs_examples.py"
+
+# Allow one concurrent deployment; cancel superseded runs.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # mkdocs gh-deploy pushes the built site to the gh-pages branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: tags are pinned to digests by Renovate (see renovate.json) on its next run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gh-deploy needs full history to update gh-pages
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[docs,dev]"
+
+      # The docs cannot drift from the SDK: every runnable code example in the
+      # docs is executed against the installed package. A renamed param or
+      # removed method breaks a snippet here and fails the PR.
+      - name: Test docs examples
+        run: pytest tests/test_docs_examples.py -q
+
+      # Always validate: a broken link, a missing nav entry, or a bad
+      # mkdocstrings reference fails the build (and therefore the PR).
+      - name: Build (strict)
+        run: mkdocs build --strict
+
+      # Advisory radar: flag breaking public-API changes vs. the base branch so
+      # they're noticed and changelog'd. Non-blocking during alpha.
+      - name: Check public API (griffe)
+        continue-on-error: true
+        run: |
+          git fetch origin main --depth=1 || true
+          python -m griffe check model_ledger -s src -a origin/main
+
+      # Deploy only from main, only on push (not PRs).
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: mkdocs gh-deploy --force --no-history

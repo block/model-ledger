@@ -148,6 +148,7 @@ nav:
       - Architecture: concepts/architecture.md
       - DataNode & the graph: concepts/datanode.md
       - Snapshots & the event log: concepts/snapshot.md
+      - Guarantees & invariants: concepts/guarantees.md
       - Composites: concepts/composite.md
   - Guides:
       - Agents (MCP): guides/agents.md

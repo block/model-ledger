@@ -52,6 +52,13 @@ def _resolve_backend(backend: str, path: str | None, schema: str | None = None):
         from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 
         return InMemoryLedgerBackend()
+
+    # Third-party backends registered via the model_ledger.backends entry-point group.
+    from model_ledger.backends.registry import load_backend_class
+
+    backend_cls = load_backend_class(backend)
+    if backend_cls is not None:
+        return backend_cls(path) if path else backend_cls()
     return None
 
 

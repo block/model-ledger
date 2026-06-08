@@ -17,5 +17,6 @@ a new ADR that supersedes the old one rather than an edit.
 | [0003](0003-agents-first.md) | Agents are the primary interface; the SDK is tool-shaped | Accepted |
 | [0004](0004-framework-agnostic.md) | Framework-agnostic core; regulations are pluggable profiles | Accepted |
 | [0005](0005-storage-agnostic.md) | Storage-agnostic via the LedgerBackend protocol | Accepted |
+| [0006](0006-discovery-and-validation-subsystems.md) | Discovery and validation are two subsystems; bridge, don't delete | Accepted |
 
 The narrative that ties these together is the [Architecture](../concepts/architecture.md) page.

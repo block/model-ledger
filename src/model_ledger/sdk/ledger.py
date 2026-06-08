@@ -4,12 +4,30 @@ from __future__ import annotations
 
 import builtins
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 from model_ledger.backends.ledger_protocol import LedgerBackend
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
+
+if TYPE_CHECKING:
+    from model_ledger.graph.models import DataNode
+
+
+class AddResult(TypedDict):
+    """Result of ``Ledger.add()`` — nodes newly recorded vs. skipped as unchanged."""
+
+    added: int
+    skipped: int
+
+
+class ConnectResult(TypedDict):
+    """Result of ``Ledger.connect()`` — dependency edges created vs. skipped as present."""
+
+    links_created: int
+    links_skipped: int
+
 
 # Events that are internal ledger bookkeeping or governance actions on the
 # composite itself.  These are NOT propagated as member_changed to parent
@@ -324,7 +342,7 @@ class Ledger:
 
     # --- Graph methods (v0.4.0) ---
 
-    def add(self, nodes):
+    def add(self, nodes: DataNode | builtins.list[DataNode]) -> AddResult:
         """Register DataNodes. Each becomes a ModelRef + discovered Snapshot.
 
         Skips writing if the discovered payload is identical to the last snapshot
@@ -427,7 +445,7 @@ class Ledger:
 
         return {"added": added, "skipped": skipped}
 
-    def connect(self):
+    def connect(self) -> ConnectResult:
         """Match output ports to input ports. Write only new dependency links.
 
         Uses cached nodes from add() if available (avoids re-reading from backend).
@@ -488,7 +506,7 @@ class Ledger:
                         continue
         return {"links_created": links_created, "links_skipped": links_skipped}
 
-    def trace(self, name):
+    def trace(self, name: str) -> builtins.list[str]:
         """Topological path from sources to this node."""
         self._resolve_model(name)
         visited = set()
@@ -505,12 +523,12 @@ class Ledger:
         _walk(name)
         return order
 
-    def upstream(self, name):
+    def upstream(self, name: str) -> builtins.list[str]:
         """All models this one depends on (transitive)."""
         path = self.trace(name)
         return [n for n in path if n != name]
 
-    def downstream(self, name):
+    def downstream(self, name: str) -> builtins.list[str]:
         """All models that depend on this one (transitive)."""
         self._resolve_model(name)
         visited = set()
@@ -877,7 +895,7 @@ class Ledger:
             )
         return result
 
-    def _load_discovered_nodes(self):
+    def _load_discovered_nodes(self) -> builtins.list[DataNode]:
         """Rebuild DataNodes from stored discovery snapshots.
 
         Uses bulk loading if the backend supports it (1 query instead of N).
@@ -895,9 +913,9 @@ class Ledger:
         else:
             # Fallback: per-model queries
             all_snaps = []
-            for model in models:
+            for m in models:
                 all_snaps.extend(
-                    self._backend.list_snapshots(model.model_hash, event_type="discovered")
+                    self._backend.list_snapshots(m.model_hash, event_type="discovered")
                 )
 
         # Group by model and take latest

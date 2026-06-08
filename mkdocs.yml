@@ -171,3 +171,4 @@ nav:
           - "ADR 0003 — Agents are the primary interface": adr/0003-agents-first.md
           - "ADR 0004 — Framework-agnostic, pluggable profiles": adr/0004-framework-agnostic.md
           - "ADR 0005 — Storage-agnostic backends": adr/0005-storage-agnostic.md
+          - "ADR 0006 — Discovery and validation are two subsystems": adr/0006-discovery-and-validation-subsystems.md

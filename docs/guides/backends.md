@@ -64,3 +64,21 @@ Snowflake reads credentials from the environment (`SNOWFLAKE_ACCOUNT`,
 Anything that satisfies the `LedgerBackend` protocol works — Postgres, DynamoDB, a
 graph DB. Implement the protocol methods and pass an instance to `Ledger(...)`. See the
 [API reference](../reference/index.md) for the protocol surface.
+
+To make your backend resolvable by name from the CLI (`--backend <name>`) without any
+change to the core, register it under the `model_ledger.backends` **entry point** in your
+package — the storage-agnostic extension contract from
+[ADR 0005](../adr/0005-storage-agnostic.md):
+
+```toml
+# your package's pyproject.toml
+[project.entry-points."model_ledger.backends"]
+postgres = "my_package:PostgresBackend"
+```
+
+model-ledger discovers it and constructs it with the connection string if one is given
+(`PostgresBackend(path)`), otherwise with no arguments:
+
+```bash
+model-ledger serve --backend postgres --path "postgresql://..."
+```

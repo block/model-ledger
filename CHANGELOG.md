@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- perf: `SnowflakeLedgerBackend.composite_summary()` computes the full composite inventory in ONE self-contained SQL statement over MODELS + SNAPSHOTS (CTE-based event replay), replacing the previous delegation to an externally-managed `V_COMPOSITES` view. Removes the undocumented requirement that deployments create that view, and replicates the SDK fallback semantics exactly (membership baseline from `member_of` dependency links + `member_added`/`member_removed` replay with latest-op-wins; distinct-id open-observation set semantics). Measured against a production-scale ledger (28.8k models / 212k snapshots): 92.6s sequential fallback → sub-second warm (~0.3-0.6s).
+
 ## v0.7.3
 
 - Add `metadata: dict` field to `ModelRef`. Thread through `register()` and `register_group()`. Replaces the unintended per-link broadcast of `register_group(metadata=...)` to member links; metadata now lives on the composite ModelRef itself. Backward compatible: existing data loads with `metadata={}`.

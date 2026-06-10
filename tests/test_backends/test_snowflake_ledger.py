@@ -322,3 +322,207 @@ def test_flush_dedups_model_buffer_by_hash():
     assert seen_hashes.count(model.model_hash) == 1, (
         f"model written {seen_hashes.count(model.model_hash)}x to MERGE source, expected 1"
     )
+
+
+class FakeCompositeSummarySession:
+    """Captures every SQL statement; returns canned rows for the summary query."""
+
+    def __init__(self, rows=None):
+        self.queries: list[str] = []
+        self._rows = rows or []
+
+    def sql(self, query: str, params: Any = None) -> MockCollectResult:
+        self.queries.append(query)
+        if "WITH composites AS" in query:
+            return MockCollectResult(self._rows)
+        return MockCollectResult([])
+
+
+class TestCompositeSummarySQL:
+    def _backend(self, rows=None):
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+        session = FakeCompositeSummarySession(rows)
+        backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=session)
+        session.queries.clear()  # drop the _ensure_tables DDL
+        return backend, session
+
+    def test_single_statement_with_type_pushdown(self):
+        backend, session = self._backend()
+        backend.composite_summary(model_types=["ml_model", "heuristic"])
+        assert len(session.queries) == 1, "composite_summary must issue exactly one statement"
+        sql = session.queries[0]
+        assert "MODEL_TYPE IN ('ml_model', 'heuristic')" in sql
+        assert "V_COMPOSITES" not in sql, "must not depend on an externally-managed view"
+
+    def test_default_model_type_is_composite(self):
+        backend, session = self._backend()
+        backend.composite_summary()
+        assert "MODEL_TYPE IN ('composite')" in session.queries[0]
+
+    def test_model_types_are_escaped(self):
+        backend, session = self._backend()
+        backend.composite_summary(model_types=["ty'pe"])
+        assert "'ty''pe'" in session.queries[0]
+
+    def test_replicates_sdk_replay_semantics_in_sql(self):
+        """The single statement must encode the SDK fallback semantics."""
+        backend, session = self._backend()
+        backend.composite_summary()
+        sql = session.queries[0]
+        # membership baseline: member_of dependency links resolved against MODELS
+        assert "'member_of'" in sql
+        assert "upstream_hash" in sql
+        # event overlay: latest op wins per (composite, member)
+        assert "member_added" in sql and "member_removed" in sql
+        assert "ROW_NUMBER() OVER" in sql
+        # open observations: distinct-id set semantics, not raw event counts
+        assert "observation_id" in sql
+        assert "COUNT_IF(EVENT_TYPE = 'observation_resolved') = 0" in sql
+
+    def test_row_mapping_and_null_coalescing(self):
+        ts = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+        rows = [
+            {
+                "NAME": "credit-scorecard",
+                "OWNER": "risk-team",
+                "TIER": "high",
+                "STATUS": "active",
+                "MODEL_TYPE": "composite",
+                "MEMBER_COUNT": 3,
+                "LAST_VALIDATED": ts,
+                "OPEN_OBSERVATION_COUNT": 1,
+                "METADATA": '{"source": "registry"}',
+            },
+            {
+                "NAME": "empty-group",
+                "OWNER": "ops-team",
+                "TIER": "low",
+                "STATUS": "active",
+                "MODEL_TYPE": "composite",
+                "MEMBER_COUNT": None,
+                "LAST_VALIDATED": None,
+                "OPEN_OBSERVATION_COUNT": None,
+                "METADATA": None,
+            },
+        ]
+        backend, _ = self._backend(rows)
+        result = backend.composite_summary()
+        assert result == [
+            {
+                "name": "credit-scorecard",
+                "owner": "risk-team",
+                "tier": "high",
+                "status": "active",
+                "model_type": "composite",
+                "member_count": 3,
+                "last_validated": ts,
+                "open_observation_count": 1,
+                "metadata": {"source": "registry"},
+            },
+            {
+                "name": "empty-group",
+                "owner": "ops-team",
+                "tier": "low",
+                "status": "active",
+                "model_type": "composite",
+                "member_count": 0,
+                "last_validated": None,
+                "open_observation_count": 0,
+                "metadata": {},
+            },
+        ]
+
+    def test_last_validated_string_coerced_to_datetime(self):
+        rows = [
+            {
+                "NAME": "g",
+                "OWNER": "o",
+                "TIER": "t",
+                "STATUS": "active",
+                "MODEL_TYPE": "composite",
+                "MEMBER_COUNT": 0,
+                "LAST_VALIDATED": "2026-01-02T03:04:05+00:00",
+                "OPEN_OBSERVATION_COUNT": 0,
+                "METADATA": None,
+            }
+        ]
+        backend, _ = self._backend(rows)
+        result = backend.composite_summary()
+        assert result[0]["last_validated"] == datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+    def test_flushes_buffered_writes_before_querying(self):
+        from model_ledger.core.ledger_models import ModelRef
+
+        backend, session = self._backend()
+        backend.save_model(
+            ModelRef(name="g", owner="o", model_type="composite", tier="high", purpose="")
+        )
+        backend.composite_summary()
+        merge_idx = next(i for i, q in enumerate(session.queries) if "MERGE INTO" in q)
+        select_idx = next(i for i, q in enumerate(session.queries) if "WITH composites AS" in q)
+        assert merge_idx < select_idx
+
+    def test_parity_with_in_memory_fallback(self):
+        """Recorded-rows parity: the Snowflake mapping must produce exactly the
+        dicts the SDK fallback produces for an equivalent event history.
+
+        Scenario (mirrored between the in-memory ledger and the recorded rows):
+        - 'credit-scorecard' seeded with one member via register_group (dep-link
+          baseline), one member added via add_member, one added then removed
+          (latest op wins -> excluded): member_count == 2
+        - OBS-1 issued then resolved, OBS-2 issued: open_observation_count == 1
+        - one validated event: last_validated == its timestamp
+        """
+        from model_ledger.sdk.ledger import Ledger
+
+        ledger = Ledger()  # InMemoryLedgerBackend: no composite_summary -> fallback
+        for name in ["feature_pipeline", "scoring_model", "alert_queue"]:
+            ledger.register(
+                name=name, owner="risk-team", model_type="ml_model", tier="high", purpose="x"
+            )
+        ledger.register_group(
+            name="credit-scorecard",
+            owner="risk-team",
+            model_type="composite",
+            tier="high",
+            purpose="Credit risk scoring pipeline",
+            members=["feature_pipeline"],
+            actor="test",
+            metadata={"source": "registry"},
+        )
+        ledger.add_member("credit-scorecard", "scoring_model", actor="test")
+        ledger.add_member("credit-scorecard", "alert_queue", actor="test")
+        ledger.remove_member("credit-scorecard", "alert_queue", actor="test")
+        ledger.record_observation(
+            "credit-scorecard", observation_id="OBS-1", observation="a", status="open", actor="t"
+        )
+        ledger.record_observation(
+            "credit-scorecard", observation_id="OBS-2", observation="b", status="open", actor="t"
+        )
+        ledger.resolve_observation(
+            "credit-scorecard", observation_id="OBS-1", resolution="fixed", actor="t"
+        )
+        ledger.record_validation("credit-scorecard", result="passed", actor="t")
+
+        expected = ledger.composite_summary()
+        assert len(expected) == 1
+        assert expected[0]["member_count"] == 2
+        assert expected[0]["open_observation_count"] == 1
+
+        # Recorded rows: what the single-statement SQL returns for this history.
+        rows = [
+            {
+                "NAME": "credit-scorecard",
+                "OWNER": "risk-team",
+                "TIER": "high",
+                "STATUS": "active",
+                "MODEL_TYPE": "composite",
+                "MEMBER_COUNT": 2,
+                "LAST_VALIDATED": expected[0]["last_validated"],
+                "OPEN_OBSERVATION_COUNT": 1,
+                "METADATA": '{"source": "registry"}',
+            }
+        ]
+        backend, _ = self._backend(rows)
+        assert backend.composite_summary() == expected

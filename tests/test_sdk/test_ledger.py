@@ -1054,6 +1054,25 @@ class TestCompositeSummary:
         assert "Group B" in names
         assert "Group C" in names
 
+    def test_dispatches_to_backend_composite_summary_when_available(self):
+        """Backends exposing composite_summary get the call pushed down
+        (with the resolved model_types), bypassing the N+1 fallback."""
+
+        class StubBackend(InMemoryLedgerBackend):
+            def __init__(self):
+                super().__init__()
+                self.calls: list[list[str]] = []
+
+            def composite_summary(self, model_types=None):
+                self.calls.append(model_types)
+                return [{"name": "from-backend"}]
+
+        backend = StubBackend()
+        ledger = Ledger(backend)
+        assert ledger.composite_summary() == [{"name": "from-backend"}]
+        assert ledger.composite_summary(model_types=["ml_model"]) == [{"name": "from-backend"}]
+        assert backend.calls == [["composite"], ["ml_model"]]
+
 
 class TestInvestigateComposite:
     def test_investigate_composite_includes_governance(self, ledger):

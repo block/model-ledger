@@ -479,26 +479,142 @@ class SnowflakeLedgerBackend:
         self,
         model_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Query V_COMPOSITES view — single query replaces N+1 per-model calls."""
+        """Flat composite inventory in ONE SQL statement.
+
+        Replicates the semantics of the SDK fallback in
+        ``Ledger.composite_summary`` (which issues 2 round trips per
+        composite) as a single set-based query:
+
+        - membership baseline: ``depends_on`` snapshots on the composite with
+          ``payload.relationship = 'member_of'``, resolved against MODELS via
+          ``payload.upstream_hash`` (name match first, then hash — mirroring
+          ``Ledger.get``); unresolvable links are dropped.
+        - membership events: ``member_added`` / ``member_removed`` overlay the
+          baseline in timestamp order, latest op wins per (composite, member).
+          ``member_added`` events whose member resolves to no registered model
+          (by ``payload.member_hash`` or ``payload.member_name``) are no-ops
+          in the SDK replay and are dropped here too.
+        - last_validated: MAX(timestamp) of ``validated`` snapshots.
+        - open_observation_count: distinct ``observation_id`` values issued
+          and never resolved; events without an ``observation_id`` payload
+          key are ignored (set semantics, matching
+          ``Ledger.open_observation_count``).
+        """
         self._flush_models()
         self._flush_snapshots()
         target_types = model_types or ["composite"]
         placeholders = ", ".join(_esc(t) for t in target_types)
-        sql = (
-            f"SELECT v.NAME, v.OWNER, v.TIER, v.STATUS, v.MODEL_TYPE,"
-            f" v.MEMBER_COUNT, v.LAST_VALIDATED, v.OPEN_OBSERVATION_COUNT,"
-            f" m.METADATA"
-            f" FROM {self._schema}.V_COMPOSITES v"
-            f" JOIN {self._schema}.MODELS m ON m.NAME = v.NAME"
-            f" WHERE v.MODEL_TYPE IN ({placeholders})"
-            f" ORDER BY v.NAME"
-        )
+        sql = f"""
+            WITH composites AS (
+                SELECT MODEL_HASH, NAME, OWNER, TIER, STATUS, MODEL_TYPE, METADATA
+                FROM {self._schema}.MODELS
+                WHERE MODEL_TYPE IN ({placeholders})
+            ),
+            relevant_snaps AS (
+                SELECT s.MODEL_HASH, s.SNAPSHOT_HASH, s.EVENT_TYPE, s.TIMESTAMP, s.PAYLOAD
+                FROM {self._schema}.SNAPSHOTS s
+                JOIN composites c ON c.MODEL_HASH = s.MODEL_HASH
+                WHERE s.EVENT_TYPE IN ('depends_on', 'member_added', 'member_removed',
+                                       'validated', 'observation_issued', 'observation_resolved')
+            ),
+            member_baseline AS (
+                SELECT DISTINCT
+                    s.MODEL_HASH AS COMPOSITE_HASH,
+                    COALESCE(m_name.MODEL_HASH, m_hash.MODEL_HASH) AS MEMBER_KEY
+                FROM relevant_snaps s
+                LEFT JOIN {self._schema}.MODELS m_name
+                    ON m_name.NAME = s.PAYLOAD:upstream_hash::VARCHAR
+                LEFT JOIN {self._schema}.MODELS m_hash
+                    ON m_hash.MODEL_HASH = s.PAYLOAD:upstream_hash::VARCHAR
+                WHERE s.EVENT_TYPE = 'depends_on'
+                  AND COALESCE(s.PAYLOAD:relationship::VARCHAR, 'depends_on') = 'member_of'
+                  AND COALESCE(m_name.MODEL_HASH, m_hash.MODEL_HASH) IS NOT NULL
+            ),
+            member_events AS (
+                SELECT
+                    s.MODEL_HASH AS COMPOSITE_HASH,
+                    COALESCE(s.PAYLOAD:member_hash::VARCHAR, '') AS MEMBER_KEY,
+                    s.PAYLOAD:member_name::VARCHAR AS MEMBER_NAME,
+                    s.EVENT_TYPE,
+                    s.TIMESTAMP,
+                    s.SNAPSHOT_HASH
+                FROM relevant_snaps s
+                WHERE s.EVENT_TYPE IN ('member_added', 'member_removed')
+            ),
+            effective_events AS (
+                SELECT e.COMPOSITE_HASH, e.MEMBER_KEY, e.EVENT_TYPE, e.TIMESTAMP, e.SNAPSHOT_HASH
+                FROM member_events e
+                WHERE e.EVENT_TYPE = 'member_removed'
+                   OR EXISTS (
+                        SELECT 1 FROM {self._schema}.MODELS m
+                        WHERE m.NAME = e.MEMBER_KEY OR m.MODEL_HASH = e.MEMBER_KEY
+                           OR m.NAME = e.MEMBER_NAME OR m.MODEL_HASH = e.MEMBER_NAME
+                   )
+            ),
+            last_op AS (
+                SELECT COMPOSITE_HASH, MEMBER_KEY, EVENT_TYPE
+                FROM effective_events
+                QUALIFY ROW_NUMBER() OVER (
+                    PARTITION BY COMPOSITE_HASH, MEMBER_KEY
+                    ORDER BY TIMESTAMP DESC, SNAPSHOT_HASH DESC
+                ) = 1
+            ),
+            membership AS (
+                (
+                    SELECT COMPOSITE_HASH, MEMBER_KEY FROM member_baseline
+                    UNION
+                    SELECT COMPOSITE_HASH, MEMBER_KEY FROM last_op
+                    WHERE EVENT_TYPE = 'member_added'
+                )
+                EXCEPT
+                SELECT COMPOSITE_HASH, MEMBER_KEY FROM last_op
+                WHERE EVENT_TYPE = 'member_removed'
+            ),
+            member_counts AS (
+                SELECT COMPOSITE_HASH, COUNT(*) AS MEMBER_COUNT
+                FROM membership
+                GROUP BY COMPOSITE_HASH
+            ),
+            validations AS (
+                SELECT MODEL_HASH AS COMPOSITE_HASH, MAX(TIMESTAMP) AS LAST_VALIDATED
+                FROM relevant_snaps
+                WHERE EVENT_TYPE = 'validated'
+                GROUP BY MODEL_HASH
+            ),
+            open_obs AS (
+                SELECT COMPOSITE_HASH, COUNT(*) AS OPEN_OBSERVATION_COUNT
+                FROM (
+                    SELECT MODEL_HASH AS COMPOSITE_HASH,
+                           PAYLOAD:observation_id::VARCHAR AS OBS_ID
+                    FROM relevant_snaps
+                    WHERE EVENT_TYPE IN ('observation_issued', 'observation_resolved')
+                      AND PAYLOAD:observation_id::VARCHAR IS NOT NULL
+                      AND PAYLOAD:observation_id::VARCHAR != ''
+                    GROUP BY COMPOSITE_HASH, OBS_ID
+                    HAVING COUNT_IF(EVENT_TYPE = 'observation_issued') > 0
+                       AND COUNT_IF(EVENT_TYPE = 'observation_resolved') = 0
+                )
+                GROUP BY COMPOSITE_HASH
+            )
+            SELECT c.NAME, c.OWNER, c.TIER, c.STATUS, c.MODEL_TYPE,
+                   COALESCE(mc.MEMBER_COUNT, 0) AS MEMBER_COUNT,
+                   v.LAST_VALIDATED,
+                   COALESCE(oo.OPEN_OBSERVATION_COUNT, 0) AS OPEN_OBSERVATION_COUNT,
+                   c.METADATA
+            FROM composites c
+            LEFT JOIN member_counts mc ON mc.COMPOSITE_HASH = c.MODEL_HASH
+            LEFT JOIN validations v ON v.COMPOSITE_HASH = c.MODEL_HASH
+            LEFT JOIN open_obs oo ON oo.COMPOSITE_HASH = c.MODEL_HASH
+            ORDER BY c.NAME"""
         rows = _exec(self._session, sql)
         results = []
         for r in rows:
             raw = r.get("METADATA") or {}
             if isinstance(raw, str):
                 raw = json.loads(raw) if raw else {}
+            last_validated = r.get("LAST_VALIDATED")
+            if last_validated is not None and not isinstance(last_validated, datetime):
+                last_validated = datetime.fromisoformat(str(last_validated))
             results.append(
                 {
                     "name": r["NAME"],
@@ -506,9 +622,9 @@ class SnowflakeLedgerBackend:
                     "tier": r["TIER"],
                     "status": r["STATUS"],
                     "model_type": r["MODEL_TYPE"],
-                    "member_count": r["MEMBER_COUNT"] or 0,
-                    "last_validated": r.get("LAST_VALIDATED"),
-                    "open_observation_count": r["OPEN_OBSERVATION_COUNT"] or 0,
+                    "member_count": int(r["MEMBER_COUNT"] or 0),
+                    "last_validated": last_validated,
+                    "open_observation_count": int(r["OPEN_OBSERVATION_COUNT"] or 0),
                     "metadata": raw if isinstance(raw, dict) else {},
                 }
             )

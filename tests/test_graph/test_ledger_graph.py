@@ -83,6 +83,107 @@ class TestAdd:
         snap = [s for s in ledger.history("scorer") if s.event_type == "discovered"][0]
         assert "change_occurred" not in snap.payload
 
+    def test_add_new_model_with_status(self, ledger):
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        assert ledger.get("scorer").status == "deprecated"
+
+    def test_add_defaults_status_to_active(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        assert ledger.get("scorer").status == "active"
+
+    def test_add_flips_status_on_existing_model(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        assert ledger.get("scorer").status == "active"
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        assert ledger.get("scorer").status == "deprecated"
+
+    def test_add_status_flip_records_new_discovered_snapshot(self, ledger):
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        result = ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        assert result["added"] == 1
+        assert result["skipped"] == 0
+
+    def test_add_status_absent_keeps_existing_status(self, ledger):
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        ledger.add(DataNode("scorer", platform="ml_platform", outputs=["scores"]))
+        assert ledger.get("scorer").status == "deprecated"
+
+    def test_add_unknown_status_ignored(self, ledger):
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "not-a-status"},
+            )
+        )
+        assert ledger.get("scorer").status == "deprecated"
+
+    def test_add_status_case_insensitive_normalized(self, ledger):
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "DEPRECATED"},
+            )
+        )
+        assert ledger.get("scorer").status == "deprecated"
+
+    def test_add_status_applied_even_when_snapshot_deduped(self, ledger):
+        """A status flip self-corrects the model row even if the discovered
+        payload matches an earlier snapshot (content-hash dedup skip)."""
+        node_meta = {"status": "deprecated"}
+        ledger.add(
+            DataNode("scorer", platform="ml_platform", outputs=["scores"], metadata=node_meta)
+        )
+        # Manually regress the stored status, simulating drift in the model row.
+        ref = ledger.get("scorer")
+        ref.status = "active"
+        ledger._backend.update_model(ref)
+        # Same payload again: snapshot dedup skips, but the status still lands.
+        result = ledger.add(
+            DataNode("scorer", platform="ml_platform", outputs=["scores"], metadata=node_meta)
+        )
+        assert result["skipped"] == 1
+        assert ledger.get("scorer").status == "deprecated"
+
     def test_add_source_updated_at_does_not_affect_dedup(self, ledger):
         node1 = DataNode(
             "scorer",

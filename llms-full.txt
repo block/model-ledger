@@ -1,0 +1,2109 @@
+# model-ledger — full documentation
+
+> git for models — the open, agent-native source of truth that discovers every model, rule, and pipeline across all your platforms as one immutable graph.
+
+
+
+---
+
+# source: glossary.md
+
+# Glossary
+
+The whole system is a handful of nouns. (These terms also get hover-definitions
+wherever they appear in the docs.)
+
+`Backend`
+:   Pluggable storage behind the `LedgerBackend` protocol — in-memory, SQLite, JSON
+    files, Snowflake, or a remote HTTP service. Swapping it never changes your code.
+
+`Composite`
+:   A governed group whose members are themselves models — a business-level entity (e.g.
+    a "Credit Decision System") that rolls up its scorecard, rules, and ETL. See
+    [Composites](concepts/composite.md).
+
+`Connector`
+:   A source that emits `DataNode`s from a platform (SQL, REST, GitHub, …) via the
+    `SourceConnector` protocol. See [Connectors & discovery](guides/connectors.md).
+
+`DataNode`
+:   The core graph primitive: anything with typed input/output ports — an ML model, a
+    heuristic rule, an ETL job, an alert queue. See [DataNode & the graph](concepts/datanode.md).
+
+`DataPort`
+:   A named connection point on a `DataNode`, optionally carrying schema so identically
+    named outputs from different models don't falsely link.
+
+`Dependency graph`
+:   The links between nodes, built automatically when an output port name matches an
+    input port name (`connect()`).
+
+`Event log`
+:   The inventory itself — an append-only sequence of immutable Snapshots. Nothing is
+    overwritten, so history is always reconstructable.
+
+`ModelRef`
+:   A model's stable identity: name, owner, type, risk `tier`, purpose, status. The
+    minimum a regulator needs. See [Snapshots & the event log](concepts/snapshot.md).
+
+`Point-in-time`
+:   Reconstruction of the inventory as it stood on any past date, via `inventory_at()`.
+
+`Profile`
+:   A pluggable compliance check (`sr_11_7`, `eu_ai_act`, `nist_ai_rmf`) that validates a
+    model's completeness against a framework. See [Governance](governance.md).
+
+`Snapshot`
+:   An immutable, content-addressed record of one thing that happened to a model — a
+    registration, a retrain, a validation. The unit of the event log.
+
+`Tag`
+:   A mutable named pointer to a specific Snapshot (e.g. `production`, `latest-validated`).
+
+
+---
+
+# source: governance.md
+
+# Governance
+
+Model-risk regimes change their names and their numbers. What they *ask for* barely
+changes. Strip away the acronyms and every regime — US banking, EU, insurance — wants
+the same six things from your model inventory. model-ledger is built to produce them as
+a byproduct of normal use, not as a separate compliance chore.
+
+## What every regime actually asks for
+
+| The durable need | What an examiner says | The model-ledger primitive |
+|---|---|---|
+| **Complete inventory** | "Show me *every* model — including the shadow ones." | Cross-platform [discovery & connectors](guides/connectors.md) — ML models, rules, and ETL as one graph |
+| **Risk tiering** | "Which are high-materiality?" | `tier` on every [`ModelRef`](reference/index.md); business systems roll up as [composites](concepts/composite.md) |
+| **Change control + audit trail** | "What changed, when, and who did it?" | Immutable, content-addressed [Snapshots](concepts/snapshot.md) — append-only, tamper-evident |
+| **Dependency & lineage** | "How do these components feed each other?" | The [dependency graph](concepts/datanode.md), built from port matching |
+| **Validation records** | "Prove this was validated, and find what wasn't." | `record_validation()` events live in the same immutable log |
+| **Point-in-time reconstruction** | "Show me the inventory as it stood on December 31." | [`inventory_at(date)`](recipes/point-in-time.md) replays the log |
+
+That's the whole compliance story: **nothing is overwritten, so the answer to "what was
+true then?" is always reconstructable.**
+
+## It falls out of normal use
+
+```python
+from model_ledger import Ledger
+
+ledger = Ledger.from_sqlite("./inventory.db")
+
+# Identity + risk tier — the minimum a regulator needs
+ledger.register(
+    name="credit_scorecard", owner="risk-team",
+    model_type="ml_model", tier="high",
+    purpose="Consumer credit decisioning",
+)
+
+# Validation outcomes are just events in the same immutable log
+ledger.record("credit_scorecard", event="validated", actor="mrm-team",
+              payload={"result": "pass", "validator": "second-line"})
+
+# The full, ordered, tamper-evident history an examiner can replay
+for snap in ledger.history("credit_scorecard"):
+    print(snap.timestamp, snap.event_type, snap.actor)
+```
+
+## Frameworks it maps to
+
+The primitives above satisfy the documentation and inventory expectations of the major
+model-risk and AI-governance regimes:
+
+- **US banking — SR 26‑2 / OCC Bulletin 2026‑13** (the 2026 revision that superseded
+  SR 11‑7): tiered model inventory, materiality classification, lifecycle documentation,
+  and validation status.
+- **EU AI Act — Annex IV**: version-tracked technical documentation, component
+  dependencies, and change history for high-risk systems.
+- **NIST AI RMF** and **ISO/IEC 42001**: inventory, risk management, and lifecycle
+  governance practices.
+
+model-ledger ships **pluggable validation profiles** (`sr_11_7`, `eu_ai_act`,
+`nist_ai_rmf`) that check a model's completeness against a framework, and you can add
+your own — profiles are a plugin layer, not the core. Run them with
+`model-ledger validate --profile <name>` (see the [CLI guide](guides/cli.md)).
+
+!!! note "Framework-agnostic on purpose"
+    model-ledger is a model inventory for *any* organization with deployed models — not
+    a single-regulation tool. The frameworks above are examples of what the underlying
+    capability is good for; they are a thin, swappable layer over a durable foundation.
+    When a regulator renumbers a rule, you update a profile — not your inventory.
+
+
+---
+
+# source: index.md
+
+<div class="ml-hero">
+  <div class="ml-hero__text">
+    <span class="ml-kicker">Open-source model governance</span>
+    <h1 class="ml-hero__title">git for models.</h1>
+    <p class="ml-hero__tagline">
+      Know what models you have deployed, where they run, what they depend on, and
+      what changed &mdash; across <em>every</em> platform, as one immutable, queryable graph.
+      Built for the regulator&rsquo;s real question: <em>show me everything that ever changed.</em>
+    </p>
+  </div>
+  <div class="ml-hero__art">
+    <svg viewBox="0 0 520 300" role="img" aria-label="A dependency graph assembling itself from its nodes">
+      <path class="ml-edge" pathLength="1" style="animation-delay:.80s" d="M138,60 L196,60"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.00s" d="M256,77 Q260,116 268,151"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.10s" d="M138,250 Q196,232 230,185"/>
+      <path class="ml-edge" pathLength="1" style="animation-delay:1.30s" d="M328,168 L386,168"/>
+      <g class="ml-node" style="animation-delay:0s"><rect x="18" y="43" width="120" height="34" rx="7"/><text x="78" y="60">raw_txns</text></g>
+      <g class="ml-node" style="animation-delay:.12s"><rect x="196" y="43" width="120" height="34" rx="7"/><text x="256" y="60">features</text></g>
+      <g class="ml-node" style="animation-delay:.24s"><rect x="18" y="233" width="120" height="34" rx="7"/><text x="78" y="250">rules</text></g>
+      <g class="ml-node" style="animation-delay:.36s"><rect x="208" y="151" width="120" height="34" rx="7"/><text x="268" y="168">fraud_model</text></g>
+      <g class="ml-node" style="animation-delay:.48s"><rect x="386" y="151" width="120" height="34" rx="7"/><text x="446" y="168">review_queue</text></g>
+    </svg>
+    <p class="ml-hero__caption">declare nodes &middot; <code>connect()</code> &middot; the graph builds itself</p>
+  </div>
+</div>
+
+`model-ledger` is a model inventory for any organization with deployed models. It
+**discovers** models, heuristic rules, and ETL across your platforms, **maps the
+dependency graph** automatically, and **records every change as an immutable
+event**. Unlike registries tied to one platform (MLflow, SageMaker, W&B), it spans
+all of them — and it's built to be driven by AI agents through a native MCP server.
+
+[Get started in 60 seconds :octicons-arrow-right-24:](quickstart.md){ .md-button .md-button--primary }
+[Why a ledger, not a registry? :octicons-arrow-right-24:](#why-a-ledger-not-a-registry){ .md-button }
+
+## Four ways in
+
+<div class="grid cards" markdown>
+
+-   :material-language-python:{ .lg .middle } &nbsp;__Python SDK__
+
+    ---
+
+    Declare nodes; the graph connects itself. The whole API is tool-shaped.
+
+    ```bash
+    pip install model-ledger
+    ```
+
+    [:octicons-arrow-right-24: Quickstart](quickstart.md)
+
+-   :material-robot-outline:{ .lg .middle } &nbsp;__MCP Server__
+
+    ---
+
+    Talk to your inventory. The agent surface is the product — 8 tools, 3 resources.
+
+    ```bash
+    pip install "model-ledger[mcp]"
+    claude mcp add model-ledger -- model-ledger mcp --demo
+    ```
+
+    [:octicons-arrow-right-24: Agent guide](guides/agents.md)
+
+-   :material-api:{ .lg .middle } &nbsp;__REST API__
+
+    ---
+
+    Auto-generated OpenAPI for frontends and dashboards. Same tools over HTTP.
+
+    ```bash
+    pip install "model-ledger[rest-api]"
+    model-ledger serve --demo
+    ```
+
+    [:octicons-arrow-right-24: Backends & serving](guides/backends.md)
+
+-   :material-console:{ .lg .middle } &nbsp;__CLI__
+
+    ---
+
+    Launch the MCP server or REST API from anywhere — zero config to start.
+
+    ```bash
+    model-ledger mcp      # for agents
+    model-ledger serve    # for HTTP
+    ```
+
+    [:octicons-arrow-right-24: Reference](reference/index.md)
+
+</div>
+
+## The graph builds itself
+
+Every model is a [`DataNode`](concepts/datanode.md) with typed input and output ports.
+When an output name matches an input name, [`connect()`](reference/index.md) creates the
+dependency edge — no hand-wiring.
+
+```python
+from model_ledger import Ledger, DataNode
+
+ledger = Ledger.from_sqlite("./inventory.db")
+
+ledger.add([
+    DataNode("segmentation", platform="etl",      outputs=["customer_segments"]),
+    DataNode("fraud_scorer", platform="ml",       inputs=["customer_segments"], outputs=["risk_scores"]),
+    DataNode("fraud_alerts", platform="alerting", inputs=["risk_scores"]),
+])
+ledger.connect()
+
+ledger.trace("fraud_alerts")
+# ['segmentation', 'fraud_scorer', 'fraud_alerts']
+```
+
+```mermaid
+graph LR
+    A["segmentation<br/><small>ETL</small>"] -->|customer_segments| B["fraud_scorer<br/><small>ML model</small>"]
+    B -->|risk_scores| C["fraud_alerts<br/><small>Alert queue</small>"]
+    classDef etl fill:#607D8B,color:#fff,stroke:#455A64;
+    classDef ml fill:#7a1a1a,color:#fff,stroke:#5a1010;
+    classDef alert fill:#C8884E,color:#fff,stroke:#9c6a3a;
+    class A etl; class B ml; class C alert;
+```
+
+## One operation, every surface
+
+The SDK, the REST API, and the MCP tools are the **same six verbs** — `discover`,
+`record`, `investigate`, `query`, `trace`, `changelog` (plus `tag`/`list_tags`).
+Registering a model looks like this everywhere:
+
+=== "Python"
+
+    ```python
+    from model_ledger import Ledger
+    ledger = Ledger.from_sqlite("./inventory.db")
+
+    ledger.register(
+        name="fraud_scoring", owner="risk-team",
+        model_type="ml_model", tier="high",
+        purpose="Real-time fraud detection",
+    )
+    ```
+
+=== "MCP (what the agent calls)"
+
+    ```json
+    {
+      "tool": "record",
+      "arguments": {
+        "model_name": "fraud_scoring",
+        "event": "registered",
+        "owner": "risk-team",
+        "model_type": "ml_model",
+        "purpose": "Real-time fraud detection"
+      }
+    }
+    ```
+
+=== "REST"
+
+    ```bash
+    curl -X POST localhost:8000/record \
+      -H 'content-type: application/json' \
+      -d '{"model_name":"fraud_scoring","event":"registered",
+           "owner":"risk-team","model_type":"ml_model",
+           "purpose":"Real-time fraud detection"}'
+    ```
+
+## Why a ledger, not a registry
+
+A registry answers *"what is the current state?"* A regulator asks *"show me the
+**complete history** of every change, approval, and validation."* Those are different
+data structures.
+
+model-ledger treats the inventory as an **append-only event log**. A model is an
+identity ([`ModelRef`](concepts/snapshot.md)); everything else — every retrain,
+every config change, every validation — is an immutable, content-addressed
+[`Snapshot`](concepts/snapshot.md). You get full history and point-in-time
+reconstruction for free, because nothing is ever overwritten.
+
+That's exactly what a model-risk program needs — see how it maps to SR 26‑2, the EU AI
+Act, and NIST in [**Governance**](governance.md).
+
+<div class="grid" markdown>
+
+:material-graph-outline: &nbsp;**Cross-platform** — ML models, heuristic rules, ETL, and queues are all one `DataNode`. The graph spans MLflow, SageMaker, your warehouse, your scheduler.
+{ .card }
+
+:material-history: &nbsp;**Change is the point** — every mutation is an immutable Snapshot. Reconstruct your inventory as it stood on any date.
+{ .card }
+
+:material-robot-happy-outline: &nbsp;**Agent-native** — the MCP server is a first-class surface, not an afterthought. Ask Claude *"if we deprecate `customer_features`, what breaks?"*
+{ .card }
+
+:material-puzzle-outline: &nbsp;**Bring your own everything** — storage backends, source connectors, and compliance profiles are all pluggable protocols.
+{ .card }
+
+</div>
+
+---
+
+Built in the open by [Block](https://opensource.block.xyz/) · Apache-2.0 ·
+[Source](https://github.com/block/model-ledger) ·
+[PyPI](https://pypi.org/project/model-ledger/) ·
+[`/llms.txt`](llms.txt) for agents
+
+
+---
+
+# source: installation.md
+
+# Installation
+
+model-ledger requires **Python 3.10+**. The core is deliberately tiny (`httpx` +
+`pydantic` only); everything else is an opt-in extra, so you install just the surfaces
+and backends you use.
+
+```bash
+pip install model-ledger          # core: SDK + dependency graph + connectors
+# or
+uv add model-ledger
+```
+
+## Extras
+
+| Install | Adds | For |
+|---|---|---|
+| `model-ledger` | SDK, graph, SQL/REST/GitHub connectors | the core library |
+| `model-ledger[mcp]` | MCP server (`model-ledger mcp`) | AI agents — Claude, Goose, Cursor |
+| `model-ledger[rest-api]` | FastAPI app (`model-ledger serve`) | frontends, dashboards |
+| `model-ledger[cli]` | Typer + Rich CLI | terminal use |
+| `model-ledger[snowflake]` | Snowflake backend | production storage |
+| `model-ledger[introspect-sklearn]` | scikit-learn introspector | extract algorithm/features from fitted models |
+| `model-ledger[introspect-xgboost]` | XGBoost introspector | " |
+| `model-ledger[introspect-lightgbm]` | LightGBM introspector | " |
+| `model-ledger[excel]` | openpyxl | spreadsheet import/export |
+| `model-ledger[all]` | Snowflake + pandas + httpx | the common production set |
+
+Combine them: `pip install "model-ledger[mcp,rest-api,snowflake]"`.
+
+## Which extra for which surface
+
+- **Python SDK** — core install is enough.
+- **Talk to it from an agent** — `[mcp]`, then `claude mcp add model-ledger -- model-ledger mcp` (see the [Agent guide](guides/agents.md)).
+- **Serve it over HTTP** — `[rest-api]`, then `model-ledger serve` (see [Backends](guides/backends.md)).
+- **From the terminal** — `[cli]` (see the [CLI guide](guides/cli.md)).
+
+Next: the [60-second quickstart](quickstart.md).
+
+
+---
+
+# source: quickstart.md
+
+# Quickstart
+
+Zero infrastructure. Zero credentials. From `pip install` to a working dependency
+graph in under a minute.
+
+=== "Python SDK"
+
+    ```bash
+    pip install model-ledger
+    ```
+
+    ```python
+    from model_ledger import Ledger, DataNode
+
+    ledger = Ledger()  # in-memory; swap for Ledger.from_sqlite("inv.db") to persist
+
+    ledger.add([
+        DataNode("raw_txns",      platform="warehouse", outputs=["transactions"]),
+        DataNode("feature_build", platform="etl",       inputs=["transactions"],  outputs=["features"]),
+        DataNode("fraud_model",   platform="ml",         inputs=["features"],      outputs=["risk_scores"]),
+        DataNode("review_queue",  platform="alerting",   inputs=["risk_scores"]),
+    ])
+    ledger.connect()                 # ports match → edges appear
+
+    print(ledger.trace("review_queue"))
+    # ['raw_txns', 'feature_build', 'fraud_model', 'review_queue']
+
+    print(ledger.upstream("fraud_model"))
+    # ['raw_txns', 'feature_build']
+    ```
+
+    That's the whole idea: **declare nodes, the graph connects itself.** Next, give a
+    node an identity and a history → [Register a model](#register-a-model).
+
+=== "Talk to it (MCP)"
+
+    ```bash
+    pip install "model-ledger[mcp]"
+
+    # Register the server with Claude Code (one time)
+    claude mcp add model-ledger -- model-ledger mcp --demo
+    ```
+
+    Then just ask:
+
+    > **You:** what models are in my inventory?
+    >
+    > **Claude:** 7 models across 5 platforms. `fraud_scoring` was retrained and
+    > deployed this week. Want me to dig into anything?
+    >
+    > **You:** if we deprecate `customer_features`, what breaks?
+    >
+    > **Claude:** 3 models consume it directly, 2 more transitively.
+
+    The `--demo` flag loads a sample inventory so you can explore before connecting
+    your own data. See the [Agent guide](guides/agents.md) for the full tool surface.
+
+=== "REST API"
+
+    ```bash
+    pip install "model-ledger[rest-api]"
+    model-ledger serve --demo --port 8000
+    ```
+
+    Open **http://localhost:8000/docs** for live, auto-generated OpenAPI docs, or:
+
+    ```bash
+    curl "localhost:8000/query?limit=5"
+    curl "localhost:8000/trace/fraud_scoring?direction=upstream"
+    curl "localhost:8000/overview"
+    ```
+
+## Register a model
+
+A `DataNode` gives you the graph. [`register()`](reference/index.md) gives a model an
+**identity** and starts its **history** — the two things a regulator asks for.
+
+```python
+from model_ledger import Ledger
+ledger = Ledger.from_sqlite("./inventory.db")
+
+ledger.register(
+    name="fraud_scoring",
+    owner="risk-team",
+    model_type="ml_model",
+    tier="high",
+    purpose="Real-time card fraud detection",
+)
+
+# Record an event — any payload you like, no schema to maintain
+ledger.record("fraud_scoring", event="retrained", actor="ml-pipeline",
+              payload={"accuracy": 0.94, "features_added": ["velocity_24h"]})
+
+for snap in ledger.history("fraud_scoring"):
+    print(snap.timestamp, snap.event_type)
+# ... registered
+# ... retrained
+```
+
+Every call appends an immutable [Snapshot](concepts/snapshot.md). Nothing is
+overwritten — that's what makes the inventory auditable.
+
+## Choose where it lives
+
+Storage is a one-line decision and never changes your code:
+
+```python
+from model_ledger import Ledger
+from model_ledger.backends.json_files import JsonFileLedgerBackend
+
+Ledger()                                       # in-memory — tests & demos
+Ledger.from_sqlite("./inventory.db")           # zero-infra, single file
+Ledger(JsonFileLedgerBackend("./inventory"))   # git-friendly JSON files
+Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")  # production
+```
+
+[More on backends :octicons-arrow-right-24:](guides/backends.md)
+
+## Where to next
+
+<div class="grid cards" markdown>
+
+- :material-cube-outline: &nbsp;__[Concepts](concepts/index.md)__ — DataNode, Snapshot, Composite. The whole model in three ideas.
+- :material-robot-outline: &nbsp;__[Agent guide](guides/agents.md)__ — the 8 MCP tools and a worked multi-tool transcript.
+- :material-book-open-variant: &nbsp;__[Recipes](recipes/index.md)__ — copy-paste solutions to real tasks.
+- :material-api: &nbsp;__[API reference](reference/index.md)__ — generated from source, never out of date.
+
+</div>
+
+
+---
+
+# source: recipes/discover-sql.md
+
+# <span class="recipe-num">Recipe № 3</span> &nbsp; Discover from a SQL registry
+
+**Problem.** Your models already live in a database table (a registry, a job
+scheduler). You want them in the ledger — and kept in sync — without hand-entering
+anything.
+
+**Approach.** `sql_connector()` runs a query and turns each row into a
+[`DataNode`](../concepts/datanode.md). `add()` is idempotent (it content-hashes nodes),
+so re-running on a schedule only records genuine changes.
+
+```python
+import sqlite3
+from model_ledger import Ledger, sql_connector
+
+ledger = Ledger.from_sqlite("./inventory.db")
+source = sqlite3.connect("./ml_platform.db")
+
+models = sql_connector(
+    name="model_registry",
+    connection=source,
+    query="SELECT name, owner, framework FROM ml_models WHERE active = 1",
+    name_column="name",
+)
+
+added = ledger.add(models.discover())
+ledger.connect()
+print(f"discovered {len(added)} models")
+```
+
+## Extract dependencies from SQL automatically
+
+If a row carries the SQL a job runs, point `sql_column` at it. The connector parses
+`FROM`/`JOIN` as inputs and `INSERT`/`CREATE` as outputs — so the graph links your ETL
+to the models that consume it:
+
+```python
+etl = sql_connector(
+    name="etl_scheduler",
+    connection=source,
+    query="SELECT job_name, raw_sql FROM scheduled_jobs",
+    name_column="job_name",
+    sql_column="raw_sql",
+)
+ledger.add(etl.discover())
+ledger.connect()      # ETL outputs now link to model inputs across platforms
+```
+
+## Run it on a schedule
+
+Wrap the discover-and-connect in your scheduler of choice (cron, Airflow, Prefect):
+
+```python
+def sync():
+    ledger = Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")
+    ledger.add(models.discover())
+    ledger.connect()
+```
+
+Because `add()` skips unchanged nodes and refreshes a `last_seen` timestamp every run,
+you get two things for free: a clean changelog (only real changes are recorded) and the
+ability to spot models that have **gone silent** — discovered before, but missing from
+the latest run.
+
+!!! tip "Other sources"
+    The same pattern works for REST APIs (`rest_connector`) and GitHub
+    pipelines-as-code (`github_connector`), or write your own with the
+    `SourceConnector` protocol — see [Connectors & discovery](../guides/connectors.md).
+
+
+---
+
+# source: recipes/impact-analysis.md
+
+# <span class="recipe-num">Recipe № 1</span> &nbsp; Impact analysis
+
+**Problem.** You want to deprecate `customer_features` (or change its schema). What
+breaks?
+
+**Approach.** Models declare their inputs and outputs; `connect()` builds the edges.
+`downstream()` then returns everything that depends on a node — directly or
+transitively.
+
+```python
+from model_ledger import Ledger, DataNode
+
+ledger = Ledger()
+ledger.add([
+    DataNode("customer_features", platform="feature-store", outputs=["customer_features"]),
+    DataNode("fraud_scorer",  platform="ml",       inputs=["customer_features"], outputs=["risk_scores"]),
+    DataNode("churn_scorer",  platform="ml",       inputs=["customer_features"], outputs=["churn_scores"]),
+    DataNode("review_queue",  platform="alerting",  inputs=["risk_scores"]),
+])
+ledger.connect()
+
+# Everything that depends on customer_features, directly or transitively:
+blast_radius = ledger.downstream("customer_features")
+print(blast_radius)
+# ['fraud_scorer', 'churn_scorer', 'review_queue']
+```
+
+**Expected output.** Three consumers: two models directly (`fraud_scorer`,
+`churn_scorer`) and one queue transitively (`review_queue`). Don't deprecate until
+those are handled.
+
+```mermaid
+graph LR
+    CF["customer_features"] --> FS["fraud_scorer"] --> RQ["review_queue"]
+    CF --> CS["churn_scorer"]
+    classDef hot fill:#7a1a1a,color:#fff,stroke:#5a1010;
+    classDef dep fill:#efe8da,stroke:#7a1a1a,color:#1c1a17;
+    class CF hot; class FS,CS,RQ dep;
+```
+
+## The same question, from an agent
+
+```json
+// trace(name="customer_features", direction="downstream")
+{ "nodes": [
+  {"name": "fraud_scorer", "depth": 1},
+  {"name": "churn_scorer", "depth": 1},
+  {"name": "review_queue", "depth": 2}
+] }
+```
+
+> **Claude:** Deprecating `customer_features` breaks 3 things — `fraud_scorer` and
+> `churn_scorer` consume it directly, and `review_queue` depends on it one hop further.
+
+## Variations
+
+- `ledger.upstream("review_queue")` — the reverse: everything that feeds a node.
+- `ledger.trace("review_queue")` — the full path from roots to a node.
+- Use [`DataPort`](../concepts/datanode.md#dataport-precision) when several models write
+  a table with the same name, so the blast radius is precise rather than over-broad.
+
+
+---
+
+# source: recipes/index.md
+
+# Recipes
+
+Self-contained, copy-paste solutions to real tasks. Each one runs against the
+in-memory or SQLite backend with no setup.
+
+<div class="grid cards" markdown>
+
+-   <span class="recipe-num">Recipe № 1</span>
+
+    __[Impact analysis](impact-analysis.md)__
+
+    ---
+
+    "If we deprecate this, what breaks?" Walk the dependency graph downstream to find
+    the full blast radius before you change anything.
+
+-   <span class="recipe-num">Recipe № 2</span>
+
+    __[Point-in-time inventory](point-in-time.md)__
+
+    ---
+
+    Reconstruct exactly which models were active — and in what state — on any past
+    date. The answer an examiner actually wants.
+
+-   <span class="recipe-num">Recipe № 3</span>
+
+    __[Discover from a SQL registry](discover-sql.md)__
+
+    ---
+
+    Point a connector at a database table and pull models into the ledger on a
+    schedule, idempotently.
+
+</div>
+
+!!! note "More on the way"
+    This gallery grows. Recipes are verified against the SDK so they can't quietly rot
+    — if a release breaks one, the build fails.
+
+
+---
+
+# source: recipes/point-in-time.md
+
+# <span class="recipe-num">Recipe № 2</span> &nbsp; Point-in-time inventory
+
+**Problem.** An examiner asks: *"Show me your model inventory as it stood on December
+31."* A registry that overwrites state can't answer this. An event log can.
+
+**Approach.** Because every change is an immutable [Snapshot](../concepts/snapshot.md),
+the inventory at any date is just a replay of the log up to that moment.
+`inventory_at()` does it for you.
+
+```python
+from datetime import datetime, timezone, timedelta
+from model_ledger import Ledger
+
+ledger = Ledger.from_sqlite("./inventory.db")
+
+ledger.register(name="fraud_scoring", owner="risk-team",
+                model_type="ml_model", tier="high",
+                purpose="Card fraud detection")
+ledger.record("fraud_scoring", event="retrained",
+              payload={"accuracy": 0.94}, actor="ml-pipeline")
+
+now = datetime.now(timezone.utc)
+
+# The inventory as it stands now — fraud_scoring is present:
+for ref in ledger.inventory_at(now):
+    print(ref.name, ref.status)
+
+# ...and as it stood a year ago — empty; the model didn't exist yet.
+ledger.inventory_at(now - timedelta(days=365))
+```
+
+**Expected output.** `fraud_scoring active` for *now*, and nothing for a year ago —
+the model didn't exist then. Pass any timestamp (e.g. an examiner's "as of December
+31") and `inventory_at` replays the event log up to that moment, returning each model
+with the `status` and metadata it carried *then* — not its state today. Nothing is
+overwritten, so history is always reconstructable.
+
+## Why this matters
+
+| Question an auditor asks | Registry (mutable) | Ledger (event log) |
+|---|---|---|
+| What's the current state? | ✅ | ✅ |
+| What did it look like 6 months ago? | ❌ overwritten | ✅ replay the log |
+| When exactly did this change, and who did it? | ❌ | ✅ `history()` |
+| Prove nothing was edited after the fact | ❌ | ✅ content-addressed snapshots |
+
+## Pair with history
+
+For one model's full timeline:
+
+```python
+for snap in ledger.history("fraud_scoring"):
+    print(snap.timestamp, snap.event_type, snap.actor)
+```
+
+Every line is immutable and ordered. That timeline *is* the audit trail — no separate
+logging system to keep in sync.
+
+
+---
+
+# source: includes/abbreviations.md
+
+*[DataNode]: The core graph primitive — anything with typed input/output ports (model, rule, ETL, queue).
+*[DataPort]: A named connection point on a DataNode; dependency edges form when port names match.
+*[Snapshot]: An immutable, content-addressed record of one thing that happened to a model.
+*[ModelRef]: A model's stable identity — name, owner, type, risk tier, purpose, status.
+*[Composite]: A governed group whose members are themselves models (e.g. a "Credit Decision System").
+*[MCP]: Model Context Protocol — the agent-native interface; model-ledger's primary surface.
+*[SR 26-2]: 2026 US interagency model-risk-management guidance (OCC 2026-13), which superseded SR 11-7.
+*[Annex IV]: The EU AI Act's technical-documentation requirements for high-risk AI systems.
+
+
+---
+
+# source: adr/0001-event-log-not-a-registry.md
+
+# ADR 0001 — Model the inventory as an event log, not a registry
+
+**Status:** Accepted
+
+## Context
+
+A model inventory has to answer two kinds of question. Operators ask *"what is the current
+state?"* Auditors and regulators ask *"show me the complete history of every change,
+approval, and validation"* and *"what did the inventory look like on this past date?"*
+
+A conventional registry stores current state and overwrites it on each change. It answers
+the first question well and the second not at all — once a row is updated, the prior state
+is gone, and there is no tamper-evident record that it ever existed.
+
+## Decision
+
+The inventory is an **append-only event log**. A model is a stable identity (`ModelRef`);
+everything that happens to it is an immutable, content-addressed `Snapshot`. Current state
+is a *projection* of the log; point-in-time state (`inventory_at`) is a replay of the log
+up to a timestamp.
+
+Content addressing (each snapshot's hash derives from its content) makes the chain
+tamper-evident: you cannot alter history without the hashes diverging.
+
+## Consequences
+
+**Positive**
+
+- History and point-in-time reconstruction are free — they're inherent to the structure,
+  not a bolted-on audit table that can drift from the real data.
+- The log *is* the audit trail; there is no separate logging system to keep in sync.
+- Tamper-evidence comes from content addressing, which regulated use cases need.
+
+**Negative (accepted)**
+
+- More storage than last-write-wins, and reconstruction is a replay rather than a row read.
+- Callers think in events, not in-place edits — a small conceptual shift.
+
+## Alternatives considered
+
+- **Mutable registry (rejected):** simplest writes, but structurally cannot answer the
+  historical questions that are the entire point for governance.
+- **Registry + a separate audit table (rejected):** two sources of truth that drift; the
+  audit table is exactly the thing an examiner distrusts.
+
+See [Snapshots & the event log](../concepts/snapshot.md) and [Architecture](../concepts/architecture.md).
+
+
+---
+
+# source: adr/0002-everything-is-a-datanode.md
+
+# ADR 0002 — Everything is a DataNode; the graph builds itself
+
+**Status:** Accepted
+
+## Context
+
+A real model estate spans ML models, heuristic rules, ETL jobs, and alert queues, across
+many platforms with no shared identifier scheme. To map dependencies, most tools require
+either a central registry of IDs or per-platform adapters that understand each other.
+Both are brittle and don't scale across platforms.
+
+## Decision
+
+Every entity is a single type — `DataNode` — with typed input and output **ports**. A
+node declares only what it consumes and produces. `connect()` then creates a dependency
+edge wherever an output port name matches an input port name. Connectors emit nodes and
+know nothing about the rest of the graph.
+
+`DataPort` carries optional schema discriminators (e.g. `model_name`) so that two nodes
+writing a same-named table do not falsely link.
+
+## Consequences
+
+**Positive**
+
+- Cross-platform edges (warehouse ETL → MLflow model → alerting queue) form with no shared
+  ID scheme and no inter-connector coupling.
+- Adding a platform is "emit `DataNode`s" — connectors stay dumb and independent, which is
+  what makes discovery scale.
+- One abstraction to learn; rules and ETL are first-class, not second-class to ML models.
+
+**Negative (accepted)**
+
+- Port-name collisions are possible; resolving them precisely requires `DataPort` schema
+  discriminators rather than bare strings.
+- Port naming becomes a modeling concern the connector author must get right.
+
+## Alternatives considered
+
+- **Per-platform model types (rejected):** too rigid; every new platform is a new type and
+  new cross-type wiring.
+- **A fixed, central metadata schema (rejected):** cannot span heterogeneous platforms;
+  forces lossy normalization at discovery time.
+
+See [DataNode & the graph](../concepts/datanode.md).
+
+
+---
+
+# source: adr/0003-agents-first.md
+
+# ADR 0003 — Agents are the primary interface; the SDK is tool-shaped
+
+**Status:** Accepted
+
+## Context
+
+Governance questions are conversational by nature — *"which high-risk models changed this
+week and haven't been validated?"* The cheapest way to answer them is to let an agent
+traverse the inventory directly. Most libraries treat an agent/MCP layer as an
+afterthought wrapped around a human-shaped API, which produces awkward, chatty tools.
+
+## Decision
+
+Design the API for the agent first. The SDK is **tool-shaped**: each capability is one
+consolidated verb — `discover`, `record`, `investigate`, `query`, `trace`, `changelog`,
+`tag` — and the same verbs are exposed identically over MCP and REST. Tools follow
+[Anthropic's tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents):
+few, broad, orthogonal, with agent-readable descriptions and error messages that name the
+next action.
+
+## Consequences
+
+**Positive**
+
+- One mental model across MCP, REST, SDK, and CLI; they can't drift because they share the
+  tool functions.
+- The consolidated surface is easier for a human to learn too — designing for the agent
+  made the SDK cleaner as a side effect.
+- Errors are actionable (they suggest the next call) rather than raising into the agent.
+
+**Negative (accepted)**
+
+- Broad verbs do more per call, which fits fine-grained REST conventions less neatly (no
+  resource-per-endpoint sprawl).
+- A small, opinionated verb set means some niche operations live only in the SDK.
+
+## Alternatives considered
+
+- **Human-first SDK with a thin MCP wrapper (rejected):** yields chatty, leaky tools and
+  two surfaces that drift.
+- **Granular REST endpoints mirrored to many tools (rejected):** overflows an agent's
+  working memory and multiplies the maintenance surface.
+
+See [Agents (MCP)](../guides/agents.md).
+
+
+---
+
+# source: adr/0004-framework-agnostic.md
+
+# ADR 0004 — Framework-agnostic core; regulations are pluggable profiles
+
+**Status:** Accepted
+
+## Context
+
+model-ledger's demand is driven by regulation (SR 26‑2, EU AI Act Annex IV, NIST AI RMF,
+ISO 42001). The tempting move is to build "an SR 11‑7 tool." But specific regulations get
+renumbered and superseded (SR 11‑7 → SR 26‑2 in 2026), differ by jurisdiction, and would
+narrow a tool that is genuinely general.
+
+## Decision
+
+The core is a generic model inventory with **no regulation baked in**. Specific frameworks
+are expressed as **compliance profiles** — a plugin layer (`sr_11_7`, `eu_ai_act`,
+`nist_ai_rmf`) discovered via entry points, checking a model's completeness against a
+framework's expectations. The documentation leads with the durable capability (complete,
+auditable, point-in-time inventory) and treats named regimes as a thin, current layer.
+
+## Consequences
+
+**Positive**
+
+- A renumbered or new regulation is a profile change, not a core change — the inventory is
+  never stale on a regulator's letter.
+- The tool serves any organization with deployed models, not one jurisdiction's banks.
+- The core stays tiny (`httpx` + `pydantic`), which is what lets downstream packages add
+  org-specific connectors, auth, and profiles without forking it.
+
+**Negative (accepted)**
+
+- `record()` takes a schema-free `payload`; envelope validation is the caller's or a
+  profile's responsibility, not the core's.
+- "Does it support regulation X?" is answered by "is there a profile?", which requires the
+  profile ecosystem to keep pace.
+
+## Alternatives considered
+
+- **Bake in SR 11‑7 / a single framework (rejected):** dates instantly and narrows the
+  audience; we watched SR 11‑7 get superseded mid-project.
+- **A rigid, regulation-shaped schema (rejected):** forces every platform's metadata into
+  one regulator's vocabulary at discovery time.
+
+See [Governance](../governance.md).
+
+
+---
+
+# source: adr/0005-storage-agnostic.md
+
+# ADR 0005 — Storage-agnostic via the LedgerBackend protocol
+
+**Status:** Accepted
+
+## Context
+
+The same inventory needs to run as a throwaway in-memory object in a test, a single
+SQLite file on a laptop, git-friendly JSON in a repo, a Snowflake schema in production,
+and a thin client against a remote HTTP service. Coupling the SDK to any one of these
+would force a rewrite to change storage and make testing slow.
+
+## Decision
+
+All persistence sits behind a single `@runtime_checkable` `LedgerBackend` protocol. The
+`Ledger` SDK is written against the protocol only; the backend is a constructor argument
+(`Ledger.from_sqlite(...)`, `Ledger.from_snowflake(...)`, `Ledger(JsonFileLedgerBackend(...))`,
+`Ledger(HttpLedgerBackend(...))`). Third parties can add backends (e.g. Postgres) by
+implementing the protocol and registering an entry point — no core change.
+
+## Consequences
+
+**Positive**
+
+- Choosing storage is a one-line decision that never leaks into application code.
+- Tests run in-memory and fast; the same code path is exercised against every backend.
+- Backends are an open extension point, not a closed enum.
+
+**Negative (accepted)**
+
+- The protocol is a contract: adding a method means implementing it across every backend
+  (and any third-party one), so the surface must evolve deliberately. The HTTP backend in
+  particular can't always reconstruct server-side state locally and falls back to caches.
+- The lowest-common-denominator protocol can't expose every backend's native superpowers.
+
+## Alternatives considered
+
+- **Hard-code one backend (rejected):** forces a rewrite to change storage and makes tests
+  depend on infrastructure.
+- **An ORM abstraction (rejected):** heavier, leakier, and a poor fit for the append-only
+  event-log and the non-SQL backends (JSON files, HTTP).
+
+See [Choosing a backend](../guides/backends.md).
+
+
+---
+
+# source: adr/0006-discovery-and-validation-subsystems.md
+
+# ADR 0006 — Discovery and validation are two subsystems; bridge, don't delete
+
+**Status:** Accepted
+
+## Context
+
+The codebase contains what looks, from the export list, like competing paradigms:
+
+- **The event-log (v0.3+):** `ModelRef` (a thin identity) + immutable `Snapshot`s + the
+  `DataNode` graph. This is the **discovery / inventory / agent** subsystem — *what models
+  exist, how they connect, what changed*.
+- **The rich governance model (v0.2):** `Model`/`ModelVersion` carrying `intended_purpose`,
+  `risk_rating`, `affected_populations`, stakeholders, findings, deployments; the `validate`
+  engine; and the SR 11‑7 / EU AI Act / NIST **compliance profiles** that check those fields.
+  This is the **validation** subsystem — *can a model pass an examiner's bar?*
+
+A surface-level read ("three paradigms in `__all__`, clean it up") suggests deleting the
+v0.2 API. Mapping the dependencies shows that would be a serious mistake: the v0.2 model is
+the substance behind the [Governance](../governance.md) page and the regulatory wedge — a
+rich, field-level compliance model plus three non-trivial profiles, the audit-pack export,
+and a meaningful share of the test suite. The thin event-log `ModelRef` carries none of those
+fields, so it cannot be validated by the profiles as-is.
+
+The real issue is not clutter. **The two subsystems are disconnected:** a *discovered* model
+(`ModelRef`) has no path to *validation*. You can inventory a model or validate one, but not
+both in one flow.
+
+## Decision
+
+1. **Retain the v0.2 governance/validation subsystem.** It is not legacy dead weight; it is
+   the validation half of the product. Do not delete it or rewrite its profiles destructively.
+2. **Bridge the two subsystems *additively*.** Make a discovered model validatable by
+   projecting its event-log evidence (metadata + snapshots) into the governance concepts the
+   profiles check — without breaking the existing rich-`Model` path. The event-log is the
+   spine; validation becomes a capability over it.
+3. **Document both layers honestly** — discovery and validation are two intentional,
+   complementary subsystems, not old-vs-new. The fix for "surface clutter" is *clarity*, not
+   deletion.
+
+The bridge is a deliberate, staged effort (it touches the profile inputs and deserves its own
+focused, well-tested change), not a rushed rewrite.
+
+## Consequences
+
+**Positive**
+
+- The compliance capability — the product's differentiator — is preserved intact.
+- Once bridged, discovery feeds validation: you can ask "is this *discovered* model SR 26‑2
+  ready?" in one system.
+- The public surface is explained as two coherent layers rather than apologized for as clutter.
+
+**Negative (accepted)**
+
+- Two models of a "model" coexist (thin `ModelRef`, rich `Model`) until the bridge matures;
+  the mapping between them is an explicit layer to maintain.
+- "Concept-based" validation over event-log evidence is looser than rich typed checks, so the
+  bridge must be designed to preserve validation meaningfulness, not just presence-of-a-field.
+
+## Alternatives considered
+
+- **Delete v0.2 and clean `__all__` (rejected):** destroys the validation subsystem and the
+  regulatory wedge; a shallow read of a deep system.
+- **Immediately rewrite the profiles to be event-log-native (deferred):** correct direction,
+  but rushing it risks downgrading sophisticated validation to thin evidence-checks. Staged.
+- **Leave them disconnected, document the boundary (interim):** honest but leaves the two
+  halves of governance unable to talk; acceptable only as a way station to the bridge.
+
+See [Architecture](../concepts/architecture.md) and [Governance](../governance.md).
+
+
+---
+
+# source: adr/index.md
+
+# Design decisions
+
+Architecture Decision Records (ADRs) capture the choices that shape model-ledger: the
+context, the decision, the alternatives considered, and the consequences — including the
+costs accepted on purpose. They are short, dated, and immutable; a reversed decision gets
+a new ADR that supersedes the old one rather than an edit.
+
+| # | Decision | Status |
+|---|---|---|
+| [0001](0001-event-log-not-a-registry.md) | Model the inventory as an event log, not a registry | Accepted |
+| [0002](0002-everything-is-a-datanode.md) | Everything is a DataNode; the graph builds itself | Accepted |
+| [0003](0003-agents-first.md) | Agents are the primary interface; the SDK is tool-shaped | Accepted |
+| [0004](0004-framework-agnostic.md) | Framework-agnostic core; regulations are pluggable profiles | Accepted |
+| [0005](0005-storage-agnostic.md) | Storage-agnostic via the LedgerBackend protocol | Accepted |
+| [0006](0006-discovery-and-validation-subsystems.md) | Discovery and validation are two subsystems; bridge, don't delete | Accepted |
+
+The narrative that ties these together is the [Architecture](../concepts/architecture.md) page.
+
+
+---
+
+# source: guides/agents.md
+
+# Agents (MCP)
+
+model-ledger is built agents-first. The Python SDK and REST API are first-class, but
+the surface we optimize for is the **MCP server** — because the most natural way to
+ask *"which high-risk models changed this week and haven't been validated?"* is to
+just ask.
+
+## Connect it
+
+```bash
+pip install "model-ledger[mcp]"
+
+# Claude Code (one time). Drop --demo to start empty; add a backend to persist.
+claude mcp add model-ledger -- model-ledger mcp --demo
+claude mcp add model-ledger -- model-ledger mcp --backend sqlite --path ./inventory.db
+```
+
+The server speaks stdio and works with any MCP client (Claude Desktop, Goose, Cursor).
+Point it at a remote deployment with `--backend http --path https://your-ledger:8000`,
+and the tools call that REST API directly.
+
+## The eight tools
+
+Each tool is a plain function with Pydantic I/O, designed per
+[Anthropic's tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents) —
+consolidated verbs, not a sprawl of endpoints.
+
+| Tool | What the agent uses it for |
+|------|----------------------------|
+| **`discover`** | Bulk-import models from inline dicts or a JSON file |
+| **`record`** | Register a model (`event="registered"`) or append any event to its history |
+| **`investigate`** | Deep-dive one model — identity, recent events, upstream/downstream deps, group memberships |
+| **`query`** | Search & filter the inventory (text + `platform`/`model_type`/`owner`/`status`, paginated) |
+| **`trace`** | Walk the dependency graph — `upstream`, `downstream`, or `both` |
+| **`changelog`** | What changed across the whole inventory in a time range (defaults to last 7 days) |
+| **`tag`** | Create or move a named pointer (`production`, `latest-validated`) to a model's latest snapshot |
+| **`list_tags`** | List the tags on a model |
+
+And three **resources** — read-only orientation an agent can pull without a tool call:
+
+| Resource | Contents |
+|----------|----------|
+| `ledger://overview` | Model count, event count, type breakdown |
+| `ledger://schema` | JSON Schema for every tool's I/O — the agent learns the contract |
+| `ledger://backends` | Which backend is active |
+
+## A worked conversation
+
+What a multi-tool exchange actually looks like under the hood:
+
+> **You:** Anything risky change this week?
+
+```json
+// changelog(since="2026-06-01")
+{ "events": [
+  {"model_name": "fraud_scoring", "event_type": "retrained", "timestamp": "2026-06-03T14:11Z"},
+  {"model_name": "aml_threshold_rule", "event_type": "threshold_changed", "timestamp": "2026-06-04T09:02Z"}
+], "total": 2 }
+```
+
+> **Claude:** Two changes. `fraud_scoring` was retrained, and `aml_threshold_rule`'s
+> threshold changed. Want the blast radius of either?
+>
+> **You:** The threshold rule — what depends on it?
+
+```json
+// trace(name="aml_threshold_rule", direction="downstream")
+{ "nodes": [
+  {"name": "sar_queue", "depth": 1, "relationship": "depends_on"},
+  {"name": "compliance_dashboard", "depth": 2, "relationship": "depends_on"}
+] }
+```
+
+> **Claude:** It feeds `sar_queue` directly and `compliance_dashboard` one hop further.
+> Let me check whether the rule has been validated since the change.
+
+```json
+// investigate(model_name="aml_threshold_rule", detail="full")
+{ "owner": "compliance-eng", "model_type": "heuristic", "tier": "high",
+  "recent_events": [{"event_type": "threshold_changed", "actor": "j.lee"}],
+  "validations": [] }
+```
+
+> **Claude:** ⚠️ `aml_threshold_rule` is tier **high**, changed yesterday by `j.lee`,
+> feeds the SAR queue — and has **no validation recorded since the change**. Worth
+> flagging to MRM.
+
+That chain — `changelog → trace → investigate` — is the whole point: the agent reasons
+over the event log, not a static table.
+
+## Discovering at scale
+
+The `discover` tool imports inline model lists, a JSON file, or a config-drivable connector:
+
+```json
+// discover(source_type="inline", models=[{"name": "...", "platform": "..."}])
+{ "added": 12, "skipped": 0, "links_created": 8 }
+
+// discover(source_type="connector", connector_name="rest",
+//          connector_config={"name": "mlflow", "url": "...", "items_path": "...", "name_field": "..."})
+{ "models_added": 40, "links_created": 12, "errors": [] }
+```
+
+!!! info "Which connectors an agent can run"
+    `rest` and `prefect` are pure-config connectors, so an agent can run them directly
+    through `discover`. `sql` and `github` need a live database connection or a parser
+    callable that can't be expressed as JSON — for those, `discover` returns a message in
+    the result's `errors` field pointing you to the SDK (see
+    [Connectors & discovery](connectors.md)). Connector problems come back as `errors`
+    rather than raising, so the agent always gets a usable response.
+
+## Your docs are an agent surface, too
+
+These docs publish [`/llms.txt`](../llms.txt) and [`/llms-full.txt`](../llms-full.txt),
+and every page is fetchable as raw Markdown by appending `.md` to its path. Point an
+IDE agent at them and it learns model-ledger without leaving the editor — fitting for a
+tool whose product is an MCP server.
+
+
+---
+
+# source: guides/backends.md
+
+# Choosing a backend
+
+Storage is a `LedgerBackend` protocol, so the choice is one line and never leaks into
+your code. Start simple; upgrade when you need scale.
+
+| Backend | Use it for | One-liner |
+|---------|-----------|-----------|
+| **In-memory** | Tests, demos, throwaway exploration | `Ledger()` |
+| **SQLite** | Local persistence, single user, zero infra | `Ledger.from_sqlite("inv.db")` |
+| **JSON files** | Git-friendly, human-readable, diff-able inventory | `Ledger(JsonFileLedgerBackend("./inv"))` |
+| **Snowflake** | Production, org-scale, shared truth | `Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")` |
+| **HTTP** | Talk to a remote model-ledger REST service | `Ledger(HttpLedgerBackend(url))` |
+
+```python
+from model_ledger import Ledger
+from model_ledger.backends.json_files import JsonFileLedgerBackend
+from model_ledger.backends.http import HttpLedgerBackend
+
+Ledger()                                                  # in-memory
+Ledger.from_sqlite("./inventory.db")                      # SQLite
+Ledger(JsonFileLedgerBackend("./inventory"))              # JSON files
+Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")     # Snowflake
+Ledger(HttpLedgerBackend("https://model-ledger:8000"))    # remote REST
+```
+
+## JSON files are git-friendly
+
+The default JSON layout is meant to be inspected, diffed, and version-controlled —
+your inventory as plain text:
+
+```
+inventory/
+├── models/
+│   ├── fraud_scoring.json
+│   └── churn_predictor.json
+├── snapshots/
+│   ├── a1b2c3d4.json
+│   └── e5f6g7h8.json
+└── tags/
+    └── {model_hash}/production.json
+```
+
+## Serving and the CLI
+
+The CLI launches either agent or HTTP surfaces over any backend:
+
+```bash
+model-ledger serve --backend sqlite --path ./inventory.db --port 8000
+model-ledger mcp   --backend snowflake --schema DB.MODEL_LEDGER
+```
+
+Snowflake reads credentials from the environment (`SNOWFLAKE_ACCOUNT`,
+`SNOWFLAKE_USER`, and either `SNOWFLAKE_PASSWORD` or
+`SNOWFLAKE_AUTHENTICATOR=externalbrowser` for SSO). Install the extra first:
+`pip install "model-ledger[snowflake]"`.
+
+## Bring your own
+
+Anything that satisfies the `LedgerBackend` protocol works — Postgres, DynamoDB, a
+graph DB. Implement the protocol methods and pass an instance to `Ledger(...)`. See the
+[API reference](../reference/index.md) for the protocol surface.
+
+To make your backend resolvable by name from the CLI (`--backend <name>`) without any
+change to the core, register it under the `model_ledger.backends` **entry point** in your
+package — the storage-agnostic extension contract from
+[ADR 0005](../adr/0005-storage-agnostic.md):
+
+```toml
+# your package's pyproject.toml
+[project.entry-points."model_ledger.backends"]
+postgres = "my_package:PostgresBackend"
+```
+
+model-ledger discovers it and constructs it with the connection string if one is given
+(`PostgresBackend(path)`), otherwise with no arguments:
+
+```bash
+model-ledger serve --backend postgres --path "postgresql://..."
+```
+
+
+---
+
+# source: guides/cli.md
+
+# CLI
+
+Install the CLI extra, then `model-ledger --help` lists everything:
+
+```bash
+pip install "model-ledger[cli]"
+model-ledger --help
+```
+
+The CLI has two jobs: **launch the agent and HTTP surfaces** (the bridge to the rest of
+this documentation), and **work with a local inventory** from the terminal.
+
+## Launch a surface
+
+These serve the [Ledger](../reference/index.md) over any [backend](backends.md) — in-memory,
+SQLite, JSON, Snowflake, or a remote HTTP service.
+
+=== "MCP (for agents)"
+
+    ```bash
+    model-ledger mcp                                       # in-memory
+    model-ledger mcp --demo                                # sample inventory
+    model-ledger mcp --backend sqlite --path ./inv.db      # persistent
+    model-ledger mcp --backend snowflake --schema DB.MODEL_LEDGER
+    model-ledger mcp --backend http --path https://model-ledger.internal:8000
+    ```
+
+=== "REST API"
+
+    ```bash
+    model-ledger serve --demo --port 8000
+    # → OpenAPI docs at http://localhost:8000/docs
+    ```
+
+`--backend` accepts `memory` · `sqlite` · `json` · `snowflake` · `http`; `--path` is the
+file path (sqlite/json) or URL (http); Snowflake reads credentials from the environment
+(see [Choosing a backend](backends.md)).
+
+## Work with a local inventory
+
+These commands operate on a local file-based inventory (`--db`, default `inventory.db`
+or `$MODEL_LEDGER_DB`) and render as a table or `--format json`.
+
+| Command | What it does |
+|---|---|
+| `model-ledger list` | List registered models |
+| `model-ledger show <name>` | Show one model's details and versions |
+| `model-ledger validate <name> --profile <p>` | Check a model against a compliance profile (`sr_11_7`, `eu_ai_act`, `nist_ai_rmf`) |
+| `model-ledger audit-log <name>` | Print the model's audit trail |
+| `model-ledger export <name> --output <dir>` | Export an audit pack |
+| `model-ledger introspect <artifact> --allow-pickle` | Extract algorithm/features from a fitted model file |
+
+```bash
+model-ledger list --format json
+model-ledger validate credit_scorecard --profile sr_11_7
+model-ledger audit-log credit_scorecard
+```
+
+!!! info "Which command for which surface"
+    `mcp` and `serve` expose the full [event-log Ledger](../concepts/snapshot.md) — the one
+    the [SDK](../quickstart.md), [agents](agents.md), and [REST API](backends.md) all share.
+    Use them to point Claude or a dashboard at your inventory. The `validate` profiles map
+    to the frameworks in the [Governance guide](../governance.md).
+
+
+---
+
+# source: guides/connectors.md
+
+# Connectors & discovery
+
+A connector emits `DataNode`s from a source system. Add them to the ledger and call
+`connect()` — the cross-platform graph assembles itself from port matching. Three
+factory connectors ship in core; anything else is a small protocol implementation.
+
+## SQL databases
+
+```python
+from model_ledger import Ledger, sql_connector
+
+ledger = Ledger.from_sqlite("./inventory.db")
+
+# Simple: read a registry table
+models = sql_connector(
+    name="model_registry",
+    connection=my_db,
+    query="SELECT name, owner, status FROM ml_models WHERE active = true",
+    name_column="name",
+)
+
+# Advanced: auto-parse SQL to extract table dependencies
+etl_jobs = sql_connector(
+    name="etl_scheduler",
+    connection=my_db,
+    query="SELECT job_name, raw_sql, cron FROM scheduled_jobs",
+    name_column="job_name",
+    sql_column="raw_sql",   # FROM/JOIN → inputs, INSERT/CREATE → outputs
+)
+
+ledger.add(models.discover())
+ledger.add(etl_jobs.discover())
+ledger.connect()            # links ETL outputs to model inputs automatically
+```
+
+## REST APIs
+
+Works with MLflow, SageMaker, Vertex AI, or any JSON API:
+
+```python
+from model_ledger import rest_connector
+
+ml_models = rest_connector(
+    name="mlflow",
+    url="https://mlflow.internal/api/2.0/mlflow/registered-models/list",
+    headers={"Authorization": "Bearer ..."},
+    items_path="registered_models",
+    name_field="name",
+)
+ledger.add(ml_models.discover())
+```
+
+## GitHub repos (pipelines-as-code)
+
+Discover Airflow DAGs, dbt projects, or scoring pipelines from config files:
+
+```python
+from model_ledger import github_connector
+
+pipelines = github_connector(
+    name="ml_pipelines",
+    repos=["myorg/ml-scoring"],
+    token="ghp_...",
+    project_path="projects",
+    config_file="deploy.yaml",
+    parser=my_yaml_parser,   # (project_name, file_content) -> DataNode
+)
+ledger.add(pipelines.discover())
+```
+
+## Custom connectors
+
+Implement the `SourceConnector` protocol — a `name` and a `discover()` returning
+`DataNode`s — for anything the factories don't cover:
+
+```python
+from model_ledger import DataNode
+
+class SageMakerConnector:
+    name = "sagemaker"
+
+    def discover(self) -> list[DataNode]:
+        endpoints = boto3.client("sagemaker").list_endpoints()["Endpoints"]
+        return [
+            DataNode(ep["EndpointName"], platform="sagemaker",
+                     outputs=[ep["EndpointName"]],
+                     metadata={"status": ep["EndpointStatus"]})
+            for ep in endpoints
+        ]
+
+ledger.add(SageMakerConnector().discover())
+ledger.connect()
+```
+
+!!! tip "Every connector is a growth event"
+    Each new connector extends the discovery surface — a node in your warehouse links
+    to a model in MLflow links to a queue in your alerting system, with no shared ID
+    scheme. That's how one graph spans every platform.
+
+## Recurring discovery
+
+Run connectors on a schedule (cron, Airflow, Prefect) writing to a shared backend.
+`add()` is idempotent — it content-hashes nodes and skips unchanged ones — and a
+`last_seen` timestamp is updated every run, so you can detect models that have gone
+silent. See the recipe: [Discover from a SQL registry](../recipes/discover-sql.md).
+
+
+---
+
+# source: concepts/architecture.md
+
+# Architecture
+
+This page is the *why*. For the API, see the [Reference](../reference/index.md); for the
+record of specific decisions, the [Design decisions](../adr/index.md).
+
+model-ledger is built on four load-bearing choices. Each was made against a real
+alternative, and each carries a cost we accepted on purpose.
+
+## The shape
+
+```mermaid
+graph TB
+    subgraph consumers ["Consumers"]
+        direction LR
+        A["Agents<br/><small>MCP</small>"] ~~~ R["Frontends<br/><small>REST</small>"] ~~~ S["Scripts<br/><small>SDK</small>"] ~~~ C["CLI"]
+    end
+    subgraph protocol ["Agent protocol — consolidated tools"]
+        direction LR
+        T["discover · record · investigate · query · trace · changelog · tag"]
+    end
+    subgraph sdk ["Ledger SDK (tool-shaped)"]
+        L["register · record · add · connect · trace · history · inventory_at · composites"]
+    end
+    subgraph sources ["Discovery"]
+        direction LR
+        CO["SourceConnector protocol<br/><small>sql · rest · github · yours</small>"]
+    end
+    subgraph storage ["Storage"]
+        direction LR
+        B["LedgerBackend protocol<br/><small>memory · sqlite · json · snowflake · http</small>"]
+    end
+    consumers --> protocol --> sdk
+    sdk --> sources
+    sdk --> storage
+    classDef ink fill:#1c1a17,color:#f7f3ec,stroke:#000;
+    classDef ox fill:#efe8da,stroke:#7a1a1a,color:#1c1a17;
+    class protocol ink;
+```
+
+The consumers are interchangeable because they all bottom out in the same tool-shaped
+SDK. Discovery and storage are both *protocols*, so the core stays tiny and the ecosystem
+extends it without forking.
+
+## 1. The inventory is an event log, not a registry
+
+A registry stores *current state* and overwrites it. model-ledger stores *what happened*
+and never overwrites anything: a model is an identity ([`ModelRef`](snapshot.md)), and
+every change is an immutable, content-addressed [`Snapshot`](snapshot.md).
+
+**Why.** The question a governance regime actually asks is *"show me the complete history
+of every change, approval, and validation"* — and *"what was true on this past date?"* A
+mutable registry structurally cannot answer the second question; an append-only log
+answers both for free, and content-addressing makes the chain tamper-evident.
+
+**The cost we accepted.** More storage, and reconstruction (`inventory_at`) is a replay
+rather than a row read. We trade write-time simplicity for an audit trail that can't be
+quietly edited — the right trade for a system of record. → [ADR 0001](../adr/0001-event-log-not-a-registry.md)
+
+## 2. Everything is a DataNode
+
+An ML model, a heuristic rule, an ETL job, and an alert queue are the same shape: each
+consumes some inputs and produces some outputs. So they're one type —
+[`DataNode`](datanode.md) with typed ports — and the dependency graph assembles itself
+when an output port name matches an input port name.
+
+**Why.** Discovery scales only if connectors stay dumb. A connector emits nodes with
+their ports and knows nothing about the rest of the graph; the cross-platform edges
+(an ETL job in your warehouse → a model in MLflow → a queue in your alerting system)
+fall out of port matching, with no shared ID scheme to maintain.
+
+**The cost we accepted.** Two models can legitimately write a table with the same name.
+Bare names would over-link, so `DataPort` carries optional schema discriminators to keep
+edges precise. We rejected per-platform model *types* and a fixed metadata schema — both
+too rigid to span platforms. → [ADR 0002](../adr/0002-everything-is-a-datanode.md)
+
+## 3. Agents are the primary interface
+
+The SDK is *tool-shaped*: each method maps to one consolidated agent tool, exposed
+identically over [MCP](../guides/agents.md) and [REST](../guides/backends.md). The verb
+set is deliberately small (`discover`, `record`, `investigate`, `query`, `trace`,
+`changelog`, `tag`) rather than a sprawl of endpoints.
+
+**Why.** The most natural way to ask *"which high-risk models changed this week and
+haven't been validated?"* is to ask. Designing for the agent first (per
+[Anthropic's tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents))
+makes the SDK and REST surfaces cleaner as a side effect — consolidated, orthogonal, hard
+to misuse.
+
+**The cost we accepted.** Fewer, broader tools mean a single call does more, which is a
+worse fit for fine-grained REST conventions. We optimize for the agent's working memory
+over endpoint granularity. → [ADR 0003](../adr/0003-agents-first.md)
+
+## 4. Framework-agnostic core, pluggable everything
+
+Storage, discovery, introspection, and compliance are all `@runtime_checkable` Protocols
+discovered via entry points. Regulations live in **profiles** — a plugin layer — not in
+the core. The core depends only on `httpx` + `pydantic`.
+
+**Why.** model-ledger is an inventory for *any* organization with deployed models, not a
+single-regulation tool. Keeping regulations as a thin, swappable layer means a renumbered
+rule (SR 11‑7 → SR 26‑2) is a profile change, not a core change — see
+[Governance](../governance.md). The tiny core is also what lets a downstream package add
+org-specific connectors and auth without touching it. → [ADR 0004](../adr/0004-framework-agnostic.md) · [ADR 0005](../adr/0005-storage-agnostic.md)
+
+**The cost we accepted.** `record()` takes a schema-free `payload`; envelope validation is
+the caller's (or a profile's) responsibility. We trade a rigid schema for the freedom to
+record whatever a platform actually has.
+
+## What model-ledger is *not*
+
+Stating the boundary is part of the design:
+
+- **Not a feature store or a serving layer.** It inventories and relates models; it does
+  not store features or serve predictions.
+- **Not a monitoring/metrics system.** It records *that* a validation or retrain happened
+  (as an event); it doesn't compute drift or accuracy.
+- **Discovery is point-in-time, not streaming.** Connectors run on a schedule and snapshot
+  what they find; `last_seen` lets you detect models that have gone silent, but the graph
+  is as fresh as the last sync.
+- **Connectors that need live credentials run from the SDK, not the agent.** `rest` and
+  `prefect` are pure-config and run through the `discover` tool; `sql`/`github` need a live
+  connection or a callable and are driven from the [SDK](../guides/connectors.md). The
+  agent gets an actionable error, never a crash.
+
+## Where to go next
+
+- The primitives, in three ideas → [Concepts](index.md)
+- The guarantees the event log provides → [Snapshots & the event log](snapshot.md)
+- The record of each decision and its alternatives → [Design decisions](../adr/index.md)
+
+
+---
+
+# source: concepts/composite.md
+
+# Composites
+
+A regulator doesn't approve "a SQL job." They approve a **Credit Decision System**.
+But that system is really a scorecard, some policy rules, and an ETL pipeline — each
+of which deserves its own governance.
+
+A **composite** is the business-level entity that aggregates technical components.
+Critically, a member *is itself a model* — so it has its own owner, history, and
+validation. Composites are the layer no plain registry or catalog models.
+
+## Register a group and its members
+
+`register_group()` creates the composite and links each member with the
+`member_of` relationship:
+
+```python
+from model_ledger import Ledger
+ledger = Ledger.from_sqlite("./inventory.db")
+
+group = ledger.register_group(
+    name="Credit Scorecard",
+    owner="risk-team",
+    model_type="ml_model",
+    tier="high",
+    purpose="Credit risk scoring pipeline",
+    members=["feature_pipeline", "scoring_model", "alert_queue"],
+    actor="system",
+)
+```
+
+```mermaid
+graph TD
+    G["Credit Scorecard<br/><small>composite · tier: high</small>"]
+    G --- M1["feature_pipeline"]
+    G --- M2["scoring_model"]
+    G --- M3["alert_queue"]
+    classDef ink fill:#1c1a17,color:#f7f3ec,stroke:#000;
+    classDef ox fill:#efe8da,stroke:#7a1a1a,color:#1c1a17;
+    class G ink; class M1,M2,M3 ox;
+```
+
+## Membership is an event, too
+
+Add and remove members over time — each change is recorded as a snapshot, so you can
+ask *who belonged to this system on any past date*:
+
+```python
+ledger.add_member("Credit Scorecard", "challenger_model", role="challenger", actor="risk-team")
+ledger.remove_member("Credit Scorecard", "scoring_model", actor="risk-team")
+
+ledger.members("Credit Scorecard")   # current members (replayed from the event log)
+ledger.groups("scoring_model")       # which composites a model belongs to
+
+from datetime import datetime
+ledger.membership_at("Credit Scorecard", datetime(2025, 12, 31))  # membership as of a date
+```
+
+## Roll-up view
+
+`composite_summary()` aggregates a composite and its members into a single governance
+view — tiers, statuses, open observations, and validation state across the whole
+system:
+
+```python
+summary = ledger.composite_summary("Credit Scorecard")
+```
+
+This is what makes composites the **primary inventory entry** for governance: an
+examiner reads ~one entry per business system, and every technical component beneath it
+remains individually traceable.
+
+!!! note "Observations & validations"
+    Composites also carry governance events — `record_observation()`,
+    `resolve_observation()`, and `record_validation()` — so findings and validation
+    outcomes live in the same immutable log as everything else. See the
+    [API reference](../reference/index.md).
+
+
+---
+
+# source: concepts/datanode.md
+
+# DataNode & the graph
+
+The core insight: **a model, a rule, an ETL job, and an alert queue are the same
+shape.** Each consumes some things and produces others. So they're all one type —
+`DataNode` — and the dependency graph falls out of matching what they produce to
+what others consume.
+
+## A node is what it reads and writes
+
+```python
+from model_ledger import DataNode
+
+DataNode(
+    name="fraud_scorer",
+    platform="ml",
+    inputs=["customer_features"],   # what it consumes
+    outputs=["risk_scores"],        # what it produces
+    metadata={"framework": "xgboost", "owner": "risk-team"},
+)
+```
+
+`inputs` and `outputs` are **ports** — the names of the data flowing in and out. A
+plain string becomes a [`DataPort`](#dataport-precision) automatically.
+
+## The graph builds itself
+
+You never draw edges. You call `connect()`, and every place an output port name
+matches an input port name becomes a dependency:
+
+```python
+from model_ledger import Ledger, DataNode
+
+ledger = Ledger()
+ledger.add([
+    DataNode("segmentation", platform="etl", outputs=["customer_segments"]),
+    DataNode("fraud_scorer", platform="ml",  inputs=["customer_segments"], outputs=["risk_scores"]),
+    DataNode("fraud_alerts", platform="alerting", inputs=["risk_scores"]),
+])
+ledger.connect()
+
+ledger.trace("fraud_alerts")     # ['segmentation', 'fraud_scorer', 'fraud_alerts']
+ledger.upstream("fraud_alerts")  # everything that feeds it
+ledger.downstream("segmentation")# everything that depends on it
+```
+
+```mermaid
+graph LR
+    A["segmentation"] -->|customer_segments| B["fraud_scorer"] -->|risk_scores| C["fraud_alerts"]
+    classDef n fill:#efe8da,stroke:#7a1a1a,color:#1c1a17;
+    class A,B,C n;
+```
+
+This is why discovery scales: a connector just emits `DataNode`s with their ports,
+and the cross-platform graph assembles itself — an ETL job in your warehouse links to
+a model in MLflow links to a queue in your alerting system, with no shared ID scheme.
+
+## DataPort precision
+
+When two models legitimately write a table with the same name, a bare port name would
+collide. `DataPort` carries optional schema to disambiguate — edges only form when the
+schema matches too:
+
+```python
+from model_ledger import DataNode, DataPort
+
+DataNode("check_rules", outputs=[DataPort("alerts", model_name="checks")])
+DataNode("card_rules",  outputs=[DataPort("alerts", model_name="cards")])
+DataNode("check_queue", inputs=[DataPort("alerts", model_name="checks")])
+# check_queue connects to check_rules only — model_name must match.
+```
+
+Port matching is case-insensitive, and schema values support `%` wildcards.
+
+## From node to governed model
+
+A `DataNode` gives you structure. To give a node an **identity and history** —
+owner, risk tier, purpose, and an audit trail — you
+[`register()`](../reference/index.md) it as a [`ModelRef`](snapshot.md) and
+[`record()`](snapshot.md) events against it. Discovery and registration are two views
+of the same inventory: the graph (what connects to what) and the ledger (what each
+thing *is* and how it changed).
+
+[Next: Snapshots & the event log :octicons-arrow-right-24:](snapshot.md)
+
+
+---
+
+# source: concepts/guarantees.md
+
+# Guarantees & invariants
+
+A system of record is only as trustworthy as the properties it can promise. These are
+model-ledger's — stated precisely, and **property-tested in CI** against randomized event
+sequences (not just examples). Each guarantee below names the test that enforces it in
+[`tests/test_invariants.py`](https://github.com/block/model-ledger/blob/main/tests/test_invariants.py).
+
+## 1. Append-only
+
+Snapshots are never deleted or modified. Recording an event only ever *appends*; the
+history of a model never shrinks, and every prior snapshot persists byte-for-byte.
+
+- **Contract:** for any sequence of `record()` calls, `len(history)` is non-decreasing and
+  every previously seen `snapshot_hash` remains present and unchanged.
+- **Enforced by:** `test_history_is_append_only`.
+
+## 2. Content-addressed identity (tamper-evident)
+
+A snapshot's hash is derived from its content — the model identity, the timestamp, and the
+payload. Identical content always yields the same hash; any difference in content yields a
+different hash. You cannot alter a recorded payload after the fact without the hash
+diverging from what was stored.
+
+- **Contract:** `snapshot_hash` is a deterministic function of `(model_hash, timestamp,
+  payload)`; equal content ⇒ equal hash, differing content ⇒ differing hash.
+- **Enforced by:** `test_snapshot_hash_is_deterministic_and_content_addressed`.
+
+!!! note "Scope, stated honestly"
+    The hash content-addresses each snapshot individually over `(model_hash, timestamp,
+    payload)`. It is **not yet** a chained Merkle hash that folds in `parent_hash`,
+    `actor`, and `event_type` — so the *sequence* is ordered and individually
+    content-addressed, but not cryptographically linked end-to-end. Strengthening the hash
+    to chain the full event is a deliberate future change (it alters existing hashes, so it
+    will land as its own decision record), not an accidental gap.
+
+## 3. Ordered history
+
+`history()` returns a model's snapshots newest-first by timestamp — a stable, total order
+you can rely on for "what happened, in what sequence."
+
+- **Contract:** the returned list is sorted by `timestamp`, descending.
+- **Enforced by:** `test_history_is_ordered_newest_first`.
+
+## 4. Point-in-time reconstruction
+
+Because nothing is overwritten, `inventory_at(t)` reconstructs the inventory as it stood at
+time `t`: a model appears if and only if it existed at `t`.
+
+- **Contract:** `inventory_at(t)` includes a model iff it was created at or before `t` (and
+  its latest state as of `t` is not a removal).
+- **Enforced by:** `test_point_in_time_reflects_only_models_that_existed`.
+
+---
+
+These four are the foundation the [event-log architecture](architecture.md) trades for —
+see [ADR 0001](../adr/0001-event-log-not-a-registry.md). If a change to the SDK ever broke
+one of them, the property tests would fail the build before it shipped.
+
+
+---
+
+# source: concepts/index.md
+
+# Concepts
+
+model-ledger is small on purpose. Three ideas carry the whole system.
+
+<div class="grid cards" markdown>
+
+-   :material-graph-outline:{ .lg } &nbsp;__[DataNode & the graph](datanode.md)__
+
+    ---
+
+    Everything is a `DataNode` with typed input/output ports. Declare what a node
+    reads and writes; the dependency graph builds itself from port matching.
+
+-   :material-history:{ .lg } &nbsp;__[Snapshot & the event log](snapshot.md)__
+
+    ---
+
+    A model is an identity (`ModelRef`). Everything that happens to it is an
+    immutable, content-addressed `Snapshot`. The inventory is an append-only log.
+
+-   :material-layers-outline:{ .lg } &nbsp;__[Composites](composite.md)__
+
+    ---
+
+    Governed groups whose members are themselves models. A "credit decision system"
+    that rolls up its scorecard, policy rules, and ETL — each governed in its own right.
+
+</div>
+
+## How they fit together
+
+```mermaid
+graph TB
+    subgraph identity ["Identity"]
+        REF["ModelRef<br/><small>name · owner · type · tier · purpose</small>"]
+    end
+    subgraph history ["History (append-only)"]
+        S1["Snapshot<br/><small>registered</small>"] --> S2["Snapshot<br/><small>retrained</small>"] --> S3["Snapshot<br/><small>validated</small>"]
+    end
+    subgraph graph ["Graph"]
+        N1["DataNode"] -->|port match| N2["DataNode"]
+    end
+    REF --- S1
+    REF -.is a node in.- N1
+    classDef ink fill:#1c1a17,color:#f7f3ec,stroke:#000;
+    classDef ox fill:#7a1a1a,color:#fff,stroke:#5a1010;
+    class REF ink; class S1,S2,S3 ox;
+```
+
+- **Identity** is the minimum a regulator needs: who owns it, what kind of model,
+  how risky, what it's for.
+- **History** is every change, immutable and ordered. You can ask the inventory what
+  it looked like on any past date.
+- **Graph** is how models relate. Declare ports; dependencies follow.
+
+A fourth idea — **compliance profiles** (SR 11-7, EU AI Act, NIST AI RMF) — reads this
+data to check completeness. It's a pluggable layer, not part of the core model; see the
+[API reference](../reference/index.md).
+
+
+---
+
+# source: concepts/snapshot.md
+
+# Snapshots & the event log
+
+Most registries store *current state* and overwrite it. model-ledger stores *what
+happened* and never overwrites anything. The inventory is an **append-only event
+log** — which is exactly the shape an auditor asks for.
+
+## Identity vs. history
+
+A model splits into two things:
+
+| | What it is | Mutable? |
+|---|---|---|
+| [`ModelRef`](../reference/index.md) | The regulatory identity: `name`, `owner`, `model_type`, `tier`, `purpose`, `status` | A stable identity (`model_hash`) |
+| [`Snapshot`](../reference/index.md) | One immutable observation: an event with a `timestamp`, `actor`, `event_type`, and a free-form `payload` | Never — content-addressed |
+
+```python
+from model_ledger import Ledger
+ledger = Ledger.from_sqlite("./inventory.db")
+
+ref = ledger.register(
+    name="fraud_scoring", owner="risk-team",
+    model_type="ml_model", tier="high",
+    purpose="Real-time fraud detection",
+)
+ref.model_hash   # stable identity, derived from name + owner + created_at
+```
+
+## Every change is an event
+
+`record()` appends a Snapshot. The `payload` is **schema-free** — record whatever
+matters, no migrations:
+
+```python
+ledger.record("fraud_scoring", event="retrained", actor="ml-pipeline",
+              payload={"accuracy": 0.94, "auc": 0.98, "features_added": ["velocity_24h"]})
+
+ledger.record("fraud_scoring", event="validated", actor="mrm-team",
+              payload={"profile": "sr_11_7", "validator": "mrm-team", "result": "pass"})
+
+for s in ledger.history("fraud_scoring"):
+    print(s.timestamp, s.event_type, s.payload)
+```
+
+Each Snapshot is **content-addressed**: its `snapshot_hash` is derived from the model
+hash, the timestamp, and the payload. Identical content can't be silently duplicated,
+and the chain is tamper-evident.
+
+```mermaid
+graph LR
+    R["ModelRef<br/><small>fraud_scoring</small>"]
+    R --> A["registered"] --> B["retrained<br/><small>acc 0.94</small>"] --> C["validated<br/><small>sr_11_7 · pass</small>"]
+    classDef ink fill:#1c1a17,color:#f7f3ec,stroke:#000;
+    classDef ox fill:#7a1a1a,color:#fff,stroke:#5a1010;
+    class R ink; class A,B,C ox;
+```
+
+## Point-in-time reconstruction
+
+Because nothing is overwritten, you can ask the inventory what it looked like on any
+date — the answer an examiner actually wants:
+
+```python
+from datetime import datetime, timezone
+
+inventory = ledger.inventory_at(datetime.now(timezone.utc))
+# pass any datetime — a past date reconstructs the inventory as it stood then
+```
+
+See the recipe: [Point-in-time inventory](../recipes/point-in-time.md).
+
+## Tags: mutable pointers over an immutable log
+
+The log is immutable, but you still want moving labels like `production` or
+`latest-validated`. A [`Tag`](../reference/index.md) is a named pointer to a specific
+Snapshot; moving it forward is itself recorded.
+
+```python
+ledger.tag("fraud_scoring", "production")   # points at the current latest snapshot
+```
+
+[Next: Composites :octicons-arrow-right-24:](composite.md)
+
+
+---
+
+# source: reference/index.md
+
+# API Reference
+
+Everything below is generated from the source at build time with
+[mkdocstrings](https://mkdocstrings.github.io/) + [Griffe](https://mkdocstrings.github.io/griffe/).
+It reflects the exact installed version — there is no hand-maintained copy to fall out
+of date.
+
+## Ledger
+
+The one object you'll use most. Every method is tool-shaped — usable directly, over
+REST, or as an MCP tool.
+
+::: model_ledger.Ledger
+    options:
+      show_root_heading: false
+      heading_level: 3
+
+## Data models
+
+The event-log primitives. A model is a `ModelRef`; every change is a `Snapshot`; a
+`Tag` is a mutable pointer.
+
+::: model_ledger.ModelRef
+    options:
+      heading_level: 3
+::: model_ledger.Snapshot
+    options:
+      heading_level: 3
+::: model_ledger.Tag
+    options:
+      heading_level: 3
+
+## Graph
+
+::: model_ledger.DataNode
+    options:
+      heading_level: 3
+::: model_ledger.DataPort
+    options:
+      heading_level: 3
+
+## Connectors
+
+Factory functions that emit `DataNode`s from external sources. See
+[Connectors & discovery](../guides/connectors.md) for usage.
+
+::: model_ledger.sql_connector
+    options:
+      heading_level: 3
+::: model_ledger.rest_connector
+    options:
+      heading_level: 3
+::: model_ledger.github_connector
+    options:
+      heading_level: 3
+
+## Introspection
+
+::: model_ledger.introspect
+    options:
+      heading_level: 3
+::: model_ledger.register_introspector
+    options:
+      heading_level: 3

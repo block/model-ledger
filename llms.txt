@@ -1,0 +1,49 @@
+# model-ledger
+
+> git for models — the open, agent-native source of truth that discovers every model, rule, and pipeline across all your platforms as one immutable graph.
+
+## Start here
+
+- [model-ledger](https://block.github.io/model-ledger/index.md): git for models — discover every model, rule, and pipeline across all your platforms as one immutable, queryable graph.
+- [Quickstart](https://block.github.io/model-ledger/quickstart.md): Install model-ledger and reach your first dependency trace in under a minute — no infrastructure, no credentials.
+
+## Concepts
+
+- [Concepts](https://block.github.io/model-ledger/concepts/index.md): The whole model in three ideas — the DataNode graph, the Snapshot event log, and Composites.
+- [Architecture](https://block.github.io/model-ledger/concepts/architecture.md): How model-ledger is designed and why — the event-log thesis, the one-abstraction graph, the agent-first surface, and the trade-offs behind each.
+- [Composites](https://block.github.io/model-ledger/concepts/composite.md): Governed groups whose members are themselves models — a business-level entity that rolls up its technical components, each governed in its own right.
+- [DataNode & the graph](https://block.github.io/model-ledger/concepts/datanode.md): Everything is a DataNode with typed ports. Declare inputs and outputs; the dependency graph builds itself.
+- [Guarantees & invariants](https://block.github.io/model-ledger/concepts/guarantees.md): The properties model-ledger guarantees — append-only history, content-addressed snapshots, ordered history, point-in-time reconstruction — each property-tested in CI.
+- [Snapshots & the event log](https://block.github.io/model-ledger/concepts/snapshot.md): A model is an identity; everything that happens to it is an immutable, content-addressed Snapshot. The inventory is an append-only log.
+
+## Guides
+
+- [Agents (MCP)](https://block.github.io/model-ledger/guides/agents.md): The MCP server is the product. Eight tools and three resources let any agent explore, register, and reason about your model inventory.
+- [Choosing a backend](https://block.github.io/model-ledger/guides/backends.md): Storage is storage-agnostic and one line to change — in-memory, SQLite, JSON files, Snowflake, or a remote HTTP API.
+- [CLI](https://block.github.io/model-ledger/guides/cli.md): The model-ledger command line — launch the MCP server or REST API over any backend, and work with a local inventory.
+- [Connectors & discovery](https://block.github.io/model-ledger/guides/connectors.md): Point factory connectors at your SQL databases, REST APIs, and GitHub repos to discover models automatically — or implement the SourceConnector protocol for anything else.
+
+## Recipes
+
+- [Recipes](https://block.github.io/model-ledger/recipes/index.md): Copy-paste solutions to real tasks — impact analysis, point-in-time inventory, scheduled discovery, and more.
+- [Recipe: Discover from a SQL registry](https://block.github.io/model-ledger/recipes/discover-sql.md): Point a connector at a database table and pull models into the ledger on a schedule, idempotently.
+- [Recipe: Impact analysis](https://block.github.io/model-ledger/recipes/impact-analysis.md): Before you deprecate or change a model, walk the dependency graph downstream to find everything it would break.
+- [Recipe: Point-in-time inventory](https://block.github.io/model-ledger/recipes/point-in-time.md): Reconstruct exactly which models were active, and in what state, on any past date — straight from the immutable event log.
+
+## Reference
+
+- [API Reference](https://block.github.io/model-ledger/reference/index.md): The public API, generated directly from the source docstrings — it can never drift from the installed version.
+
+## More
+
+- [Design decisions](https://block.github.io/model-ledger/adr/index.md): Architecture Decision Records — the load-bearing choices behind model-ledger, the alternatives weighed, and the costs accepted.
+- [ADR 0001 — Event log, not a registry](https://block.github.io/model-ledger/adr/0001-event-log-not-a-registry.md): Model the inventory as an append-only log of immutable snapshots rather than mutable current-state rows.
+- [ADR 0002 — Everything is a DataNode](https://block.github.io/model-ledger/adr/0002-everything-is-a-datanode.md): Represent models, rules, ETL, and queues with one typed-port node, and let the dependency graph assemble itself from port matching.
+- [ADR 0003 — Agents are the primary interface](https://block.github.io/model-ledger/adr/0003-agents-first.md): Design a small, consolidated, tool-shaped API for agents first; expose it identically over MCP, REST, and the SDK.
+- [ADR 0004 — Framework-agnostic core, pluggable profiles](https://block.github.io/model-ledger/adr/0004-framework-agnostic.md): Keep regulations out of the core; express them as a pluggable compliance-profile layer over a generic inventory.
+- [ADR 0005 — Storage-agnostic backends](https://block.github.io/model-ledger/adr/0005-storage-agnostic.md): Put all persistence behind one LedgerBackend protocol so the same code runs from in-memory to Snowflake.
+- [ADR 0006 — Discovery and validation are two subsystems](https://block.github.io/model-ledger/adr/0006-discovery-and-validation-subsystems.md): Recognize the event-log (discovery) and the rich governance model (validation) as complementary subsystems; bridge them additively rather than delete or rewrite either.
+- [Glossary](https://block.github.io/model-ledger/glossary.md): The vocabulary of model-ledger — DataNode, Snapshot, ModelRef, Composite, and the rest, in one place.
+- [Governance](https://block.github.io/model-ledger/governance.md): A complete, auditable, point-in-time model inventory — the durable building blocks every model-risk regime asks for, mapped to model-ledger primitives.
+- [includes/abbreviations.md](https://block.github.io/model-ledger/includes/abbreviations.md): DataNode: The core graph primitive — anything with typed input/output ports (model, rule, ETL, queue). DataPort: A named connection point on a DataNode; depe…
+- [Installation](https://block.github.io/model-ledger/installation.md): Install model-ledger and just the extras you need — SDK core is tiny; surfaces and backends are opt-in.

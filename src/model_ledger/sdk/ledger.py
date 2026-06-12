@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 from model_ledger.backends.ledger_protocol import LedgerBackend
+from model_ledger.core.enums import ModelStatus
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
@@ -27,6 +28,21 @@ class ConnectResult(TypedDict):
 
     links_created: int
     links_skipped: int
+
+
+def _normalize_status(raw: object) -> str | None:
+    """Coerce a connector-discovered status to its canonical ModelStatus value.
+
+    Returns None for absent or unrecognized values — "no opinion" — so callers
+    leave the stored status untouched. A connector that stops reporting status
+    must never regress an explicitly set status back to the default.
+    """
+    if not isinstance(raw, str):
+        return None
+    try:
+        return ModelStatus(raw).value
+    except ValueError:
+        return None
 
 
 # Events that are internal ledger bookkeeping or governance actions on the
@@ -347,6 +363,15 @@ class Ledger:
 
         Skips writing if the discovered payload is identical to the last snapshot
         (content-hash dedup). Preloads existing models in bulk to avoid per-node queries.
+
+        Recognized ``node.metadata`` keys map onto the model row: ``owner``,
+        ``model_type``/``node_type``/``type``, ``tier``, ``purpose``,
+        ``model_origin``, and ``status``. A discovered ``status`` (any
+        ``ModelStatus`` value, case-insensitive) is propagated to the model —
+        including already-registered models — so lifecycle changes detected at
+        the source (e.g. ``deprecated`` for an entity deleted upstream) reach
+        the model row on the next sync. An absent or unrecognized status leaves
+        the stored status unchanged.
         """
         import hashlib
         import json
@@ -377,6 +402,7 @@ class Ledger:
         added = 0
         skipped = 0
         for node in nodes:
+            node_status = _normalize_status(node.metadata.get("status"))
             ref = self.register(
                 name=node.name,
                 owner=node.metadata.get("owner") or "unknown",
@@ -387,6 +413,7 @@ class Ledger:
                 tier=node.metadata.get("tier") or "unclassified",
                 purpose=node.metadata.get("purpose") or "",
                 model_origin=node.metadata.get("model_origin") or "internal",
+                status=node_status or "active",
                 actor=f"connector:{node.platform}" if node.platform else "system",
             )
             payload = {
@@ -425,6 +452,13 @@ class Ledger:
             ).hexdigest()
             # Update last_seen on every run, even if unchanged
             ref.last_seen = datetime.now(timezone.utc)
+            # Propagate a discovered status onto the model row. register()
+            # returns existing refs unchanged, so a connector-derived status
+            # must be applied here for update_model() to persist it. This runs
+            # before the dedup check so the row self-corrects even when the
+            # snapshot is skipped as unchanged.
+            if node_status is not None and node_status != ref.status:
+                ref.status = node_status
             self._backend.update_model(ref)
 
             if existing_hashes.get(ref.model_hash) == content_hash:

@@ -32,9 +32,11 @@ class MockLedgerSession:
             return MockCollectResult([])
 
         if "MERGE INTO" in upper and ".MODELS " in upper:
-            # Handle batched MERGE with UNION ALL
+            # Handle batched MERGE with UNION ALL. The MATCHED branch of the
+            # real MERGE rewrites STATUS, so the mock applies last-write-wins
+            # per model_hash — same observable behavior.
             for m in re.finditer(
-                r"SELECT\s+'([^']+)'\s+AS\s+model_hash,\s+'([^']+)'\s+AS\s+name,\s+'([^']+)'\s+AS\s+owner,\s+'([^']+)'\s+AS\s+model_type,\s+'([^']+)'\s+AS\s+model_origin,\s+'([^']+)'\s+AS\s+tier",
+                r"SELECT\s+'([^']+)'\s+AS\s+model_hash,\s+'([^']+)'\s+AS\s+name,\s+'([^']+)'\s+AS\s+owner,\s+'([^']+)'\s+AS\s+model_type,\s+'([^']+)'\s+AS\s+model_origin,\s+'([^']+)'\s+AS\s+tier,\s+'([^']*)'\s+AS\s+purpose,\s+'([^']+)'\s+AS\s+status",
                 query,
                 re.DOTALL,
             ):
@@ -45,8 +47,8 @@ class MockLedgerSession:
                     "MODEL_TYPE": m.group(4),
                     "MODEL_ORIGIN": m.group(5),
                     "TIER": m.group(6),
-                    "PURPOSE": "",
-                    "STATUS": "active",
+                    "PURPOSE": m.group(7),
+                    "STATUS": m.group(8),
                     "CREATED_AT": datetime(2025, 1, 1, tzinfo=timezone.utc),
                 }
             return MockCollectResult([])
@@ -322,6 +324,101 @@ def test_flush_dedups_model_buffer_by_hash():
     assert seen_hashes.count(model.model_hash) == 1, (
         f"model written {seen_hashes.count(model.model_hash)}x to MERGE source, expected 1"
     )
+
+
+class TestStatusPropagationSQL:
+    """Connector-discovered status must land in the MODELS table via the MERGE.
+
+    Both flush MERGE paths SET STATUS on match, so once Ledger.add() assigns
+    ref.status, existing rows self-correct on the next sync. These tests drive
+    Ledger.add() end-to-end through the SQL MERGE path and assert the stored
+    row — not just the snapshot payload — carries the discovered status.
+    """
+
+    def _ledger(self, session):
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+        from model_ledger.sdk.ledger import Ledger
+
+        backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=session)
+        return Ledger(backend), backend
+
+    def test_new_model_status_reaches_models_table(self):
+        from model_ledger.graph.models import DataNode
+
+        session = MockLedgerSession()
+        ledger, backend = self._ledger(session)
+        ledger.add(
+            DataNode(
+                "fraud_scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        backend.flush()
+        ref = backend.get_model_by_name("fraud_scorer")
+        assert ref is not None
+        assert ref.status == "deprecated"
+
+    def test_existing_row_status_flip_rewrites_via_merge(self):
+        from model_ledger.graph.models import DataNode
+
+        session = MockLedgerSession()
+        ledger, backend = self._ledger(session)
+        ledger.add(DataNode("fraud_scorer", platform="ml_platform", outputs=["scores"]))
+        backend.flush()
+        assert backend.get_model_by_name("fraud_scorer").status == "active"
+
+        # A later sync (fresh SDK cache, rows re-read from the table) discovers
+        # the entity was deleted at the source and derives status=deprecated.
+        ledger2, backend2 = self._ledger(session)
+        ledger2.add(
+            DataNode(
+                "fraud_scorer",
+                platform="ml_platform",
+                outputs=["scores"],
+                metadata={"status": "deprecated"},
+            )
+        )
+        backend2.flush()
+        ref = backend2.get_model_by_name("fraud_scorer")
+        assert ref is not None
+        assert ref.status == "deprecated"
+
+    def test_status_parity_with_in_memory_backend(self):
+        """The same discovery sequence yields the same final status whether it
+        runs through the in-memory backend or the Snowflake SQL MERGE path."""
+        from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+        from model_ledger.graph.models import DataNode
+        from model_ledger.sdk.ledger import Ledger
+
+        # absent -> deprecated -> unknown (ignored) -> absent (kept)
+        sequence = [None, "deprecated", "not-a-status", None]
+
+        def final_status(backend):
+            for status in sequence:
+                metadata = {"status": status} if status is not None else {}
+                ledger = Ledger(backend)  # fresh SDK cache per sync
+                ledger.add(
+                    DataNode(
+                        "fraud_scorer",
+                        platform="ml_platform",
+                        outputs=["scores"],
+                        metadata=metadata,
+                    )
+                )
+                if hasattr(backend, "flush"):
+                    backend.flush()
+            ref = backend.get_model_by_name("fraud_scorer")
+            assert ref is not None
+            return ref.status
+
+        in_memory = final_status(InMemoryLedgerBackend())
+        snowflake = final_status(
+            SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=MockLedgerSession())
+        )
+        assert in_memory == snowflake == "deprecated"
 
 
 class FakeCompositeSummarySession:

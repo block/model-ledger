@@ -11,6 +11,8 @@ Invariants covered:
                          differing content yields a differing hash (tamper-evident).
   3. Ordered history   — history() returns snapshots newest-first by timestamp.
   4. Point-in-time     — inventory_at(t) reflects only models that existed at t.
+  5. Status propagation — a model's status equals the last valid status discovered
+                         by add(); absent or unknown statuses never regress it.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from hypothesis import strategies as st
 from model_ledger import Ledger
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 from model_ledger.core.ledger_models import Snapshot
+from model_ledger.graph.models import DataNode
 
 # Safe alphabets keep the focus on the invariants, not unicode-encoding edge cases.
 _TOKEN = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)
@@ -88,6 +91,34 @@ def test_history_is_ordered_newest_first(seq: list[tuple[str, dict]]) -> None:
         ledger.record("m", event=event, payload=payload, actor="actor")
     timestamps = [s.timestamp for s in ledger.history("m")]
     assert timestamps == sorted(timestamps, reverse=True)
+
+
+# Independent oracle for status propagation: the canonical form of every valid
+# discovered status. Anything else (unknown strings, empty, absent) is "no opinion".
+_CANONICAL_STATUS = {s: s for s in ("development", "review", "active", "deprecated", "retired")} | {
+    "ACTIVE": "active",
+    "Deprecated": "deprecated",
+    "RETIRED": "retired",
+}
+_DISCOVERED_STATUSES = st.lists(
+    st.one_of(st.none(), st.sampled_from([*_CANONICAL_STATUS, "", "not-a-status", "unknown"])),
+    max_size=8,
+)
+
+
+@settings(deadline=None, max_examples=40)
+@given(statuses=_DISCOVERED_STATUSES)
+def test_status_equals_last_valid_discovered_status(statuses: list[str | None]) -> None:
+    """add() propagates each valid discovered status to the model; absent or
+    unrecognized statuses leave it untouched (never regressing to the default)."""
+    ledger = _ledger()
+    expected = "active"
+    for raw in statuses:
+        metadata = {"status": raw} if raw is not None else {}
+        ledger.add(DataNode("m", platform="p", outputs=["t"], metadata=metadata))
+        expected = _CANONICAL_STATUS.get(raw, expected) if raw is not None else expected
+    if statuses:  # add() was called at least once, so the model exists
+        assert ledger.get("m").status == expected
 
 
 @settings(deadline=None, max_examples=30)

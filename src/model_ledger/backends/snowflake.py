@@ -7,12 +7,36 @@ SQL statements → ~50 batched statements).
 from __future__ import annotations
 
 import json
+import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
 BATCH_SIZE = 50
+
+# Snowflake error code raised when a session's auth token has idle-expired
+# ("Authentication token has expired"). This is the precise signal we react to.
+_AUTH_EXPIRED_ERRNO = 390114
+_AUTH_EXPIRED_MESSAGE = "authentication token has expired"
+
+
+def _is_auth_expiry_error(exc: BaseException) -> bool:
+    """True only for the Snowflake auth-token-expired error.
+
+    Matches on errno ``390114`` first (the authoritative signal) and falls back
+    to the canonical message text for drivers that surface the code only in the
+    string. Deliberately narrow: an unrelated ``ProgrammingError`` (bad SQL,
+    missing table, permission denied) must NOT look like an auth expiry, so we
+    never match on the exception type alone.
+    """
+    if getattr(exc, "errno", None) == _AUTH_EXPIRED_ERRNO:
+        return True
+    # Some driver/version combinations leave errno unset but embed the code and
+    # the canonical phrase in the message. Require BOTH to match conservatively.
+    text = (str(getattr(exc, "msg", "") or "") + " " + str(exc)).lower()
+    return str(_AUTH_EXPIRED_ERRNO) in text and _AUTH_EXPIRED_MESSAGE in text
 
 
 def _exec(session: Any, sql: str) -> list[dict[str, Any]]:
@@ -118,15 +142,42 @@ class SnowflakeLedgerBackend:
     is persisted, or use as a context manager.
 
     Tables: MODELS, SNAPSHOTS, TAGS in the given schema.
+
+    Reconnect-on-auth-expiry
+    ------------------------
+    A long-lived backend holds one Snowflake session. When that session's auth
+    token idle-expires, every subsequent statement fails with
+    ``ProgrammingError`` errno ``390114`` ("Authentication token has expired")
+    until the process restarts. Passing ``connection_factory`` lets the backend
+    self-heal: on a detected auth-expiry error it calls the factory to obtain a
+    fresh connection, swaps it in, and retries the *same* statement exactly
+    once. A second consecutive auth-expiry (or any other error) propagates.
+
+    Factory contract: ``connection_factory()`` must return a *ready-to-use*
+    connection — same account/user/auth and, where relevant, warehouse, role,
+    and current database as the original. The backend issues no session-setup
+    (``USE``) statements; it addresses every object with a fully-qualified
+    ``{schema}`` name, so the factory owns all session configuration. This
+    composes with — and does not replace — the driver's
+    ``client_session_keep_alive`` heartbeat: heartbeats reduce idle expiry but
+    cannot eliminate it (network blips, very long idle, a stalled heartbeat
+    thread), and this path is the backstop for the residual cases.
+
+    If only ``connection`` is given (no factory), behavior is unchanged: an
+    auth-expiry error propagates exactly as before, with no reconnect.
     """
 
     def __init__(
         self,
-        connection: Any,
+        connection: Any = None,
         schema: str = "MODEL_LEDGER",
         read_only: bool = False,
+        connection_factory: Callable[[], Any] | None = None,
     ) -> None:
-        self._session = connection
+        if connection is None and connection_factory is None:
+            raise ValueError("provide connection, connection_factory, or both")
+        self._connection_factory = connection_factory
+        self._session = connection if connection is not None else connection_factory()  # type: ignore[misc]
         self._schema = schema
         self._read_only = read_only
         parts = schema.split(".")
@@ -134,8 +185,51 @@ class SnowflakeLedgerBackend:
         self._schema_name = parts[1] if len(parts) > 1 else parts[0]
         self._model_buffer: list[ModelRef] = []
         self._snapshot_buffer: list[Snapshot] = []
+        # Serializes the connection swap so two threads can't both reconnect.
+        self._reconnect_lock = threading.Lock()
         if not read_only:
             self._ensure_tables()
+
+    def _reconnect(self, stale: Any) -> None:
+        """Swap in a fresh connection, guarding against concurrent reconnects.
+
+        ``stale`` is the connection the caller observed failing. After taking
+        the lock we re-check it against the current ``self._session``: if another
+        thread already reconnected, ours is a no-op and the winning session is
+        reused.
+        """
+        if self._connection_factory is None:
+            return
+        with self._reconnect_lock:
+            if self._session is not stale:
+                # A concurrent caller already reconnected; reuse that session.
+                return
+            self._session = self._connection_factory()
+
+    def _exec(self, sql: str) -> list[dict[str, Any]]:
+        """Run a result-returning statement, self-healing on auth expiry."""
+        session = self._session
+        try:
+            return _exec(session, sql)
+        except Exception as exc:
+            if self._connection_factory is None or not _is_auth_expiry_error(exc):
+                raise
+            self._reconnect(session)
+            # Retry exactly once on the fresh session. A second auth expiry
+            # (or any other error) propagates.
+            return _exec(self._session, sql)
+
+    def _exec_no_result(self, sql: str) -> None:
+        """Run a non-result statement, self-healing on auth expiry."""
+        session = self._session
+        try:
+            _exec_no_result(session, sql)
+            return
+        except Exception as exc:
+            if self._connection_factory is None or not _is_auth_expiry_error(exc):
+                raise
+            self._reconnect(session)
+            _exec_no_result(self._session, sql)
 
     def __enter__(self):
         return self
@@ -202,16 +296,14 @@ class SnowflakeLedgerBackend:
         # A least-privilege writer (INSERT/UPDATE/SELECT only) can't create it;
         # fall back to the DDL-free SQL MERGE path rather than failing the write.
         try:
-            _exec_no_result(
-                self._session,
-                f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS",
+            self._exec_no_result(
+                f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS"
             )
             wp_kwargs: dict[str, str] = {"schema": self._schema_name}
             if self._database:
                 wp_kwargs["database"] = self._database
             write_pandas(conn, df, "MODELS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"""
                 MERGE INTO {self._schema}.MODELS t USING {staging} s ON t.MODEL_HASH = s.MODEL_HASH
                 WHEN MATCHED THEN UPDATE SET
@@ -223,7 +315,7 @@ class SnowflakeLedgerBackend:
                     VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
                             s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN, PARSE_JSON(s.METADATA))""",
             )
-            _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+            self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
             if _is_privilege_error(e):
                 return False
@@ -246,8 +338,7 @@ class SnowflakeLedgerBackend:
                 f"{_esc(json.dumps(m.metadata, default=str)) if m.metadata else 'NULL'} AS metadata"
                 for m in batch
             )
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"""
                 MERGE INTO {self._schema}.MODELS t USING ({unions}) s ON t.MODEL_HASH = s.model_hash
                 WHEN MATCHED THEN UPDATE SET
@@ -302,8 +393,7 @@ class SnowflakeLedgerBackend:
         # See _flush_models_pandas: fall back to the DDL-free SQL path when the
         # role can't create the staging table.
         try:
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"""
                 CREATE OR REPLACE TEMPORARY TABLE {staging} (
                     SNAPSHOT_HASH VARCHAR, MODEL_HASH VARCHAR, PARENT_HASH VARCHAR,
@@ -314,8 +404,7 @@ class SnowflakeLedgerBackend:
             if self._database:
                 wp_kwargs["database"] = self._database
             write_pandas(conn, df, "SNAPSHOTS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"""
                 INSERT INTO {self._schema}.SNAPSHOTS
                 (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE, PAYLOAD, TAGS)
@@ -324,7 +413,7 @@ class SnowflakeLedgerBackend:
                 FROM {staging} s
                 WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.SNAPSHOT_HASH)""",
             )
-            _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+            self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
             if _is_privilege_error(e):
                 return False
@@ -343,8 +432,7 @@ class SnowflakeLedgerBackend:
                 f"{_esc(s.actor)}, {_esc(s.event_type)}, {_esc(s.source)}"
                 for s in batch
             )
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"""
                 INSERT INTO {self._schema}.SNAPSHOTS
                 (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE)
@@ -362,9 +450,8 @@ class SnowflakeLedgerBackend:
         # through to the CREATE path so fresh deployments still auto-provision.
         if self._schema_objects_exist():
             return
-        _exec_no_result(self._session, f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
-        _exec_no_result(
-            self._session,
+        self._exec_no_result(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
+        self._exec_no_result(
             f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.MODELS (
                 MODEL_HASH VARCHAR PRIMARY KEY, NAME VARCHAR UNIQUE NOT NULL,
@@ -380,15 +467,13 @@ class SnowflakeLedgerBackend:
         # the "already exists" case — other DDL errors (missing permission, transient
         # failure) must surface so startup doesn't silently leave MERGEs broken.
         try:
-            _exec_no_result(
-                self._session,
+            self._exec_no_result(
                 f"ALTER TABLE {self._schema}.MODELS ADD COLUMN METADATA VARIANT",
             )
         except Exception as e:
             if "already exists" not in str(e).lower():
                 raise
-        _exec_no_result(
-            self._session,
+        self._exec_no_result(
             f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.SNAPSHOTS (
                 SNAPSHOT_HASH VARCHAR PRIMARY KEY, MODEL_HASH VARCHAR NOT NULL,
@@ -396,8 +481,7 @@ class SnowflakeLedgerBackend:
                 ACTOR VARCHAR NOT NULL, EVENT_TYPE VARCHAR NOT NULL,
                 SOURCE VARCHAR, PAYLOAD VARIANT, TAGS VARIANT)""",
         )
-        _exec_no_result(
-            self._session,
+        self._exec_no_result(
             f"""
             CREATE TABLE IF NOT EXISTS {self._schema}.TAGS (
                 MODEL_HASH VARCHAR NOT NULL, NAME VARCHAR NOT NULL,
@@ -447,8 +531,7 @@ class SnowflakeLedgerBackend:
 
     def get_model(self, model_hash: str) -> ModelRef | None:
         self._flush_models()
-        rows = _exec(
-            self._session,
+        rows = self._exec(
             f"SELECT * FROM {self._schema}.MODELS WHERE MODEL_HASH = {_esc(model_hash)}",
         )
         return _row_to_model_ref(rows[0]) if rows else None
@@ -457,9 +540,7 @@ class SnowflakeLedgerBackend:
         for m in self._model_buffer:
             if m.name == name:
                 return m
-        rows = _exec(
-            self._session, f"SELECT * FROM {self._schema}.MODELS WHERE NAME = {_esc(name)}"
-        )
+        rows = self._exec(f"SELECT * FROM {self._schema}.MODELS WHERE NAME = {_esc(name)}")
         return _row_to_model_ref(rows[0]) if rows else None
 
     def list_models(self, **filters: str) -> list[ModelRef]:
@@ -482,7 +563,7 @@ class SnowflakeLedgerBackend:
             sql += f" LIMIT {int(limit)}"
         if offset is not None:
             sql += f" OFFSET {int(offset)}"
-        return [_row_to_model_ref(r) for r in _exec(self._session, sql)]
+        return [_row_to_model_ref(r) for r in self._exec(sql)]
 
     def count_models(self, **filters: str) -> int:
         """Count models matching filters without fetching all rows."""
@@ -500,7 +581,7 @@ class SnowflakeLedgerBackend:
             )
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        rows = _exec(self._session, sql)
+        rows = self._exec(sql)
         return rows[0]["CNT"] if rows else 0
 
     def update_model(self, model: ModelRef) -> None:
@@ -511,8 +592,7 @@ class SnowflakeLedgerBackend:
 
     def get_snapshot(self, snapshot_hash: str) -> Snapshot | None:
         self._flush_snapshots()
-        rows = _exec(
-            self._session,
+        rows = self._exec(
             f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE SNAPSHOT_HASH = {_esc(snapshot_hash)}",
         )
         return _row_to_snapshot(rows[0]) if rows else None
@@ -523,7 +603,7 @@ class SnowflakeLedgerBackend:
         for k, v in filters.items():
             sql += f" AND {k.upper()} = {_esc(v)}"
         sql += " ORDER BY TIMESTAMP"
-        return [_row_to_snapshot(r) for r in _exec(self._session, sql)]
+        return [_row_to_snapshot(r) for r in self._exec(sql)]
 
     def list_all_snapshots(self, event_type: str | None = None) -> list[Snapshot]:
         """Bulk load all snapshots — 1 query instead of N per-model queries."""
@@ -531,7 +611,7 @@ class SnowflakeLedgerBackend:
         sql = f"SELECT * FROM {self._schema}.SNAPSHOTS"
         if event_type:
             sql += f" WHERE EVENT_TYPE = {_esc(event_type)}"
-        return [_row_to_snapshot(r) for r in _exec(self._session, sql)]
+        return [_row_to_snapshot(r) for r in self._exec(sql)]
 
     def list_snapshot_content_hashes(self, event_type: str | None = None) -> dict[str, str]:
         """Read _content_hash from payloads — returns {model_hash: content_hash}.
@@ -547,9 +627,7 @@ class SnowflakeLedgerBackend:
             QUALIFY ROW_NUMBER() OVER (PARTITION BY MODEL_HASH ORDER BY TIMESTAMP DESC) = 1
         """
         return {
-            r["MODEL_HASH"]: r["CONTENT_HASH"]
-            for r in _exec(self._session, sql)
-            if r.get("CONTENT_HASH")
+            r["MODEL_HASH"]: r["CONTENT_HASH"] for r in self._exec(sql) if r.get("CONTENT_HASH")
         }
 
     def composite_summary(
@@ -683,7 +761,7 @@ class SnowflakeLedgerBackend:
             LEFT JOIN validations v ON v.COMPOSITE_HASH = c.MODEL_HASH
             LEFT JOIN open_obs oo ON oo.COMPOSITE_HASH = c.MODEL_HASH
             ORDER BY c.NAME"""
-        rows = _exec(self._session, sql)
+        rows = self._exec(sql)
         results = []
         for r in rows:
             raw = r.get("METADATA") or {}
@@ -714,8 +792,7 @@ class SnowflakeLedgerBackend:
             if t:
                 return self.get_snapshot(t.snapshot_hash)
             return None
-        rows = _exec(
-            self._session,
+        rows = self._exec(
             f"SELECT * FROM {self._schema}.SNAPSHOTS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY TIMESTAMP DESC LIMIT 1",
         )
         return _row_to_snapshot(rows[0]) if rows else None
@@ -734,11 +811,10 @@ class SnowflakeLedgerBackend:
         if event_type:
             sql += f" AND EVENT_TYPE = {_esc(event_type)}"
         sql += " ORDER BY TIMESTAMP"
-        return [_row_to_snapshot(r) for r in _exec(self._session, sql)]
+        return [_row_to_snapshot(r) for r in self._exec(sql)]
 
     def set_tag(self, tag: Tag) -> None:
-        _exec_no_result(
-            self._session,
+        self._exec_no_result(
             f"""
             MERGE INTO {self._schema}.TAGS t
             USING (SELECT {_esc(tag.model_hash)} AS model_hash, {_esc(tag.name)} AS name,
@@ -751,8 +827,7 @@ class SnowflakeLedgerBackend:
         )
 
     def get_tag(self, model_hash: str, name: str) -> Tag | None:
-        rows = _exec(
-            self._session,
+        rows = self._exec(
             f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} AND NAME = {_esc(name)}",
         )
         return _row_to_tag(rows[0]) if rows else None
@@ -760,8 +835,7 @@ class SnowflakeLedgerBackend:
     def list_tags(self, model_hash: str) -> list[Tag]:
         return [
             _row_to_tag(r)
-            for r in _exec(
-                self._session,
+            for r in self._exec(
                 f"SELECT * FROM {self._schema}.TAGS WHERE MODEL_HASH = {_esc(model_hash)} ORDER BY NAME",
             )
         ]
@@ -769,8 +843,7 @@ class SnowflakeLedgerBackend:
     def count_all_snapshots(self) -> int:
         """Count all snapshots in a single query."""
         self._flush_snapshots()
-        rows = _exec(
-            self._session,
+        rows = self._exec(
             f"SELECT COUNT(*) AS CNT FROM {self._schema}.SNAPSHOTS",
         )
         return rows[0]["CNT"] if rows else 0
@@ -785,8 +858,7 @@ class SnowflakeLedgerBackend:
         self._flush_snapshots()
         in_clause = ", ".join(_esc(h) for h in model_hashes)
 
-        agg_rows = _exec(
-            self._session,
+        agg_rows = self._exec(
             f"""
             SELECT MODEL_HASH,
                    MAX(TIMESTAMP) AS LAST_EVENT,
@@ -796,8 +868,7 @@ class SnowflakeLedgerBackend:
             GROUP BY MODEL_HASH""",
         )
 
-        plat_rows = _exec(
-            self._session,
+        plat_rows = self._exec(
             f"""
             SELECT MODEL_HASH,
                    COALESCE(PAYLOAD:platform::VARCHAR, SOURCE) AS PLATFORM
@@ -867,14 +938,12 @@ class SnowflakeLedgerBackend:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        count_rows = _exec(
-            self._session,
+        count_rows = self._exec(
             f"SELECT COUNT(*) AS CNT FROM {self._schema}.SNAPSHOTS s{where}",
         )
         total = count_rows[0]["CNT"] if count_rows else 0
 
-        data_rows = _exec(
-            self._session,
+        data_rows = self._exec(
             f"""
             SELECT s.SNAPSHOT_HASH, s.MODEL_HASH, s.PARENT_HASH,
                    s.TIMESTAMP, s.ACTOR, s.EVENT_TYPE, s.SOURCE,
@@ -916,8 +985,7 @@ class SnowflakeLedgerBackend:
         self._flush_snapshots()
         self._flush_models()
 
-        dep_rows = _exec(
-            self._session,
+        dep_rows = self._exec(
             f"""
             SELECT
                 EVENT_TYPE,
@@ -961,8 +1029,7 @@ class SnowflakeLedgerBackend:
                 f"NAME IN ({', '.join(_esc(n) for n in lookup_names)})" if lookup_names else None
             )
             or_clause = " OR ".join(filter(None, [hash_cond, name_cond]))
-            model_rows = _exec(
-                self._session,
+            model_rows = self._exec(
                 f"SELECT MODEL_HASH, NAME FROM {self._schema}.MODELS WHERE {or_clause}",
             )
             model_by_hash = {r["MODEL_HASH"]: r["NAME"] for r in model_rows}
@@ -1011,8 +1078,7 @@ class SnowflakeLedgerBackend:
         self._flush_snapshots()
         in_clause = ", ".join(_esc(h) for h in model_hashes)
 
-        plat_rows = _exec(
-            self._session,
+        plat_rows = self._exec(
             f"""
             SELECT MODEL_HASH,
                    COALESCE(PAYLOAD:platform::VARCHAR, SOURCE) AS PLATFORM

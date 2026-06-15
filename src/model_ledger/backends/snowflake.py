@@ -385,6 +385,23 @@ class SnowflakeLedgerBackend:
         )
         return _row_to_model_ref(rows[0]) if rows else None
 
+    def get_models(self, model_hashes: list[str]) -> dict[str, ModelRef]:
+        """Bulk-resolve model hashes to ModelRefs with one ``IN (...)`` query."""
+        self._flush_models()
+        hashes = [h for h in dict.fromkeys(model_hashes) if h]
+        if not hashes:
+            return {}
+        in_clause = ", ".join(_esc(h) for h in hashes)
+        rows = _exec(
+            self._session,
+            f"SELECT * FROM {self._schema}.MODELS WHERE MODEL_HASH IN ({in_clause})",
+        )
+        result: dict[str, ModelRef] = {}
+        for row in rows:
+            ref = _row_to_model_ref(row)
+            result[ref.model_hash] = ref
+        return result
+
     def list_models(self, **filters: str) -> list[ModelRef]:
         self._flush_models()
         limit = filters.pop("limit", None)

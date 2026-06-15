@@ -12,6 +12,29 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from model_ledger.backends.ledger_protocol import LedgerBackend
+    from model_ledger.core.ledger_models import ModelRef
+
+
+def get_models(
+    backend: LedgerBackend,
+    model_hashes: list[str],
+) -> dict[str, ModelRef]:
+    """Resolve many model hashes to ModelRefs in one logical batch.
+
+    Returns ``{model_hash: ModelRef}`` for every hash that resolves; absent
+    hashes are simply omitted. The protocol-only fallback issues one
+    ``get_model`` per *distinct* hash, deduplicating so a hash referenced by
+    several edges is fetched once. Performance matches the prior N+1 behavior;
+    backends override this with a single ``IN (...)`` query for real speedup.
+    """
+    result: dict[str, ModelRef] = {}
+    for model_hash in dict.fromkeys(model_hashes):  # dedup, preserve order
+        if not model_hash:
+            continue
+        ref = backend.get_model(model_hash)
+        if ref is not None:
+            result[model_hash] = ref
+    return result
 
 
 def _resolve_platform(
@@ -146,49 +169,55 @@ def batch_dependencies(
 
     Returns ``{"upstream": [...], "downstream": [...]}`` where each entry
     contains ``model_hash``, ``model_name``, and ``relationship``.
+
+    All edge targets are resolved by hash in a single batched lookup
+    (one ``get_models`` round trip) rather than one ``get_model`` per edge.
+    A per-edge name fallback runs only for the rare edge whose hash does not
+    resolve, preserving the resolution semantics of the prior implementation.
     """
     snapshots = backend.list_snapshots(model_hash)
-    upstream: list[dict[str, Any]] = []
-    downstream: list[dict[str, Any]] = []
 
+    # Collect edges first: (direction, target_hash, target_name, relationship).
+    edges: list[tuple[str, str, str, str]] = []
     for snap in snapshots:
         if snap.event_type == "depends_on":
-            related_hash = snap.payload.get("upstream_hash", "")
-            related_name = snap.payload.get("upstream", "")
-            relationship = snap.payload.get("relationship", "depends_on")
-
-            related = backend.get_model(related_hash) if related_hash else None
-            if related is None and related_name:
-                related = backend.get_model_by_name(related_name)
-            if related is None:
-                continue
-
-            upstream.append(
-                {
-                    "model_hash": related.model_hash,
-                    "model_name": related.name,
-                    "relationship": relationship,
-                }
+            edges.append(
+                (
+                    "upstream",
+                    snap.payload.get("upstream_hash", ""),
+                    snap.payload.get("upstream", ""),
+                    snap.payload.get("relationship", "depends_on"),
+                )
             )
-
         elif snap.event_type == "has_dependent":
-            related_hash = snap.payload.get("downstream_hash", "")
-            related_name = snap.payload.get("downstream", "")
-            relationship = snap.payload.get("relationship", "depends_on")
-
-            related = backend.get_model(related_hash) if related_hash else None
-            if related is None and related_name:
-                related = backend.get_model_by_name(related_name)
-            if related is None:
-                continue
-
-            downstream.append(
-                {
-                    "model_hash": related.model_hash,
-                    "model_name": related.name,
-                    "relationship": relationship,
-                }
+            edges.append(
+                (
+                    "downstream",
+                    snap.payload.get("downstream_hash", ""),
+                    snap.payload.get("downstream", ""),
+                    snap.payload.get("relationship", "depends_on"),
+                )
             )
+
+    by_hash = get_models(backend, [h for _, h, _, _ in edges if h])
+
+    upstream: list[dict[str, Any]] = []
+    downstream: list[dict[str, Any]] = []
+    for direction, related_hash, related_name, relationship in edges:
+        related = by_hash.get(related_hash) if related_hash else None
+        if related is None and related_name:
+            related = backend.get_model_by_name(related_name)
+        if related is None:
+            continue
+        entry = {
+            "model_hash": related.model_hash,
+            "model_name": related.name,
+            "relationship": relationship,
+        }
+        if direction == "upstream":
+            upstream.append(entry)
+        else:
+            downstream.append(entry)
 
     return {"upstream": upstream, "downstream": downstream}
 

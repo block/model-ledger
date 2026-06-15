@@ -146,6 +146,17 @@ class SQLiteLedgerBackend:
         row = self._conn.execute("SELECT * FROM models WHERE name = ?", (name,)).fetchone()
         return self._row_to_model(row) if row else None
 
+    def get_models(self, model_hashes: list[str]) -> dict[str, ModelRef]:
+        """Bulk-resolve model hashes to ModelRefs with one ``IN (...)`` query."""
+        hashes = [h for h in dict.fromkeys(model_hashes) if h]
+        if not hashes:
+            return {}
+        placeholders = ", ".join("?" for _ in hashes)
+        rows = self._conn.execute(
+            f"SELECT * FROM models WHERE model_hash IN ({placeholders})", hashes
+        ).fetchall()
+        return {row["model_hash"]: self._row_to_model(row) for row in rows}
+
     def list_models(self, **filters: str) -> list[ModelRef]:
         sql = "SELECT * FROM models"
         params: list[str] = []
@@ -439,9 +450,9 @@ class SQLiteLedgerBackend:
         self,
         model_hash: str,
     ) -> dict[str, list[dict]]:
-        upstream: list[dict] = []
-        downstream: list[dict] = []
-
+        # One query for the edge snapshots; one batched query to resolve every
+        # edge target by hash. A per-edge name fallback runs only when a hash
+        # does not resolve, preserving the prior resolution semantics.
         if self._has_json_extract:
             rows = self._conn.execute(
                 "SELECT s.event_type, "
@@ -456,30 +467,27 @@ class SQLiteLedgerBackend:
                 (model_hash,),
             ).fetchall()
 
+            # (direction, target_hash, target_name, relationship)
+            edges: list[tuple[str, str, str, str]] = []
             for row in rows:
                 if row["event_type"] == "depends_on":
-                    related_hash = row["upstream_hash"] or ""
-                    related_name = row["upstream_name"] or ""
+                    edges.append(
+                        (
+                            "upstream",
+                            row["upstream_hash"] or "",
+                            row["upstream_name"] or "",
+                            row["relationship"] or "depends_on",
+                        )
+                    )
                 else:
-                    related_hash = row["downstream_hash"] or ""
-                    related_name = row["downstream_name"] or ""
-                relationship = row["relationship"] or "depends_on"
-
-                related = self.get_model(related_hash) if related_hash else None
-                if related is None and related_name:
-                    related = self.get_model_by_name(related_name)
-                if related is None:
-                    continue
-
-                entry = {
-                    "model_hash": related.model_hash,
-                    "model_name": related.name,
-                    "relationship": relationship,
-                }
-                if row["event_type"] == "depends_on":
-                    upstream.append(entry)
-                else:
-                    downstream.append(entry)
+                    edges.append(
+                        (
+                            "downstream",
+                            row["downstream_hash"] or "",
+                            row["downstream_name"] or "",
+                            row["relationship"] or "depends_on",
+                        )
+                    )
         else:
             rows = self._conn.execute(
                 "SELECT s.event_type, s.payload "
@@ -489,31 +497,47 @@ class SQLiteLedgerBackend:
                 (model_hash,),
             ).fetchall()
 
+            edges = []
             for row in rows:
                 payload = json.loads(row["payload"]) if row["payload"] else {}
                 if row["event_type"] == "depends_on":
-                    related_hash = payload.get("upstream_hash", "")
-                    related_name = payload.get("upstream", "")
+                    edges.append(
+                        (
+                            "upstream",
+                            payload.get("upstream_hash", ""),
+                            payload.get("upstream", ""),
+                            payload.get("relationship", "depends_on"),
+                        )
+                    )
                 else:
-                    related_hash = payload.get("downstream_hash", "")
-                    related_name = payload.get("downstream", "")
-                relationship = payload.get("relationship", "depends_on")
+                    edges.append(
+                        (
+                            "downstream",
+                            payload.get("downstream_hash", ""),
+                            payload.get("downstream", ""),
+                            payload.get("relationship", "depends_on"),
+                        )
+                    )
 
-                related = self.get_model(related_hash) if related_hash else None
-                if related is None and related_name:
-                    related = self.get_model_by_name(related_name)
-                if related is None:
-                    continue
+        by_hash = self.get_models([h for _, h, _, _ in edges if h])
 
-                entry = {
-                    "model_hash": related.model_hash,
-                    "model_name": related.name,
-                    "relationship": relationship,
-                }
-                if row["event_type"] == "depends_on":
-                    upstream.append(entry)
-                else:
-                    downstream.append(entry)
+        upstream: list[dict] = []
+        downstream: list[dict] = []
+        for direction, related_hash, related_name, relationship in edges:
+            related = by_hash.get(related_hash) if related_hash else None
+            if related is None and related_name:
+                related = self.get_model_by_name(related_name)
+            if related is None:
+                continue
+            entry = {
+                "model_hash": related.model_hash,
+                "model_name": related.name,
+                "relationship": relationship,
+            }
+            if direction == "upstream":
+                upstream.append(entry)
+            else:
+                downstream.append(entry)
 
         return {"upstream": upstream, "downstream": downstream}
 

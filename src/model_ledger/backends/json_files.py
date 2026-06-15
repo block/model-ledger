@@ -66,6 +66,25 @@ class JsonFileLedgerBackend:
             return ModelRef.model_validate_json(path.read_text())
         return None
 
+    def get_models(self, model_hashes: list[str]) -> dict[str, ModelRef]:
+        """Bulk-resolve model hashes with a single directory scan.
+
+        ``get_model`` scans the whole models directory per call; resolving N
+        edges that way is O(N x files). This reads every model file once and
+        indexes by hash, so a graph traversal pays a single pass.
+        """
+        wanted = {h for h in model_hashes if h}
+        if not wanted:
+            return {}
+        result: dict[str, ModelRef] = {}
+        for path in self._models_dir.iterdir():
+            if path.suffix != ".json":
+                continue
+            m = ModelRef.model_validate_json(path.read_text())
+            if m.model_hash in wanted:
+                result[m.model_hash] = m
+        return result
+
     def list_models(self, **filters: str) -> list[ModelRef]:
         results: list[ModelRef] = []
         for path in sorted(self._models_dir.iterdir()):

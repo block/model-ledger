@@ -623,3 +623,100 @@ class TestCompositeSummarySQL:
         ]
         backend, _ = self._backend(rows)
         assert backend.composite_summary() == expected
+
+
+class _DDLProbeSession:
+    """Session that records DDL and serves configurable INFORMATION_SCHEMA probes.
+
+    Lets tests assert whether write-mode init issues CREATE/ALTER, and simulate a
+    role that lacks DDL privileges (`raise_on_ddl`) or can't introspect
+    (`raise_on_introspect`).
+    """
+
+    def __init__(
+        self,
+        *,
+        tables_present,
+        metadata_present=True,
+        raise_on_ddl=False,
+        raise_on_introspect=False,
+    ):
+        self._tables_present = {t.upper() for t in tables_present}
+        self._metadata_present = metadata_present
+        self._raise_on_ddl = raise_on_ddl
+        self._raise_on_introspect = raise_on_introspect
+        self.ddl: list[str] = []
+
+    def sql(self, query: str, params: Any = None) -> MockCollectResult:
+        upper = query.upper().strip()
+        if "INFORMATION_SCHEMA.TABLES" in upper:
+            if self._raise_on_introspect:
+                raise RuntimeError("introspection blocked")
+            return MockCollectResult([{"TABLE_NAME": t} for t in sorted(self._tables_present)])
+        if "INFORMATION_SCHEMA.COLUMNS" in upper:
+            if self._raise_on_introspect:
+                raise RuntimeError("introspection blocked")
+            return MockCollectResult([{"1": 1}] if self._metadata_present else [])
+        if upper.startswith("CREATE") or upper.startswith("ALTER"):
+            self.ddl.append(upper)
+            if self._raise_on_ddl:
+                raise RuntimeError(
+                    "003001 (42501): SQL access control error: Insufficient "
+                    "privileges to operate on database. Your primary role must "
+                    "have CREATE SCHEMA granted on DATABASE."
+                )
+            return MockCollectResult([])
+        return MockCollectResult([])
+
+
+def _new_backend(session, *, read_only=False):
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    return SnowflakeLedgerBackend(schema="DB.MODEL_LEDGER", connection=session, read_only=read_only)
+
+
+def test_skip_ddl_when_schema_already_provisioned():
+    # All tables + METADATA present, and the role would fail any DDL. Init must
+    # succeed without issuing a single CREATE/ALTER (least-privilege path).
+    session = _DDLProbeSession(
+        tables_present=["MODELS", "SNAPSHOTS", "TAGS"],
+        metadata_present=True,
+        raise_on_ddl=True,
+    )
+    _new_backend(session)  # must not raise
+    assert session.ddl == []
+
+
+def test_auto_provisions_when_tables_absent():
+    # Fresh deployment: nothing exists → full DDL runs (auto-provision preserved).
+    session = _DDLProbeSession(tables_present=[])
+    _new_backend(session)
+    joined = " ".join(session.ddl)
+    assert "CREATE SCHEMA" in joined
+    assert joined.count("CREATE TABLE") == 3
+
+
+def test_falls_back_to_ddl_when_introspection_fails():
+    # If existence can't be confirmed, fall through to the CREATE path rather
+    # than silently skipping (no regression for permissioned deployments).
+    session = _DDLProbeSession(tables_present=[], raise_on_introspect=True)
+    _new_backend(session)
+    assert any(d.startswith("CREATE SCHEMA") for d in session.ddl)
+
+
+def test_skip_requires_metadata_column():
+    # Tables exist but MODELS lacks METADATA → must NOT skip; the migration DDL
+    # (incl. the ALTER ADD COLUMN) needs to run.
+    session = _DDLProbeSession(
+        tables_present=["MODELS", "SNAPSHOTS", "TAGS"],
+        metadata_present=False,
+    )
+    _new_backend(session)
+    assert any(d.startswith("CREATE SCHEMA") for d in session.ddl)
+
+
+def test_read_only_skips_ensure_tables_entirely():
+    # Read-only init must neither introspect nor issue DDL.
+    session = _DDLProbeSession(tables_present=["MODELS", "SNAPSHOTS", "TAGS"], raise_on_ddl=True)
+    _new_backend(session, read_only=True)
+    assert session.ddl == []

@@ -322,6 +322,15 @@ class SnowflakeLedgerBackend:
             )
 
     def _ensure_tables(self) -> None:
+        # Skip DDL when the schema is already provisioned out-of-band. Snowflake
+        # checks the CREATE/ALTER privilege even for `IF NOT EXISTS`, so issuing
+        # this DDL forces a write-enabled deployment to hold CREATE SCHEMA (db) +
+        # CREATE TABLE (schema) + ALTER (table) — effectively schema ownership —
+        # when all it needs to write rows is INSERT/UPDATE/SELECT. Existence is
+        # probed via INFORMATION_SCHEMA (SELECT only); on any doubt we fall
+        # through to the CREATE path so fresh deployments still auto-provision.
+        if self._schema_objects_exist():
+            return
         _exec_no_result(self._session, f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
         _exec_no_result(
             self._session,
@@ -364,6 +373,43 @@ class SnowflakeLedgerBackend:
                 SNAPSHOT_HASH VARCHAR NOT NULL, UPDATED_AT TIMESTAMP_TZ NOT NULL,
                 PRIMARY KEY (MODEL_HASH, NAME))""",
         )
+
+    def _schema_objects_exist(self) -> bool:
+        """True if MODELS, SNAPSHOTS and TAGS already exist (with MODELS.METADATA).
+
+        Lets a write-enabled deployment whose schema is provisioned externally
+        run with only INSERT/UPDATE/SELECT — no CREATE/ALTER. Probes are
+        SELECT-only against INFORMATION_SCHEMA. Returns False (so the caller
+        falls back to the CREATE path) whenever existence can't be positively
+        confirmed, preserving auto-provisioning for fresh deployments.
+        """
+        info_schema = (
+            f"{self._database}.INFORMATION_SCHEMA" if self._database else "INFORMATION_SCHEMA"
+        )
+        schema_lit = _esc(self._schema_name.upper())
+        try:
+            table_rows = _exec(
+                self._session,
+                f"""SELECT TABLE_NAME FROM {info_schema}.TABLES
+                    WHERE TABLE_SCHEMA = {schema_lit}
+                      AND TABLE_TYPE = 'BASE TABLE'
+                      AND TABLE_NAME IN ('MODELS', 'SNAPSHOTS', 'TAGS')""",
+            )
+            present = {str(r["TABLE_NAME"]).upper() for r in table_rows}
+            if not {"MODELS", "SNAPSHOTS", "TAGS"} <= present:
+                return False
+            # MODELS must carry the METADATA column (the backward-compat ALTER
+            # target); without it, fall through so the migration DDL still runs.
+            column_rows = _exec(
+                self._session,
+                f"""SELECT 1 FROM {info_schema}.COLUMNS
+                    WHERE TABLE_SCHEMA = {schema_lit}
+                      AND TABLE_NAME = 'MODELS'
+                      AND COLUMN_NAME = 'METADATA'""",
+            )
+            return len(column_rows) > 0
+        except Exception:
+            return False
 
     def save_model(self, model: ModelRef) -> None:
         self._model_buffer.append(model)

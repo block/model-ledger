@@ -720,3 +720,73 @@ def test_read_only_skips_ensure_tables_entirely():
     session = _DDLProbeSession(tables_present=["MODELS", "SNAPSHOTS", "TAGS"], raise_on_ddl=True)
     _new_backend(session, read_only=True)
     assert session.ddl == []
+
+
+def test_is_privilege_error_detection():
+    from model_ledger.backends.snowflake import _is_privilege_error
+
+    assert _is_privilege_error(RuntimeError("003001 (42501): SQL access control error"))
+    assert _is_privilege_error(Exception("Insufficient privileges to operate on schema"))
+    assert _is_privilege_error(Exception("User not authorized to perform CREATE TABLE"))
+    # Non-privilege errors must surface, not be swallowed as a fallback trigger.
+    assert not _is_privilege_error(Exception("Object 'MODELS' already exists"))
+    assert not _is_privilege_error(Exception("connection reset by peer"))
+
+
+class _PrivDeniedBulkSession:
+    """Passes the bulk-path gate (`_session_parameters`) but denies CREATE TABLE,
+    so the write must fall back to the DDL-free SQL MERGE/INSERT path."""
+
+    def __init__(self):
+        self._session_parameters = {}
+        self.created_temp = False
+        self.merges: list[str] = []
+        self.inserts: list[str] = []
+
+    def sql(self, query: str, params: Any = None) -> MockCollectResult:
+        upper = query.upper().strip()
+        if "INFORMATION_SCHEMA.TABLES" in upper:
+            return MockCollectResult([{"TABLE_NAME": t} for t in ("MODELS", "SNAPSHOTS", "TAGS")])
+        if "INFORMATION_SCHEMA.COLUMNS" in upper:
+            return MockCollectResult([{"1": 1}])
+        if "TEMPORARY TABLE" in upper:
+            self.created_temp = True
+            raise RuntimeError(
+                "003001 (42501): SQL access control error: Insufficient "
+                "privileges to operate on schema 'MODEL_LEDGER'"
+            )
+        if upper.startswith("MERGE INTO"):
+            self.merges.append(query)
+            return MockCollectResult([])
+        if upper.startswith("INSERT INTO"):
+            self.inserts.append(query)
+            return MockCollectResult([])
+        return MockCollectResult([])
+
+
+def test_write_falls_back_to_sql_when_temp_table_denied():
+    # Requires the bulk-path deps so the temp-table CREATE is actually reached.
+    pytest.importorskip("pandas")
+    pytest.importorskip("snowflake.connector.pandas_tools")
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    session = _PrivDeniedBulkSession()
+    # init must skip DDL (tables already present), else it fails before any write.
+    backend = SnowflakeLedgerBackend(schema="DB.MODEL_LEDGER", connection=session)
+    backend.save_model(_make_model())
+    backend.append_snapshot(
+        Snapshot(
+            snapshot_hash="snap-fallback",
+            model_hash="abc123",
+            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            actor="t",
+            event_type="registered",
+            source="test",
+            payload={},
+        )
+    )
+    backend.flush()  # must not raise
+
+    assert session.created_temp is True  # bulk path was attempted
+    assert len(session.merges) >= 1  # models persisted via SQL MERGE
+    assert len(session.inserts) >= 1  # snapshots persisted via SQL INSERT

@@ -42,6 +42,21 @@ def _esc(value: str | None) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _is_privilege_error(exc: Exception) -> bool:
+    """True if exc looks like a Snowflake authorization failure (SQLSTATE 42501).
+
+    Used to fall back from the bulk (temp-table) write path to the DDL-free SQL
+    path when the role lacks CREATE TABLE, rather than failing the write.
+    """
+    msg = str(exc).lower()
+    return (
+        "insufficient privileges" in msg
+        or "access control error" in msg
+        or "not authorized" in msg
+        or "(42501)" in msg
+    )
+
+
 def _row_to_model_ref(row: dict[str, Any]) -> ModelRef:
     metadata = row.get("METADATA") or {}
     if isinstance(metadata, str):
@@ -183,27 +198,36 @@ class SnowflakeLedgerBackend:
         )
 
         staging = f"{self._schema}.MODELS_STAGING"
-        _exec_no_result(
-            self._session, f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS"
-        )
-        wp_kwargs: dict[str, str] = {"schema": self._schema_name}
-        if self._database:
-            wp_kwargs["database"] = self._database
-        write_pandas(conn, df, "MODELS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
-        _exec_no_result(
-            self._session,
-            f"""
-            MERGE INTO {self._schema}.MODELS t USING {staging} s ON t.MODEL_HASH = s.MODEL_HASH
-            WHEN MATCHED THEN UPDATE SET
-                NAME=s.NAME, OWNER=s.OWNER, MODEL_TYPE=s.MODEL_TYPE,
-                MODEL_ORIGIN=s.MODEL_ORIGIN, TIER=s.TIER, PURPOSE=s.PURPOSE, STATUS=s.STATUS,
-                LAST_SEEN=s.LAST_SEEN, METADATA=PARSE_JSON(s.METADATA)
-            WHEN NOT MATCHED THEN INSERT
-                (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN, METADATA)
-                VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
-                        s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN, PARSE_JSON(s.METADATA))""",
-        )
-        _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+        # The bulk path needs CREATE TABLE on the schema for the staging table.
+        # A least-privilege writer (INSERT/UPDATE/SELECT only) can't create it;
+        # fall back to the DDL-free SQL MERGE path rather than failing the write.
+        try:
+            _exec_no_result(
+                self._session,
+                f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS",
+            )
+            wp_kwargs: dict[str, str] = {"schema": self._schema_name}
+            if self._database:
+                wp_kwargs["database"] = self._database
+            write_pandas(conn, df, "MODELS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
+            _exec_no_result(
+                self._session,
+                f"""
+                MERGE INTO {self._schema}.MODELS t USING {staging} s ON t.MODEL_HASH = s.MODEL_HASH
+                WHEN MATCHED THEN UPDATE SET
+                    NAME=s.NAME, OWNER=s.OWNER, MODEL_TYPE=s.MODEL_TYPE,
+                    MODEL_ORIGIN=s.MODEL_ORIGIN, TIER=s.TIER, PURPOSE=s.PURPOSE, STATUS=s.STATUS,
+                    LAST_SEEN=s.LAST_SEEN, METADATA=PARSE_JSON(s.METADATA)
+                WHEN NOT MATCHED THEN INSERT
+                    (MODEL_HASH, NAME, OWNER, MODEL_TYPE, MODEL_ORIGIN, TIER, PURPOSE, STATUS, CREATED_AT, LAST_SEEN, METADATA)
+                    VALUES (s.MODEL_HASH, s.NAME, s.OWNER, s.MODEL_TYPE, s.MODEL_ORIGIN,
+                            s.TIER, s.PURPOSE, s.STATUS, s.CREATED_AT, s.LAST_SEEN, PARSE_JSON(s.METADATA))""",
+            )
+            _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+        except Exception as e:
+            if _is_privilege_error(e):
+                return False
+            raise
         return True
 
     def _flush_models_sql(self) -> None:
@@ -275,29 +299,36 @@ class SnowflakeLedgerBackend:
         )
 
         staging = f"{self._schema}.SNAPSHOTS_STAGING"
-        _exec_no_result(
-            self._session,
-            f"""
-            CREATE OR REPLACE TEMPORARY TABLE {staging} (
-                SNAPSHOT_HASH VARCHAR, MODEL_HASH VARCHAR, PARENT_HASH VARCHAR,
-                TIMESTAMP VARCHAR, ACTOR VARCHAR, EVENT_TYPE VARCHAR,
-                SOURCE VARCHAR, PAYLOAD VARCHAR, TAGS VARCHAR)""",
-        )
-        wp_kwargs: dict[str, str] = {"schema": self._schema_name}
-        if self._database:
-            wp_kwargs["database"] = self._database
-        write_pandas(conn, df, "SNAPSHOTS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
-        _exec_no_result(
-            self._session,
-            f"""
-            INSERT INTO {self._schema}.SNAPSHOTS
-            (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE, PAYLOAD, TAGS)
-            SELECT SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP::TIMESTAMP_TZ, ACTOR, EVENT_TYPE, SOURCE,
-                   PARSE_JSON(PAYLOAD), PARSE_JSON(TAGS)
-            FROM {staging} s
-            WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.SNAPSHOT_HASH)""",
-        )
-        _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+        # See _flush_models_pandas: fall back to the DDL-free SQL path when the
+        # role can't create the staging table.
+        try:
+            _exec_no_result(
+                self._session,
+                f"""
+                CREATE OR REPLACE TEMPORARY TABLE {staging} (
+                    SNAPSHOT_HASH VARCHAR, MODEL_HASH VARCHAR, PARENT_HASH VARCHAR,
+                    TIMESTAMP VARCHAR, ACTOR VARCHAR, EVENT_TYPE VARCHAR,
+                    SOURCE VARCHAR, PAYLOAD VARCHAR, TAGS VARCHAR)""",
+            )
+            wp_kwargs: dict[str, str] = {"schema": self._schema_name}
+            if self._database:
+                wp_kwargs["database"] = self._database
+            write_pandas(conn, df, "SNAPSHOTS_STAGING", **wp_kwargs)  # type: ignore[arg-type]
+            _exec_no_result(
+                self._session,
+                f"""
+                INSERT INTO {self._schema}.SNAPSHOTS
+                (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE, PAYLOAD, TAGS)
+                SELECT SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP::TIMESTAMP_TZ, ACTOR, EVENT_TYPE, SOURCE,
+                       PARSE_JSON(PAYLOAD), PARSE_JSON(TAGS)
+                FROM {staging} s
+                WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.SNAPSHOT_HASH)""",
+            )
+            _exec_no_result(self._session, f"DROP TABLE IF EXISTS {staging}")
+        except Exception as e:
+            if _is_privilege_error(e):
+                return False
+            raise
         return True
 
     def _flush_snapshots_sql(self) -> None:

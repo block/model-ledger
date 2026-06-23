@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.7.6
+
+- fix: `SnowflakeLedgerBackend` skips schema DDL (`CREATE SCHEMA`/`CREATE TABLE`/`ALTER`) on write-mode init when the schema + tables already exist (probed via `SELECT`-only `INFORMATION_SCHEMA`). Snowflake checks the `CREATE` privilege even for `IF NOT EXISTS`, so this lets a least-privilege deployment with only `INSERT/UPDATE/SELECT` write without holding schema-ownership-level DDL grants. Fresh deployments still auto-provision; introspection failure falls back to the `CREATE` path. (#26)
+- fix: the bulk write path (`_flush_models_pandas`/`_flush_snapshots_pandas`) falls back to the DDL-free SQL `MERGE`/`INSERT` path when the role can't create the temporary staging table (SQLSTATE 42501), instead of failing the write. The entire write path now requires only `INSERT/UPDATE/SELECT`. (#26)
+- fix: connector-discovered `status` propagates to the model row on `Ledger.add()` (`metadata['status']` contract, `ModelStatus` enum validation, dedup-skip self-correction). (#23)
+
+## v0.7.4
 
 - perf: `SnowflakeLedgerBackend.composite_summary()` computes the full composite inventory in ONE self-contained SQL statement over MODELS + SNAPSHOTS (CTE-based event replay), replacing the previous delegation to an externally-managed `V_COMPOSITES` view. Removes the undocumented requirement that deployments create that view, and replicates the SDK fallback semantics exactly (membership baseline from `member_of` dependency links + `member_added`/`member_removed` replay with latest-op-wins; distinct-id open-observation set semantics). Measured against a production-scale ledger (28.8k models / 212k snapshots): 92.6s sequential fallback → sub-second warm (~0.3-0.6s).
 

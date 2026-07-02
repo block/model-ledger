@@ -1,0 +1,245 @@
+/* ============================================================
+   model-ledger — "technical-archive" theme
+   A reference book that happens to be interactive.
+   Serif display · warm paper · oxblood accent · hairline rules.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+
+/* ---------- Light scheme: warm paper, ink, oxblood ---------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #1c1a17;  /* ink masthead */
+  --md-primary-fg-color--light: #2c2924;
+  --md-primary-fg-color--dark:  #0f0e0c;
+  --md-primary-bg-color:        #f7f3ec;  /* paper text on masthead */
+  --md-primary-bg-color--light: #f7f3eccc;
+
+  --md-accent-fg-color:         #9b2222;
+  --md-accent-fg-color--transparent: #9b22221a;
+
+  --md-default-bg-color:        #f7f3ec;  /* warm paper */
+  --md-default-fg-color:        #1c1a17;
+  --md-default-fg-color--light:   #1c1a17b3;
+  --md-default-fg-color--lighter: #1c1a1759;
+  --md-default-fg-color--lightest:#1c1a1721;
+
+  --md-typeset-a-color:         #7a1a1a;  /* oxblood links */
+  --md-code-bg-color:           #efe8da;
+  --md-code-fg-color:           #2c2924;
+
+  --ml-hairline: #1c1a1726;
+}
+
+/* ---------- Dark scheme: warm dark, paper text ---------- */
+[data-md-color-scheme="slate"] {
+  --md-hue: 30;
+  --md-primary-fg-color:        #100f0c;
+  --md-primary-bg-color:        #e8e2d4;
+  --md-accent-fg-color:         #e0a08f;
+
+  --md-default-bg-color:        #16140f;
+  --md-default-fg-color:        #e8e2d4;
+  --md-default-fg-color--light:   #e8e2d4c2;
+  --md-default-fg-color--lighter: #e8e2d473;
+  --md-default-fg-color--lightest:#e8e2d426;
+
+  --md-typeset-a-color:         #d98c7a;  /* warm oxblood */
+  --md-code-bg-color:           #211e18;
+  --md-code-fg-color:           #e3ddcf;
+
+  --ml-hairline: #e8e2d41f;
+}
+
+/* ---------- Display type: serif headings ---------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-header__topic .md-ellipsis,
+.ml-hero__title {
+  font-family: "Spectral", Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.md-typeset h1 { font-weight: 600; font-size: 2.1rem; line-height: 1.15; }
+
+/* Hairline rule above every section heading — editorial rhythm */
+.md-typeset h2 {
+  margin-top: 2.4em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--ml-hairline);
+}
+
+.md-typeset hr {
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Hero (landing) ---------- */
+.ml-hero {
+  margin: 1.2rem 0 2.2rem;
+  padding-bottom: 1.8rem;
+  border-bottom: 1px solid var(--ml-hairline);
+}
+.ml-hero__title {
+  font-size: 2.9rem;
+  line-height: 1.08;
+  margin: 0 0 0.4rem;
+}
+.ml-hero__tagline {
+  font-size: 1.15rem;
+  color: var(--md-default-fg-color--light);
+  max-width: 42rem;
+  line-height: 1.5;
+}
+.ml-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+}
+
+/* ---------- Grid cards: hairline, no shadow, editorial ---------- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border: 1px solid var(--ml-hairline);
+  border-radius: 2px;
+  box-shadow: none;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+  transform: translateY(-2px);
+}
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.6em 0;
+}
+
+/* ---------- Recipe numbering, like a chef's notebook ---------- */
+.recipe-num {
+  display: inline-block;
+  font-family: "Spectral", Georgia, serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--md-accent-fg-color);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Code: sharper, paper-toned ---------- */
+.md-typeset code,
+.md-typeset pre > code {
+  border-radius: 2px;
+}
+.md-typeset .tabbed-set {
+  border: 1px solid var(--ml-hairline);
+  border-radius: 3px;
+}
+
+/* ---------- Tables: hairlines only ---------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--ml-hairline);
+  box-shadow: none;
+}
+.md-typeset table:not([class]) th {
+  background: var(--md-code-bg-color);
+  font-family: "Spectral", Georgia, serif;
+}
+
+/* ---------- Subtle masthead hairline ---------- */
+.md-header {
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Footer: quiet ---------- */
+.md-footer-meta { background: var(--md-primary-fg-color--dark); }
+
+/* ---------- Hero: two columns + a self-building graph ---------- */
+.ml-hero { display: flex; gap: 2.5rem; align-items: center; flex-wrap: wrap; }
+.ml-hero__text { flex: 1 1 21rem; }
+.ml-hero__art  { flex: 1 1 17rem; min-width: 248px; }
+.ml-hero__art svg { width: 100%; height: auto; max-width: 480px; display: block; margin: 0 auto; }
+.ml-hero__caption {
+  margin: .5rem 0 0; text-align: center;
+  font-family: "JetBrains Mono", monospace; font-size: .68rem;
+  letter-spacing: .04em; color: var(--md-default-fg-color--lighter);
+}
+.ml-hero__caption code { font-size: .9em; background: transparent; padding: 0; }
+
+/* Nodes pop in (declared), then edges draw (connect() links them). */
+.ml-node {
+  opacity: 0; transform: translateY(6px) scale(.96); transform-origin: center;
+  animation: ml-pop .5s cubic-bezier(.2, .7, .3, 1) forwards;
+}
+.ml-node rect { fill: var(--md-code-bg-color); stroke: var(--ml-hairline); stroke-width: 1; }
+.ml-node text {
+  fill: var(--md-default-fg-color); font-family: "JetBrains Mono", monospace;
+  font-size: 12px; text-anchor: middle; dominant-baseline: central;
+}
+.ml-edge {
+  fill: none; stroke: var(--md-accent-fg-color); stroke-width: 2;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: ml-draw .8s ease forwards;
+}
+@keyframes ml-pop  { to { opacity: 1; transform: none; } }
+@keyframes ml-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ml-node, .ml-edge { animation: none; opacity: 1; transform: none; stroke-dashoffset: 0; }
+}
+
+/* ---------- 404 ---------- */
+.ml-404 { text-align: center; padding: 4rem 1rem 5rem; }
+.ml-404 .ml-hero__title { font-size: 2.4rem; margin-top: .3rem; }
+.ml-404__actions {
+  margin-top: 1.6rem; display: flex; gap: .6rem;
+  justify-content: center; flex-wrap: wrap;
+}
+
+/* ---------- Responsive display type ---------- */
+.ml-hero__title { font-size: clamp(2rem, 7vw, 2.9rem); }
+.ml-404 .ml-hero__title { font-size: clamp(1.7rem, 6vw, 2.4rem); }
+
+/* ---------- Per-page Markdown actions (Copy / View / Open in Claude) ---------- */
+.md-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: -.2rem 0 1.5rem; }
+.md-action {
+  font-family: "JetBrains Mono", monospace; font-size: .66rem; letter-spacing: .02em;
+  line-height: 1; padding: .42rem .62rem; cursor: pointer; text-decoration: none;
+  background: transparent; color: var(--md-default-fg-color--light);
+  border: 1px solid var(--ml-hairline); border-radius: 3px;
+  transition: border-color .12s ease, color .12s ease;
+}
+.md-action:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
+
+/* ---------- API reference: extend the theme into mkdocstrings output ---------- */
+.md-typeset .doc-heading { font-family: "Spectral", Georgia, serif; font-weight: 600; }
+.md-typeset .doc-object > .doc-heading {
+  border-top: 1px solid var(--ml-hairline); padding-top: .7em; margin-top: 1.6em;
+}
+.md-typeset .doc-section-title {
+  font-family: "Spectral", Georgia, serif;
+  text-transform: uppercase; letter-spacing: .07em; font-size: .78rem;
+  color: var(--md-default-fg-color--light);
+}
+.md-typeset .doc-label {
+  font-family: "JetBrains Mono", monospace; font-size: .62rem; letter-spacing: .02em;
+  background: var(--md-code-bg-color); color: var(--md-accent-fg-color);
+  border: 1px solid var(--ml-hairline); border-radius: 3px; padding: .1rem .4rem;
+}
+.doc-symbol { color: var(--md-accent-fg-color) !important; opacity: .8; }
+
+/* ---------- Blockquote: signature treatment (the agent transcript) ---------- */
+.md-typeset blockquote {
+  border-left: 2px solid var(--md-accent-fg-color);
+  background: var(--md-code-bg-color);
+  border-radius: 0 3px 3px 0;
+  color: var(--md-default-fg-color);
+}
+
+/* ---------- Code-fence filename labels (when title= is set) ---------- */
+.md-typeset .highlight span.filename {
+  font-family: "JetBrains Mono", monospace; font-size: .68rem;
+  background: var(--md-code-bg-color); color: var(--md-default-fg-color--light);
+  border-bottom: 1px solid var(--ml-hairline);
+}
+
+/* ---------- Glossary / definition lists ---------- */
+.md-typeset dl dt { font-family: "Spectral", Georgia, serif; font-weight: 600; }

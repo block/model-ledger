@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.7
+
+- feat: `SnowflakeLedgerBackend` accepts a `connection_factory` and self-heals on auth-token expiry (Snowflake errno 390114) — on a detected expiry it obtains a fresh connection, swaps it in, and retries the same statement exactly once. Composes with `client_session_keep_alive` heartbeats as the backstop for residual expiries. Backward compatible: with only `connection`, behavior is unchanged. (#24)
+- perf: batch edge resolution in the investigate/graph hot path — `get_models` batch lookup replaces per-edge round trips. (#25)
+
 ## v0.7.6
 
 - fix: `SnowflakeLedgerBackend` skips schema DDL (`CREATE SCHEMA`/`CREATE TABLE`/`ALTER`) on write-mode init when the schema + tables already exist (probed via `SELECT`-only `INFORMATION_SCHEMA`). Snowflake checks the `CREATE` privilege even for `IF NOT EXISTS`, so this lets a least-privilege deployment with only `INSERT/UPDATE/SELECT` write without holding schema-ownership-level DDL grants. Fresh deployments still auto-provision; introspection failure falls back to the `CREATE` path. (#26)

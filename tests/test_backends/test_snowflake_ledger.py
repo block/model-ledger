@@ -790,3 +790,206 @@ def test_write_falls_back_to_sql_when_temp_table_denied():
     assert session.created_temp is True  # bulk path was attempted
     assert len(session.merges) >= 1  # models persisted via SQL MERGE
     assert len(session.inserts) >= 1  # snapshots persisted via SQL INSERT
+
+
+class AuthExpiredError(Exception):
+    """Mimics snowflake.connector.errors.ProgrammingError for the expired-token
+    case without importing the optional driver. ``_is_auth_expiry_error`` only
+    duck-types ``.errno`` / ``.msg``, so this is a faithful stand-in."""
+
+    def __init__(self, errno=390114, msg="390114: Authentication token has expired"):
+        super().__init__(msg)
+        self.errno = errno
+        self.msg = msg
+
+
+class _Cursor:
+    description = None
+
+    def fetchall(self):
+        return []
+
+
+class FakeConnection:
+    """A cursor-style connection (uses the ``execute`` path in ``_exec``).
+
+    Records the SQL it runs. Configurable to raise a chosen exception on its
+    first N execute calls, then behave normally (or to fail on every call).
+    """
+
+    def __init__(self, raise_exc=None, raise_times=0, fail_all=False):
+        self.executed: list[str] = []
+        self._raise_exc = raise_exc
+        self._raise_times = raise_times
+        self._fail_all = fail_all
+        self._calls = 0
+
+    def execute(self, sql):
+        self._calls += 1
+        if self._raise_exc is not None and (self._fail_all or self._calls <= self._raise_times):
+            raise self._raise_exc() if isinstance(self._raise_exc, type) else self._raise_exc
+        self.executed.append(sql)
+        return _Cursor()
+
+
+def _backend_with_factory(factory, **kwargs):
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    # read_only=True skips _ensure_tables DDL so each test drives exactly the
+    # statement it cares about.
+    return SnowflakeLedgerBackend(
+        schema="TEST_SCHEMA", read_only=True, connection_factory=factory, **kwargs
+    )
+
+
+class TestReconnectOnAuthExpiry:
+    def test_no_factory_means_no_reconnect_error_propagates(self):
+        """With only a connection (no factory), an auth-expiry error propagates
+        unchanged — the v0 behavior, no regression."""
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+        conn = FakeConnection(raise_exc=AuthExpiredError, fail_all=True)
+        backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", read_only=True, connection=conn)
+        with pytest.raises(AuthExpiredError):
+            backend.count_all_snapshots()
+
+    def test_auth_expiry_once_then_success_on_retry(self):
+        """On a single auth-expiry, the backend reconnects via the factory and
+        retries the same statement once, which succeeds."""
+        stale = FakeConnection(raise_exc=AuthExpiredError, raise_times=1)
+        fresh = FakeConnection()
+        conns = iter([stale, fresh])
+
+        backend = _backend_with_factory(lambda: next(conns))
+        # The factory produced `stale` at construction. The query hits the stale
+        # session, gets the expiry, reconnects to `fresh`, and retries.
+        result = backend.count_all_snapshots()
+        assert result == 0  # _Cursor.description is None -> _exec returns []
+        assert backend._session is fresh
+        # The retried statement actually ran on the fresh connection.
+        assert any("COUNT(*)" in s for s in fresh.executed)
+
+    def test_non_auth_programming_error_is_not_retried(self):
+        """A non-auth error (e.g. bad SQL / missing table) must propagate
+        without any reconnect attempt."""
+
+        class BadSqlError(Exception):
+            errno = 1003  # not 390114
+            msg = "SQL compilation error: object does not exist"
+
+        stale = FakeConnection(raise_exc=BadSqlError, fail_all=True)
+        reconnects = {"n": 0}
+
+        def factory():
+            reconnects["n"] += 1
+            return stale
+
+        backend = _backend_with_factory(factory)
+        before = reconnects["n"]  # the one construction-time call
+        with pytest.raises(BadSqlError):
+            backend.count_all_snapshots()
+        # No reconnect happened beyond the one-time construction call.
+        assert reconnects["n"] == before
+
+    def test_second_consecutive_auth_expiry_propagates(self):
+        """If the fresh connection ALSO raises auth-expiry, the second failure
+        propagates — we retry exactly once, never in a loop."""
+        first = FakeConnection(raise_exc=AuthExpiredError, fail_all=True)
+        second = FakeConnection(raise_exc=AuthExpiredError, fail_all=True)
+        conns = iter([first, second])
+
+        backend = _backend_with_factory(lambda: next(conns))
+        with pytest.raises(AuthExpiredError):
+            backend.count_all_snapshots()
+        # Reconnected exactly once (swapped to `second`), then gave up.
+        assert backend._session is second
+
+    def test_message_only_auth_expiry_is_detected(self):
+        """Drivers that leave errno unset but embed the code + phrase in the
+        message are still recognized as auth expiry."""
+
+        class MessageOnlyError(Exception):
+            errno = None
+            msg = "390114 (08001): Authentication token has expired. Reauthenticate."
+
+        stale = FakeConnection(raise_exc=MessageOnlyError, raise_times=1)
+        fresh = FakeConnection()
+        conns = iter([stale, fresh])
+
+        backend = _backend_with_factory(lambda: next(conns))
+        backend.count_all_snapshots()
+        assert backend._session is fresh
+
+    def test_concurrency_guard_single_reconnect(self):
+        """Two threads hit the expired session concurrently; the lock + re-check
+        ensure the factory reconnects exactly once and both threads end on the
+        same fresh session."""
+        import threading
+
+        # The first connection fails for both threads' first attempt. After the
+        # single reconnect, the fresh connection succeeds for everyone.
+        stale = FakeConnection(raise_exc=AuthExpiredError, fail_all=True)
+        fresh = FakeConnection()
+
+        factory_calls = {"n": 0}
+        factory_lock = threading.Lock()
+        first_yielded = {"done": False}
+
+        def factory():
+            with factory_lock:
+                factory_calls["n"] += 1
+                # Construction yields the stale connection first.
+                if not first_yielded["done"]:
+                    first_yielded["done"] = True
+                    return stale
+                return fresh
+
+        backend = _backend_with_factory(factory)
+        assert backend._session is stale
+        construction_calls = factory_calls["n"]
+
+        barrier = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def worker():
+            try:
+                barrier.wait()
+                backend.count_all_snapshots()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert errors == []
+        assert backend._session is fresh
+        # Exactly one reconnect beyond the construction-time factory call.
+        assert factory_calls["n"] == construction_calls + 1
+
+    def test_no_result_statement_also_self_heals(self):
+        """The reconnect-retry-once path covers non-result statements too
+        (writes/DDL), not just queries."""
+        stale = FakeConnection(raise_exc=AuthExpiredError, raise_times=1)
+        fresh = FakeConnection()
+        conns = iter([stale, fresh])
+
+        backend = _backend_with_factory(lambda: next(conns))
+        tag = Tag(
+            model_hash="m1",
+            name="latest",
+            snapshot_hash="snap1",
+            updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+        backend.set_tag(tag)  # routes through _exec_no_result
+        assert backend._session is fresh
+        assert any("MERGE INTO" in s for s in fresh.executed)
+
+    def test_requires_connection_or_factory(self):
+        from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+        with pytest.raises(ValueError, match="connection"):
+            SnowflakeLedgerBackend(schema="TEST_SCHEMA")

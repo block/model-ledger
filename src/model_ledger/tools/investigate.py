@@ -38,7 +38,8 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
     """
     model = ledger.get(input.model_name)
 
-    snapshots = ledger.history(model) or []
+    all_snapshots = ledger.history(model) or []
+    snapshots = all_snapshots
 
     if input.as_of is not None:
         as_of = input.as_of
@@ -92,16 +93,21 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
         upstream_nodes = []
         downstream_nodes = []
 
+    # groups()/members() reflect *current* state, so reuse the unfiltered
+    # snapshot list we already fetched — but only when no as_of filter is in
+    # play (an as_of-trimmed list would change their membership semantics).
+    reuse_snaps = all_snapshots if input.as_of is None else None
+
     group_names: list[str] = []
     try:
-        group_refs = ledger.groups(model) or []
+        group_refs = ledger.groups(model, snapshots=reuse_snaps) or []
         group_names = [g.name for g in group_refs]
     except (KeyError, ValueError, Exception):
         group_names = []
 
     member_names: list[str] = []
     try:
-        member_refs = ledger.members(model) or []
+        member_refs = ledger.members(model, snapshots=reuse_snaps) or []
         member_names = [m.name for m in member_refs]
     except (KeyError, ValueError, Exception):
         member_names = []

@@ -6,6 +6,7 @@ import builtins
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, TypedDict
 
+from model_ledger.backends import batch_fallbacks
 from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
 from model_ledger.backends.ledger_protocol import LedgerBackend
 from model_ledger.core.enums import ModelStatus
@@ -117,6 +118,21 @@ class Ledger:
             raise ModelNotFoundError(model)
         self._name_cache[model] = result
         return result
+
+    def _resolve_hashes(self, model_hashes: builtins.list[str]) -> dict[str, ModelRef]:
+        """Resolve many model hashes to ModelRefs in a single backend round trip.
+
+        Dispatches to the backend's bulk ``get_models`` when available
+        (one ``IN (...)`` query) and falls back to the protocol-only
+        implementation otherwise. Used by the graph methods to resolve all
+        edges of a node at once instead of one ``get()`` per edge.
+        """
+        if not model_hashes:
+            return {}
+        if hasattr(self._backend, "get_models"):
+            resolved: dict[str, ModelRef] = self._backend.get_models(model_hashes)
+            return resolved
+        return batch_fallbacks.get_models(self._backend, model_hashes)
 
     def register(
         self,
@@ -319,41 +335,49 @@ class Ledger:
         self,
         model: ModelRef | str,
         direction: str = "both",
+        *,
+        snapshots: builtins.list[Snapshot] | None = None,
     ) -> builtins.list[dict[str, Any]]:
-        ref = self._resolve_model(model)
-        snaps = self._backend.list_snapshots(ref.model_hash)
-        result: builtins.list[dict[str, Any]] = []
+        """Direct dependency edges for a model.
 
+        Resolves every edge's target model in ONE batched lookup instead of a
+        per-edge round trip. Pass ``snapshots`` (the model's full history) to
+        reuse an already-fetched list and skip the ``list_snapshots`` call —
+        the graph traversal and ``investigate`` use this to avoid refetching.
+        """
+        ref = self._resolve_model(model)
+        snaps = snapshots if snapshots is not None else self._backend.list_snapshots(ref.model_hash)
+
+        # Collect edges first, then resolve all target hashes in one batch.
+        # Each edge: (direction, target_hash, relationship)
+        edges: builtins.list[tuple[str, str, str]] = []
         if direction in ("upstream", "both"):
             for s in snaps:
                 if s.event_type == "depends_on":
-                    try:
-                        upstream = self.get(s.payload["upstream_hash"])
-                    except ModelNotFoundError:
-                        continue
-                    result.append(
-                        {
-                            "model": upstream,
-                            "relationship": s.payload.get("relationship", "depends_on"),
-                            "direction": "upstream",
-                        }
-                    )
-
+                    h = s.payload.get("upstream_hash")
+                    if h:
+                        edges.append(("upstream", h, s.payload.get("relationship", "depends_on")))
         if direction in ("downstream", "both"):
             for s in snaps:
                 if s.event_type == "has_dependent":
-                    try:
-                        downstream = self.get(s.payload["downstream_hash"])
-                    except ModelNotFoundError:
-                        continue
-                    result.append(
-                        {
-                            "model": downstream,
-                            "relationship": s.payload.get("relationship", "depends_on"),
-                            "direction": "downstream",
-                        }
-                    )
+                    h = s.payload.get("downstream_hash")
+                    if h:
+                        edges.append(("downstream", h, s.payload.get("relationship", "depends_on")))
 
+        resolved = self._resolve_hashes([h for _, h, _ in edges])
+
+        result: builtins.list[dict[str, Any]] = []
+        for edge_direction, target_hash, relationship in edges:
+            target = resolved.get(target_hash)
+            if target is None:
+                continue
+            result.append(
+                {
+                    "model": target,
+                    "relationship": relationship,
+                    "direction": edge_direction,
+                }
+            )
         return result
 
     # --- Graph methods (v0.4.0) ---
@@ -623,7 +647,12 @@ class Ledger:
             )
         return ref
 
-    def members(self, group: ModelRef | str) -> builtins.list[ModelRef]:
+    def members(
+        self,
+        group: ModelRef | str,
+        *,
+        snapshots: builtins.list[Snapshot] | None = None,
+    ) -> builtins.list[ModelRef]:
         """Return current members of this group.
 
         Replays member_added/member_removed snapshots to determine
@@ -633,14 +662,20 @@ class Ledger:
         Mixed case: groups seeded via register_group() that later have
         add_member()/remove_member() called use dependency links as the
         baseline and overlay the event log on top.
+
+        All member_added targets are resolved in a single batched lookup
+        instead of one round trip per event. Pass ``snapshots`` (the group's
+        full history) to reuse an already-fetched list.
         """
         ref = self._resolve_model(group)
-        snaps = self._backend.list_snapshots(ref.model_hash)
+        snaps = snapshots if snapshots is not None else self._backend.list_snapshots(ref.model_hash)
         membership_events = [s for s in snaps if s.event_type in ("member_added", "member_removed")]
 
         # Seed from dependency links (covers register_group() seeded members
         # and is always correct as the initial universe of linked models).
-        deps = self.dependencies(group, direction="upstream") or []
+        # Reuse the snapshots we already have — dependency edges live in the
+        # same history.
+        deps = self.dependencies(group, direction="upstream", snapshots=snaps) or []
         current: dict[str, ModelRef] = {
             d["model"].model_hash: d["model"] for d in deps if d.get("relationship") == "member_of"
         }
@@ -649,14 +684,27 @@ class Ledger:
             # No events: dependency links are the full picture.
             return list(current.values())
 
+        ordered_events = sorted(membership_events, key=lambda s: s.timestamp)
+
+        # Batch-resolve every member_added hash not already seeded, in one
+        # round trip. The name fallback (for the rare unresolvable hash) stays
+        # per-event but only fires when the bulk lookup misses.
+        added_hashes = [
+            s.payload.get("member_hash", "")
+            for s in ordered_events
+            if s.event_type == "member_added" and s.payload.get("member_hash", "") not in current
+        ]
+        resolved = self._resolve_hashes([h for h in added_hashes if h])
+
         # Replay events on top of the dep-link baseline.
-        for s in sorted(membership_events, key=lambda s: s.timestamp):
+        for s in ordered_events:
             member_hash = s.payload.get("member_hash", "")
             if s.event_type == "member_added":
                 if member_hash not in current:
-                    try:
-                        current[member_hash] = self.get(member_hash)
-                    except ModelNotFoundError:
+                    ref_for_member = resolved.get(member_hash)
+                    if ref_for_member is not None:
+                        current[member_hash] = ref_for_member
+                    else:
                         member_name = s.payload.get("member_name", "")
                         if member_name:
                             try:
@@ -667,21 +715,60 @@ class Ledger:
                 current.pop(member_hash, None)
         return list(current.values())
 
-    def groups(self, model: ModelRef | str) -> builtins.list[ModelRef]:
+    def groups(
+        self,
+        model: ModelRef | str,
+        *,
+        snapshots: builtins.list[Snapshot] | None = None,
+    ) -> builtins.list[ModelRef]:
         """Return groups this model currently belongs to.
 
         Replays member_added/member_removed events on each candidate group
-        to exclude composites the model has been removed from.
+        to exclude composites the model has been removed from. The candidate
+        composites' membership histories are fetched in a single bulk
+        ``list_all_snapshots`` scan when the backend supports it, so the cost
+        is one query for the whole fan-out rather than one per candidate.
+
+        Pass ``snapshots`` (this model's full history) to reuse an
+        already-fetched list for the downstream-edge discovery.
         """
-        deps = self.dependencies(model, direction="downstream") or []
+        deps = self.dependencies(model, direction="downstream", snapshots=snapshots) or []
         candidates = [d["model"] for d in deps if d.get("relationship") == "member_of"]
+        if not candidates:
+            return []
         ref = self._resolve_model(model)
+
+        # Resolve each candidate's current members. Prefer a single bulk
+        # snapshot scan over per-candidate list_snapshots round trips.
+        snaps_by_group = self._membership_snapshots({c.model_hash for c in candidates})
+
         result: builtins.list[ModelRef] = []
         for comp in candidates:
-            current_members = self.members(comp)
+            comp_snaps = snaps_by_group.get(comp.model_hash)
+            current_members = self.members(comp, snapshots=comp_snaps)
             if any(m.model_hash == ref.model_hash for m in current_members):
                 result.append(comp)
         return result
+
+    def _membership_snapshots(
+        self,
+        group_hashes: builtins.set[str],
+    ) -> dict[str, builtins.list[Snapshot]]:
+        """Group the membership-relevant snapshots for several groups at once.
+
+        Returns ``{group_hash: [snapshots]}``. When the backend exposes
+        ``list_all_snapshots`` the whole fan-out is one scan; otherwise this
+        returns an empty mapping and callers fall back to per-group
+        ``list_snapshots`` (preserving the protocol-only contract).
+        """
+        if not group_hashes or not hasattr(self._backend, "list_all_snapshots"):
+            return {}
+        by_group: dict[str, builtins.list[Snapshot]] = {h: [] for h in group_hashes}
+        for s in self._backend.list_all_snapshots():
+            bucket = by_group.get(s.model_hash)
+            if bucket is not None:
+                bucket.append(s)
+        return by_group
 
     def add_member(
         self,

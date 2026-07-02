@@ -25,6 +25,14 @@ class InMemoryLedgerBackend:
                 return m
         return None
 
+    def get_models(self, model_hashes: list[str]) -> dict[str, ModelRef]:
+        """Bulk-resolve model hashes to ModelRefs in one pass.
+
+        Returns ``{model_hash: ModelRef}`` for hashes that exist; missing
+        hashes are omitted. Counts as a single backend round trip.
+        """
+        return {h: self._models[h] for h in dict.fromkeys(model_hashes) if h in self._models}
+
     def list_models(self, **filters: str) -> list[ModelRef]:
         text = filters.pop("text", None)
         limit = filters.pop("limit", None)

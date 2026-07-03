@@ -1,4 +1,4 @@
-"""FastMCP server wrapping model-ledger's 6 tools and 3 resources.
+"""FastMCP server wrapping model-ledger's 8 tools and 3 resources.
 
 Usage:
     >>> from model_ledger.mcp.server import create_server

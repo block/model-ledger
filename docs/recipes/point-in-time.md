@@ -16,7 +16,7 @@ the inventory at any date is just a replay of the log up to that moment.
 from datetime import datetime, timezone, timedelta
 from model_ledger import Ledger
 
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 ledger.register(name="fraud_scoring", owner="risk-team",
                 model_type="ml_model", tier="high",

@@ -2,9 +2,11 @@
 
 **git for models** — know what models you have deployed, where they run, what they depend on, and what changed.
 
+[![CI](https://github.com/block/model-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/block/model-ledger/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/model-ledger)](https://pypi.org/project/model-ledger/)
+[![Downloads](https://img.shields.io/pypi/dm/model-ledger)](https://pypistats.org/packages/model-ledger)
 [![Docs](https://img.shields.io/badge/docs-block.github.io/model--ledger-7a1a1a.svg)](https://block.github.io/model-ledger/)
 
 📖 **[Documentation](https://block.github.io/model-ledger/)** &middot;
@@ -20,6 +22,9 @@ model-ledger is a model inventory for any organization with deployed models. It
 Unlike registries tied to a single platform (MLflow, SageMaker, W&B), it spans all of
 them — as one connected graph — and it's built to be driven by AI agents through a
 native MCP server.
+
+Benchmarked at production scale: full inventory reconstruction over a ledger of 28.8k
+models and 212k events runs in under a second ([CHANGELOG, v0.7.4](CHANGELOG.md)).
 
 ## Install
 
@@ -75,21 +80,57 @@ runs in CI:
 - **[Agents (MCP)](https://block.github.io/model-ledger/guides/agents/)** — the eight-tool agent surface, with a worked transcript
 - **[Connectors](https://block.github.io/model-ledger/guides/connectors/)** — discover from SQL, REST, GitHub, or your own platform
 - **[Backends](https://block.github.io/model-ledger/guides/backends/)** — in-memory, SQLite, JSON, Snowflake, or remote HTTP
-- **[Governance](https://block.github.io/model-ledger/governance/)** — how the primitives map to SR 26‑2, the EU AI Act, and NIST
+- **[Governance](https://block.github.io/model-ledger/governance/)** — how the primitives map to SR 11‑7/SR 26‑2, the EU AI Act, and NIST AI RMF
 - **[API reference](https://block.github.io/model-ledger/reference/)** — generated from the source
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Sources
+        C1[SQL / REST / GitHub / Prefect<br/>connectors]
+    end
+    subgraph Core
+        L[Ledger<br/>append-only event log,<br/>point-in-time reconstruction]
+        G[Dependency graph]
+        V[Compliance profiles<br/>SR 11-7/SR 26-2 · EU AI Act · NIST AI RMF]
+    end
+    subgraph Surfaces
+        S1[Python SDK]
+        S2[CLI]
+        S3[REST API]
+        S4[MCP server · 8 tools]
+    end
+    B1[(in-memory · SQLite · JSON ·<br/>Snowflake · remote HTTP)]
+    C1 --> L
+    L --> G
+    L --> V
+    L --- B1
+    S1 --> L
+    S2 --> L
+    S3 --> L
+    S4 --> L
+```
 
 ## For organizations
 
-The OSS core handles discovery, graph building, change tracking, storage, and the agent
-protocol. Your internal package provides the thin layer on top — connector configs,
-custom connectors for internal platforms, authentication, and compliance profiles. Thin
-config and credentials, not reimplemented logic.
+The OSS core handles discovery, graph building, change tracking, storage, the agent
+protocol, and compliance validation — the SR 11‑7/SR 26‑2, EU AI Act Annex IV, and
+NIST AI RMF profiles ship in `model_ledger.validate`. Your internal package provides
+only the thin layer on top: connector configs, custom connectors for internal
+platforms, and credentials. Thin config, not reimplemented logic.
 
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/block/model-ledger/blob/main/CONTRIBUTING.md).
 All commits require DCO sign-off.
 
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately.
+
 ## License
 
 Apache-2.0. See [LICENSE](https://github.com/block/model-ledger/blob/main/LICENSE).
+
+Created and maintained by [Vignesh Narayanaswamy](https://github.com/vigneshnarayanaswamy) at Block.

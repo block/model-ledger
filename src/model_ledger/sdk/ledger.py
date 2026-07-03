@@ -1,4 +1,4 @@
-"""Ledger SDK — tool-shaped API for v0.3.0 event-log paradigm."""
+"""Ledger SDK — tool-shaped API for the event-log paradigm."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ _INTERNAL_EVENTS: frozenset[str] = frozenset(
 
 
 class Ledger:
-    """The main entry point for model-ledger v0.3.0.
+    """The main entry point for model-ledger.
 
     Every public method is designed to work as an agent tool call:
     clear inputs, JSON-serializable outputs, no side effects beyond the ledger.

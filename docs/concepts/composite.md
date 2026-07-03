@@ -20,7 +20,7 @@ validation. Composites are the layer no plain registry or catalog models.
 
 ```python
 from model_ledger import Ledger
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 group = ledger.register_group(
     name="Credit Scorecard",

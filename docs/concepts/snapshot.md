@@ -20,7 +20,7 @@ A model splits into two things:
 
 ```python
 from model_ledger import Ledger
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 ref = ledger.register(
     name="fraud_scoring", owner="risk-team",

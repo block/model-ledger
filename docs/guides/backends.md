@@ -22,7 +22,7 @@ from model_ledger.backends.json_files import JsonFileLedgerBackend
 from model_ledger.backends.http import HttpLedgerBackend
 
 Ledger()                                                  # in-memory
-Ledger.from_sqlite("./inventory.db")                      # SQLite
+Ledger.from_sqlite("./ledger.db")                      # SQLite
 Ledger(JsonFileLedgerBackend("./inventory"))              # JSON files
 Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")     # Snowflake
 Ledger(HttpLedgerBackend("https://model-ledger:8000"))    # remote REST
@@ -50,7 +50,7 @@ inventory/
 The CLI launches either agent or HTTP surfaces over any backend:
 
 ```bash
-model-ledger serve --backend sqlite --path ./inventory.db --port 8000
+model-ledger serve --backend sqlite --path ./ledger.db --port 8000
 model-ledger mcp   --backend snowflake --schema DB.MODEL_LEDGER
 ```
 

@@ -35,6 +35,9 @@ dependency graph** automatically, and **records every change as an immutable
 event**. Unlike registries tied to one platform (MLflow, SageMaker, W&B), it spans
 all of them — and it's built to be driven by AI agents through a native MCP server.
 
+Born at Block, where it runs in production inventorying ML models, heuristic rules,
+and pipelines across multiple platforms for a second-line model risk program.
+
 [Get started in 60 seconds :octicons-arrow-right-24:](quickstart.md){ .md-button .md-button--primary }
 [Why a ledger, not a registry? :octicons-arrow-right-24:](#why-a-ledger-not-a-registry){ .md-button }
 
@@ -104,7 +107,7 @@ dependency edge — no hand-wiring.
 ```python
 from model_ledger import Ledger, DataNode
 
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 ledger.add([
     DataNode("segmentation", platform="etl",      outputs=["customer_segments"]),
@@ -129,15 +132,15 @@ graph LR
 
 ## One operation, every surface
 
-The SDK, the REST API, and the MCP tools are the **same six verbs** — `discover`,
-`record`, `investigate`, `query`, `trace`, `changelog` (plus `tag`/`list_tags`).
+The SDK, the REST API, and the MCP tools are the **same eight verbs** — `discover`,
+`record`, `investigate`, `query`, `trace`, `changelog`, `tag`, `list_tags`.
 Registering a model looks like this everywhere:
 
 === "Python"
 
     ```python
     from model_ledger import Ledger
-    ledger = Ledger.from_sqlite("./inventory.db")
+    ledger = Ledger.from_sqlite("./ledger.db")
 
     ledger.register(
         name="fraud_scoring", owner="risk-team",

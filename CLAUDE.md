@@ -24,8 +24,8 @@ Open-source model inventory and governance framework. Apache-2.0.
 - `src/model_ledger/backends/http.py` — HttpLedgerBackend (MCP → REST API pass-through)
 - `src/model_ledger/backends/json_files.py` — JsonFileLedgerBackend (git-friendly)
 - `src/model_ledger/sdk/ledger.py` — Ledger SDK with last_seen, change_detected/change_occurred
-- `src/model_ledger/tools/` — 6 agent tool functions (record, query, investigate, trace, changelog, discover)
-- `src/model_ledger/mcp/server.py` — MCP server (FastMCP, 6 tools + 3 resources)
+- `src/model_ledger/tools/` — 8 agent tool functions (record, query, investigate, trace, changelog, discover, tag, list_tags)
+- `src/model_ledger/mcp/server.py` — MCP server (FastMCP, 8 tools + 3 resources)
 - `src/model_ledger/rest/app.py` — REST API (FastAPI, create_app() factory)
 
 ### v0.4.x (DataNode graph)
@@ -40,7 +40,7 @@ Open-source model inventory and governance framework. Apache-2.0.
 - `src/model_ledger/adapters/cron.py` — Cron expression translation
 
 ### v0.3.0 (event-log paradigm)
-- `src/model_ledger/scanner/` — Scanner protocol, ModelCandidate, InventoryScanner, ScannerRegistry
+- Scanner protocol removed (deprecated v0.4.0, removed post-v0.7.7) — use SourceConnector + DataNode + Ledger.add()/connect()
 
 ### v0.2.0 (legacy — retained for reference)
 - `src/model_ledger/core/models.py` — Model, ModelVersion, ComponentNode

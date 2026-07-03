@@ -14,7 +14,7 @@ factory connectors ship in core; anything else is a small protocol implementatio
 ```python
 from model_ledger import Ledger, sql_connector
 
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 # Simple: read a registry table
 models = sql_connector(

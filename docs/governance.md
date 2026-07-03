@@ -29,7 +29,7 @@ true then?" is always reconstructable.**
 ```python
 from model_ledger import Ledger
 
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 # Identity + risk tier — the minimum a regulator needs
 ledger.register(

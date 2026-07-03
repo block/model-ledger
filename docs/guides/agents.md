@@ -17,7 +17,7 @@ pip install "model-ledger[mcp]"
 
 # Claude Code (one time). Drop --demo to start empty; add a backend to persist.
 claude mcp add model-ledger -- model-ledger mcp --demo
-claude mcp add model-ledger -- model-ledger mcp --backend sqlite --path ./inventory.db
+claude mcp add model-ledger -- model-ledger mcp --backend sqlite --path ./ledger.db
 ```
 
 The server speaks stdio and works with any MCP client (Claude Desktop, Goose, Cursor).

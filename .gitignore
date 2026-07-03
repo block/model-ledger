@@ -45,3 +45,6 @@ docs/superpowers/
 .rp1/context/meta.json
 .rp1/settings.toml
 # rp1:end
+
+# rp1 workspace artifacts — never commit
+.rp1/

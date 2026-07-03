@@ -62,7 +62,7 @@ def create_app(
 
     Args:
         backend: Optional ledger backend. Defaults to in-memory.
-        demo: If True, pre-loads demo inventory data (requires Task 11).
+        demo: If True, pre-loads demo inventory data.
 
     Returns:
         A configured FastAPI application.
@@ -75,7 +75,7 @@ def create_app(
 
             load_demo_inventory(ledger)
         except ImportError:
-            pass  # demo dataset not yet available (Task 11)
+            pass  # demo dataset module not installed
 
     app = FastAPI(
         title="Model Ledger API",

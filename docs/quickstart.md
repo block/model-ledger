@@ -82,7 +82,7 @@ A `DataNode` gives you the graph. [`register()`](reference/index.md) gives a mod
 
 ```python
 from model_ledger import Ledger
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 
 ledger.register(
     name="fraud_scoring",
@@ -96,10 +96,13 @@ ledger.register(
 ledger.record("fraud_scoring", event="retrained", actor="ml-pipeline",
               payload={"accuracy": 0.94, "features_added": ["velocity_24h"]})
 
-for snap in ledger.history("fraud_scoring"):
+history = ledger.history("fraud_scoring")  # newest first
+for snap in history:
     print(snap.timestamp, snap.event_type)
-# ... registered
 # ... retrained
+# ... registered
+
+assert [s.event_type for s in history] == ["retrained", "registered"]
 ```
 
 Every call appends an immutable [Snapshot](concepts/snapshot.md). Nothing is
@@ -114,7 +117,7 @@ from model_ledger import Ledger
 from model_ledger.backends.json_files import JsonFileLedgerBackend
 
 Ledger()                                       # in-memory — tests & demos
-Ledger.from_sqlite("./inventory.db")           # zero-infra, single file
+Ledger.from_sqlite("./ledger.db")           # zero-infra, single file
 Ledger(JsonFileLedgerBackend("./inventory"))   # git-friendly JSON files
 Ledger.from_snowflake(conn, schema="DB.MODEL_LEDGER")  # production
 ```

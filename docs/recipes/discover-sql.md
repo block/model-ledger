@@ -17,7 +17,7 @@ so re-running on a schedule only records genuine changes.
 import sqlite3
 from model_ledger import Ledger, sql_connector
 
-ledger = Ledger.from_sqlite("./inventory.db")
+ledger = Ledger.from_sqlite("./ledger.db")
 source = sqlite3.connect("./ml_platform.db")
 
 models = sql_connector(

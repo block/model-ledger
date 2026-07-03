@@ -30,7 +30,6 @@ from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 from model_ledger.core.models import ComponentNode, Model, ModelVersion
 from model_ledger.graph.models import DataNode, DataPort
 from model_ledger.graph.protocol import SourceConnector
-from model_ledger.scanner.protocol import ModelCandidate, Scanner
 from model_ledger.sdk.inventory import Inventory
 from model_ledger.sdk.ledger import Ledger
 
@@ -69,8 +68,6 @@ __all__ = [
     "ModelRef",
     "Snapshot",
     "Tag",
-    "ModelCandidate",
-    "Scanner",
     # v0.4.0 — graph
     "DataNode",
     "DataPort",

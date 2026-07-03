@@ -1,16 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.7.8
 
-- docs: README credibility pass — CI/downloads badges, production-scale benchmark callout, architecture diagram, maintainer credit; "For organizations" now states that the SR 11-7/SR 26-2, EU AI Act Annex IV, and NIST AI RMF validation profiles ship in the OSS core
-- docs: quickstart and all Ledger examples persist to `./ledger.db` (the previous `./inventory.db` name collided with the CLI's legacy Inventory-format default and crashed `model-ledger list`); quickstart `history()` example now shows (and CI-asserts) newest-first ordering
-- fix(cli): bare installs get a one-line install hint from `model-ledger --help` instead of a `ModuleNotFoundError` traceback (typer/rich live in the `[cli]` extra)
-- fix(cli): inventory commands detect a Ledger event-log database and exit with guidance instead of an sqlite traceback
-- fix(cli): `model-ledger validate` with an unknown profile exits with the available profile names instead of a `ValueError` traceback
-- refactor!: remove the `scanner` module (`Scanner`, `InventoryScanner`, `ModelCandidate`, `ScanReport`), deprecated since v0.4.0 — use `SourceConnector` + `DataNode` + `Ledger.add()/connect()`
-- chore: PyPI metadata — Development Status classifier to Beta; add `mcp`, `model-context-protocol`, `ai-governance`, `eu-ai-act`, `nist-ai-rmf`, `sr-26-2` keywords
-- docs: add SECURITY.md (private vulnerability reporting)
-- chore: stale-reference sweep — MCP tool count 6→8 in docstrings and CLAUDE.md, `v0.3.0` markers out of SDK docstrings, "Task 11" comments out of rest/app.py; fold two stale Unreleased changelog blocks into the releases that shipped them (v0.7.3, v0.4.8)
+- docs: README credibility pass — CI/downloads badges, production-scale benchmark callout, architecture diagram, maintainer credit; "For organizations" now states that the SR 11-7/SR 26-2, EU AI Act Annex IV, and NIST AI RMF validation profiles ship in the OSS core (#29)
+- docs: quickstart and all Ledger examples persist to `./ledger.db` (the previous `./inventory.db` name collided with the CLI's legacy Inventory-format default and crashed `model-ledger list`); quickstart `history()` example now shows (and CI-asserts) newest-first ordering (#29)
+- fix(cli): bare installs get a one-line install hint from `model-ledger --help` instead of a `ModuleNotFoundError` traceback (typer/rich live in the `[cli]` extra) (#29)
+- fix(cli): inventory commands detect a Ledger event-log database and exit with guidance instead of an sqlite traceback (#29)
+- fix(cli): `model-ledger validate` with an unknown profile exits with the available profile names instead of a `ValueError` traceback (#29)
+- refactor!: remove the `scanner` module (`Scanner`, `InventoryScanner`, `ModelCandidate`, `ScanReport`), deprecated since v0.4.0 — use `SourceConnector` + `DataNode` + `Ledger.add()/connect()` (#29)
+- chore: PyPI metadata — Development Status classifier to Beta; add `mcp`, `model-context-protocol`, `ai-governance`, `eu-ai-act`, `nist-ai-rmf`, `sr-26-2` keywords (#29)
+- docs: add SECURITY.md (private vulnerability reporting) (#29)
+- chore: stale-reference sweep — MCP tool count 6→8 in docstrings and CLAUDE.md, `v0.3.0` markers out of SDK docstrings, "Task 11" comments out of rest/app.py; fold two stale Unreleased changelog blocks into the releases that shipped them (v0.7.3, v0.4.8) (#29)
 
 ## v0.7.7
 

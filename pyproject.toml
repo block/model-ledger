@@ -9,9 +9,22 @@ authors = [
     { name = "Vignesh Narayanaswamy", email = "vigneshn@block.xyz" },
     { name = "Block", email = "opensource@block.xyz" },
 ]
-keywords = ["mlops", "model-governance", "model-inventory", "model-risk", "sr-11-7", "compliance"]
+keywords = [
+    "mlops",
+    "model-governance",
+    "model-inventory",
+    "model-risk",
+    "sr-11-7",
+    "sr-26-2",
+    "compliance",
+    "mcp",
+    "model-context-protocol",
+    "ai-governance",
+    "eu-ai-act",
+    "nist-ai-rmf",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: Apache Software License",

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.9
+
+- chore: publish to the official MCP Registry as `io.github.block/model-ledger` — adds `server.json` and the PyPI ownership marker in the README (#31)
+
 ## v0.7.8
 
 - docs: README credibility pass — CI/downloads badges, production-scale benchmark callout, architecture diagram, maintainer credit; "For organizations" now states that the SR 11-7/SR 26-2, EU AI Act Annex IV, and NIST AI RMF validation profiles ship in the OSS core (#29)

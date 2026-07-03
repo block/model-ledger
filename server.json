@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.block/model-ledger",
+  "title": "Model Ledger",
+  "description": "Model inventory and governance: discover, query, and trace deployed models and their dependency graph as an append-only event log",
+  "version": "0.7.9",
+  "repository": {
+    "url": "https://github.com/block/model-ledger",
+    "source": "github"
+  },
+  "websiteUrl": "https://block.github.io/model-ledger/",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "model-ledger",
+      "version": "0.7.9",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "model-ledger[mcp,cli]==0.7.9",
+          "description": "Install with the MCP and CLI extras"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Start the MCP server (stdio transport)"
+        }
+      ]
+    }
+  ]
+}

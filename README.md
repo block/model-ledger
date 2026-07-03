@@ -134,3 +134,5 @@ See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately.
 Apache-2.0. See [LICENSE](https://github.com/block/model-ledger/blob/main/LICENSE).
 
 Created and maintained by [Vignesh Narayanaswamy](https://github.com/vigneshnarayanaswamy) at Block.
+
+<!-- mcp-name: io.github.block/model-ledger -->

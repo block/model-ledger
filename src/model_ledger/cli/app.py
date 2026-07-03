@@ -111,7 +111,39 @@ def _default_db() -> str:
     return os.environ.get("MODEL_LEDGER_DB", "inventory.db")
 
 
+def _guard_ledger_db(db: str) -> None:
+    """Exit with guidance when `db` is a Ledger event-log database.
+
+    The inventory commands read the legacy Inventory format (models/versions
+    tables). Pointing them at a Ledger database (models/snapshots tables) —
+    e.g. the `ledger.db` file from the quickstart — used to surface as a raw
+    sqlite "no such table" traceback.
+    """
+    import sqlite3
+    from pathlib import Path
+
+    if not Path(db).is_file():
+        return
+    try:
+        with sqlite3.connect(db) as conn:
+            names = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+    except sqlite3.Error:
+        return
+    if "snapshots" in names and "versions" not in names:
+        console.print(
+            f"[red]Error:[/red] '{db}' is a model-ledger event-log (Ledger) database, "
+            "but this command reads the legacy Inventory format.\n"
+            "Work with a Ledger database via the Python SDK "
+            "([cyan]Ledger.from_sqlite(...)[/cyan]) or serve it to agents with "
+            f"[cyan]model-ledger mcp --backend sqlite --path {db}[/cyan]."
+        )
+        raise typer.Exit(code=1)
+
+
 def _get_inventory(db: str) -> Inventory:
+    _guard_ledger_db(db)
     return Inventory(db_path=db)
 
 
@@ -235,7 +267,11 @@ def validate_cmd(
 
     from model_ledger.validate.engine import validate
 
-    result = validate(model, ver, profile=profile)
+    try:
+        result = validate(model, ver, profile=profile)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1) from None
 
     if format == "json":
         data = {

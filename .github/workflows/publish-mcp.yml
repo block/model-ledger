@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Publish to MCP Registry
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  publish-mcp:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC proof that this run comes from block/model-ledger
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Sync server.json version from pyproject.toml
+        run: |
+          VERSION=$(grep -m 1 'version =' pyproject.toml | awk -F'"' '{print $2}')
+          jq --arg v "$VERSION" \
+            '.version = $v
+             | .packages[0].version = $v
+             | .packages[0].runtimeArguments[0].value = "model-ledger[mcp,cli]==" + $v' \
+            server.json > server.tmp && mv server.tmp server.json
+          echo "Publishing version $VERSION"
+
+      - name: Wait for the version to be visible on PyPI
+        run: |
+          VERSION=$(jq -r '.version' server.json)
+          for i in $(seq 1 30); do
+            curl -sf "https://pypi.org/pypi/model-ledger/${VERSION}/json" > /dev/null && exit 0
+            echo "PyPI does not serve ${VERSION} yet (attempt ${i}/30)"
+            sleep 10
+          done
+          echo "model-ledger ${VERSION} never appeared on PyPI" >&2
+          exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

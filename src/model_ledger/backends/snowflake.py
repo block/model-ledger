@@ -429,14 +429,17 @@ class SnowflakeLedgerBackend:
             unions = " UNION ALL ".join(
                 f"SELECT {_esc(s.snapshot_hash)}, {_esc(s.model_hash)}, "
                 f"{_esc(s.parent_hash)}, {_esc(s.timestamp.isoformat())}, "
-                f"{_esc(s.actor)}, {_esc(s.event_type)}, {_esc(s.source)}"
+                f"{_esc(s.actor)}, {_esc(s.event_type)}, {_esc(s.source)}, "
+                f"{_esc(json.dumps(s.payload, default=str)) if s.payload else 'NULL'}, "
+                f"{_esc(json.dumps(s.tags, default=str)) if s.tags else 'NULL'}"
                 for s in batch
             )
             self._exec_no_result(
                 f"""
                 INSERT INTO {self._schema}.SNAPSHOTS
-                (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE)
-                SELECT * FROM ({unions}) s
+                (SNAPSHOT_HASH, MODEL_HASH, PARENT_HASH, TIMESTAMP, ACTOR, EVENT_TYPE, SOURCE, PAYLOAD, TAGS)
+                SELECT s.$1, s.$2, s.$3, s.$4, s.$5, s.$6, s.$7, PARSE_JSON(s.$8), PARSE_JSON(s.$9)
+                FROM ({unions}) s
                 WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.SNAPSHOTS t WHERE t.SNAPSHOT_HASH = s.$1)""",
             )
 

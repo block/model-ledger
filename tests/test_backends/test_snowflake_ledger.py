@@ -326,6 +326,79 @@ def test_flush_dedups_model_buffer_by_hash():
     )
 
 
+def test_snapshot_sql_fallback_preserves_payload_and_tags():
+    """The DDL-free INSERT fallback must carry PAYLOAD and TAGS. A
+    least-privilege role (INSERT/UPDATE only, no CREATE TEMPORARY TABLE)
+    always lands on this path; omitting the columns silently persists
+    snapshots with NULL payloads — losing the event data itself.
+    """
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    inserts: list[str] = []
+
+    class RecordingSession:
+        """Lacks a pandas-capable connection, forcing the SQL fallback."""
+
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            upper = query.upper()
+            if "INSERT INTO" in upper and ".SNAPSHOTS" in upper:
+                inserts.append(query)
+            return MockCollectResult([])
+
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=RecordingSession())
+    backend.append_snapshot(
+        Snapshot(
+            snapshot_hash="snap-payload-1",
+            model_hash="m1",
+            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            actor="scanner",
+            event_type="metadata_inferred",
+            source="alerting",
+            payload={"queue_slug": "case_review_p1", "threshold": 0.85},
+            tags={"cycle": "2026"},
+        )
+    )
+    backend.flush()
+
+    assert len(inserts) == 1, f"expected one SNAPSHOTS INSERT, saw {len(inserts)}"
+    sql = inserts[0]
+    assert "PAYLOAD" in sql and "TAGS" in sql, "fallback INSERT omits PAYLOAD/TAGS columns"
+    assert "PARSE_JSON" in sql, "payload/tags must be parsed into VARIANT"
+    assert "queue_slug" in sql, "payload content missing from INSERT source"
+    assert "cycle" in sql, "tags content missing from INSERT source"
+
+
+def test_snapshot_sql_fallback_null_payload_stays_null():
+    """Snapshots without payload/tags must insert SQL NULL, not the string 'null'."""
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    inserts: list[str] = []
+
+    class RecordingSession:
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            upper = query.upper()
+            if "INSERT INTO" in upper and ".SNAPSHOTS" in upper:
+                inserts.append(query)
+            return MockCollectResult([])
+
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=RecordingSession())
+    backend.append_snapshot(
+        Snapshot(
+            snapshot_hash="snap-nopayload-1",
+            model_hash="m1",
+            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            actor="scanner",
+            event_type="registered",
+            source="alerting",
+        )
+    )
+    backend.flush()
+
+    assert len(inserts) == 1
+    row_source = inserts[0].split("FROM")[0]
+    assert "'null'" not in row_source.lower(), "empty payload serialized as JSON 'null' string"
+
+
 class TestStatusPropagationSQL:
     """Connector-discovered status must land in the MODELS table via the MERGE.
 

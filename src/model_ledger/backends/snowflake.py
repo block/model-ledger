@@ -6,13 +6,17 @@ SQL statements → ~50 batched statements).
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
+
+logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 50
 
@@ -317,9 +321,23 @@ class SnowflakeLedgerBackend:
             )
             self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
-            if _is_privilege_error(e):
-                return False
-            raise
+            # The pandas path is an optimization, not a correctness
+            # requirement: privilege denials (no CREATE TEMPORARY TABLE) and
+            # transport limitations (sessions whose backing protocol cannot
+            # run PUT file transfers — write_pandas dies inside
+            # file_transfer_agent, e.g. KeyError('command')) both land here.
+            # Any failure falls back to the DDL-free SQL path, which is
+            # idempotent and carries all columns. Never leave the buffer
+            # poisoned: a raised exception here would re-fire on every
+            # subsequent flush-before-read and 500 the whole API.
+            logger.warning(
+                "pandas bulk path failed (%s: %s); falling back to SQL flush",
+                type(e).__name__,
+                e,
+            )
+            with contextlib.suppress(Exception):
+                self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
+            return False
         return True
 
     def _flush_models_sql(self) -> None:
@@ -415,9 +433,23 @@ class SnowflakeLedgerBackend:
             )
             self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
-            if _is_privilege_error(e):
-                return False
-            raise
+            # The pandas path is an optimization, not a correctness
+            # requirement: privilege denials (no CREATE TEMPORARY TABLE) and
+            # transport limitations (sessions whose backing protocol cannot
+            # run PUT file transfers — write_pandas dies inside
+            # file_transfer_agent, e.g. KeyError('command')) both land here.
+            # Any failure falls back to the DDL-free SQL path, which is
+            # idempotent and carries all columns. Never leave the buffer
+            # poisoned: a raised exception here would re-fire on every
+            # subsequent flush-before-read and 500 the whole API.
+            logger.warning(
+                "pandas bulk path failed (%s: %s); falling back to SQL flush",
+                type(e).__name__,
+                e,
+            )
+            with contextlib.suppress(Exception):
+                self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
+            return False
         return True
 
     def _flush_snapshots_sql(self) -> None:

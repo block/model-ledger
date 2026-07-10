@@ -1066,3 +1066,59 @@ class TestReconnectOnAuthExpiry:
 
         with pytest.raises(ValueError, match="connection"):
             SnowflakeLedgerBackend(schema="TEST_SCHEMA")
+
+
+def test_pandas_path_failure_falls_back_to_sql(monkeypatch):
+    """A pandas bulk-path failure that is NOT a privilege error (e.g. the
+    backing session's protocol cannot run PUT file transfers — write_pandas
+    raises KeyError('command') from file_transfer_agent) must fall back to
+    the SQL path instead of raising. A raised exception leaves the buffer
+    poisoned: every subsequent flush-before-read re-fires it and the whole
+    API 500s (observed in production 2026-07-10).
+    """
+    import sys
+    import types
+
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    statements: list[str] = []
+
+    class FakeConn:
+        _session_parameters = {"QUERY_TAG": "test"}
+
+    class PandasCapableSession:
+        """Looks pandas-capable (has _connection w/ _session_parameters)."""
+
+        _connection = FakeConn()
+
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            statements.append(query)
+            return MockCollectResult([[0]])
+
+    def exploding_write_pandas(*args, **kwargs):
+        raise KeyError("command")
+
+    fake_tools = types.ModuleType("snowflake.connector.pandas_tools")
+    fake_tools.write_pandas = exploding_write_pandas
+    monkeypatch.setitem(sys.modules, "snowflake.connector.pandas_tools", fake_tools)
+
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=PandasCapableSession())
+    backend.save_model(
+        ModelRef(
+            name="fraud_scorer",
+            owner="risk-team",
+            model_type="scoring_model",
+            tier="unclassified",
+            purpose="",
+        )
+    )
+    backend.flush()  # must NOT raise
+
+    merges = [s for s in statements if "MERGE INTO" in s.upper() and ".MODELS" in s.upper()]
+    assert merges, "SQL fallback MERGE never ran after pandas-path failure"
+    assert not backend._model_buffer, "buffer not cleared — would re-fire on every flush"
+
+    # Second flush must be a no-op, not a re-explosion.
+    before = len(statements)
+    backend.flush()
+    assert len(statements) == before

@@ -6,7 +6,6 @@ SQL statements → ~50 batched statements).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import threading
@@ -67,7 +66,13 @@ def _exec_no_result(session: Any, sql: str) -> None:
 def _esc(value: str | None) -> str:
     if value is None:
         return "NULL"
-    return "'" + str(value).replace("'", "''") + "'"
+    # Backslashes FIRST: Snowflake processes backslash escape sequences inside
+    # single-quoted string constants, so a JSON payload containing \" (every
+    # embedded double quote, as serialized by json.dumps) or \\ reaches the
+    # server mangled — PARSE_JSON then fails or silently corrupts the value.
+    # Empirically verified 2026-07-10: PARSE_JSON('{"a": "x \" y"}') errors;
+    # the doubled form round-trips.
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "''") + "'"
 
 
 def _is_privilege_error(exc: Exception) -> bool:
@@ -276,30 +281,31 @@ class SnowflakeLedgerBackend:
         if not hasattr(conn, "_session_parameters"):
             return False
 
-        df = pd.DataFrame(
-            [
-                {
-                    "MODEL_HASH": m.model_hash,
-                    "NAME": m.name,
-                    "OWNER": m.owner,
-                    "MODEL_TYPE": m.model_type,
-                    "MODEL_ORIGIN": m.model_origin,
-                    "TIER": m.tier,
-                    "PURPOSE": m.purpose,
-                    "STATUS": m.status,
-                    "CREATED_AT": m.created_at.isoformat(),
-                    "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
-                    "METADATA": json.dumps(m.metadata, default=str) if m.metadata else None,
-                }
-                for m in self._model_buffer
-            ]
-        )
-
         staging = f"{self._schema}.MODELS_STAGING"
         # The bulk path needs CREATE TABLE on the schema for the staging table.
         # A least-privilege writer (INSERT/UPDATE/SELECT only) can't create it;
         # fall back to the DDL-free SQL MERGE path rather than failing the write.
+        # Row construction sits inside the try so a serialization surprise also
+        # falls back instead of poisoning the buffer.
         try:
+            df = pd.DataFrame(
+                [
+                    {
+                        "MODEL_HASH": m.model_hash,
+                        "NAME": m.name,
+                        "OWNER": m.owner,
+                        "MODEL_TYPE": m.model_type,
+                        "MODEL_ORIGIN": m.model_origin,
+                        "TIER": m.tier,
+                        "PURPOSE": m.purpose,
+                        "STATUS": m.status,
+                        "CREATED_AT": m.created_at.isoformat(),
+                        "LAST_SEEN": m.last_seen.isoformat() if m.last_seen else None,
+                        "METADATA": json.dumps(m.metadata, default=str) if m.metadata else None,
+                    }
+                    for m in self._model_buffer
+                ]
+            )
             self._exec_no_result(
                 f"CREATE OR REPLACE TEMPORARY TABLE {staging} LIKE {self._schema}.MODELS"
             )
@@ -322,21 +328,25 @@ class SnowflakeLedgerBackend:
             self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
             # The pandas path is an optimization, not a correctness
-            # requirement: privilege denials (no CREATE TEMPORARY TABLE) and
-            # transport limitations (sessions whose backing protocol cannot
-            # run PUT file transfers — write_pandas dies inside
-            # file_transfer_agent, e.g. KeyError('command')) both land here.
-            # Any failure falls back to the DDL-free SQL path, which is
-            # idempotent and carries all columns. Never leave the buffer
-            # poisoned: a raised exception here would re-fire on every
-            # subsequent flush-before-read and 500 the whole API.
-            logger.warning(
-                "pandas bulk path failed (%s: %s); falling back to SQL flush",
-                type(e).__name__,
-                e,
-            )
-            with contextlib.suppress(Exception):
-                self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
+            # requirement. Privilege denials (no CREATE TEMPORARY TABLE) are
+            # the EXPECTED steady state of least-privilege deployments —
+            # short-circuit quietly. Anything else (e.g. transports that
+            # cannot run PUT file transfers: write_pandas dies inside
+            # file_transfer_agent with KeyError('command')) is logged with
+            # the traceback, then falls back the same way. No cleanup DROP:
+            # temp tables die with the session, and a failure-path DROP is a
+            # doomed extra round trip that could even target a same-named
+            # permanent table when the temp CREATE never ran. A raised
+            # exception here would leave the buffer poisoned and re-fire on
+            # every subsequent flush-before-read (500ing the whole API), so
+            # every failure returns False. NOTE: a failure in the SQL
+            # fallback itself still propagates — flush error semantics
+            # beyond the pandas path are the caller's concern.
+            if not _is_privilege_error(e):
+                logger.warning(
+                    "pandas bulk path failed; falling back to SQL flush",
+                    exc_info=e,
+                )
             return False
         return True
 
@@ -390,27 +400,27 @@ class SnowflakeLedgerBackend:
         if not hasattr(conn, "_session_parameters"):
             return False
 
-        df = pd.DataFrame(
-            [
-                {
-                    "SNAPSHOT_HASH": s.snapshot_hash,
-                    "MODEL_HASH": s.model_hash,
-                    "PARENT_HASH": s.parent_hash,
-                    "TIMESTAMP": s.timestamp.isoformat(),
-                    "ACTOR": s.actor,
-                    "EVENT_TYPE": s.event_type,
-                    "SOURCE": s.source,
-                    "PAYLOAD": json.dumps(s.payload, default=str) if s.payload else None,
-                    "TAGS": json.dumps(s.tags, default=str) if s.tags else None,
-                }
-                for s in self._snapshot_buffer
-            ]
-        )
-
         staging = f"{self._schema}.SNAPSHOTS_STAGING"
         # See _flush_models_pandas: fall back to the DDL-free SQL path when the
-        # role can't create the staging table.
+        # role can't create the staging table. Row construction sits inside the
+        # try so a serialization surprise also falls back.
         try:
+            df = pd.DataFrame(
+                [
+                    {
+                        "SNAPSHOT_HASH": s.snapshot_hash,
+                        "MODEL_HASH": s.model_hash,
+                        "PARENT_HASH": s.parent_hash,
+                        "TIMESTAMP": s.timestamp.isoformat(),
+                        "ACTOR": s.actor,
+                        "EVENT_TYPE": s.event_type,
+                        "SOURCE": s.source,
+                        "PAYLOAD": json.dumps(s.payload, default=str) if s.payload else None,
+                        "TAGS": json.dumps(s.tags, default=str) if s.tags else None,
+                    }
+                    for s in self._snapshot_buffer
+                ]
+            )
             self._exec_no_result(
                 f"""
                 CREATE OR REPLACE TEMPORARY TABLE {staging} (
@@ -434,21 +444,25 @@ class SnowflakeLedgerBackend:
             self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
         except Exception as e:
             # The pandas path is an optimization, not a correctness
-            # requirement: privilege denials (no CREATE TEMPORARY TABLE) and
-            # transport limitations (sessions whose backing protocol cannot
-            # run PUT file transfers — write_pandas dies inside
-            # file_transfer_agent, e.g. KeyError('command')) both land here.
-            # Any failure falls back to the DDL-free SQL path, which is
-            # idempotent and carries all columns. Never leave the buffer
-            # poisoned: a raised exception here would re-fire on every
-            # subsequent flush-before-read and 500 the whole API.
-            logger.warning(
-                "pandas bulk path failed (%s: %s); falling back to SQL flush",
-                type(e).__name__,
-                e,
-            )
-            with contextlib.suppress(Exception):
-                self._exec_no_result(f"DROP TABLE IF EXISTS {staging}")
+            # requirement. Privilege denials (no CREATE TEMPORARY TABLE) are
+            # the EXPECTED steady state of least-privilege deployments —
+            # short-circuit quietly. Anything else (e.g. transports that
+            # cannot run PUT file transfers: write_pandas dies inside
+            # file_transfer_agent with KeyError('command')) is logged with
+            # the traceback, then falls back the same way. No cleanup DROP:
+            # temp tables die with the session, and a failure-path DROP is a
+            # doomed extra round trip that could even target a same-named
+            # permanent table when the temp CREATE never ran. A raised
+            # exception here would leave the buffer poisoned and re-fire on
+            # every subsequent flush-before-read (500ing the whole API), so
+            # every failure returns False. NOTE: a failure in the SQL
+            # fallback itself still propagates — flush error semantics
+            # beyond the pandas path are the caller's concern.
+            if not _is_privilege_error(e):
+                logger.warning(
+                    "pandas bulk path failed; falling back to SQL flush",
+                    exc_info=e,
+                )
             return False
         return True
 

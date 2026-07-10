@@ -395,7 +395,11 @@ def test_snapshot_sql_fallback_null_payload_stays_null():
     backend.flush()
 
     assert len(inserts) == 1
-    row_source = inserts[0].split("FROM")[0]
+    # The row literals live in the UNION ALL source AFTER the first FROM —
+    # inspect that side (the original assertion checked the SELECT list and
+    # could never fail).
+    row_source = inserts[0].split("FROM", 1)[1]
+    assert "snap-nopayload-1" in row_source, "test is inspecting the wrong statement segment"
     assert "'null'" not in row_source.lower(), "empty payload serialized as JSON 'null' string"
 
 
@@ -1122,3 +1126,111 @@ def test_pandas_path_failure_falls_back_to_sql(monkeypatch):
     before = len(statements)
     backend.flush()
     assert len(statements) == before
+
+
+def test_esc_escapes_backslashes_for_snowflake_literals():
+    """Snowflake processes backslash escapes inside single-quoted constants,
+    so JSON with embedded double quotes (json.dumps emits \\") or backslashes
+    must have backslashes doubled or PARSE_JSON receives mangled text —
+    verified live 2026-07-10: PARSE_JSON('{"a": "x \\" y"}') errors, the
+    doubled form round-trips.
+    """
+    import json as _json
+
+    from model_ledger.backends.snowflake import _esc
+
+    payload = {"summary": 'threshold "X" raised', "path": "dir\\file"}
+    literal = _esc(_json.dumps(payload))
+
+    inner = literal[1:-1].replace("''", "'")  # undo SQL quote doubling
+    unescaped = inner.replace("\\\\", "\\")  # what Snowflake's parser yields
+    assert _json.loads(unescaped) == payload, (
+        "literal does not round-trip through Snowflake unescaping"
+    )
+    assert '\\\\"' in literal, "embedded double quote not backslash-protected"
+
+
+def test_snapshot_payload_with_quotes_survives_sql_fallback():
+    """End-to-end through the fallback: a payload with quotes/backslashes must
+    produce an INSERT whose literals round-trip (the poisoned-buffer 500 loop
+    fired for ANY payload with an embedded double quote before the _esc fix).
+    """
+    import json as _json
+
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    inserts: list[str] = []
+
+    class RecordingSession:
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            if "INSERT INTO" in query.upper() and ".SNAPSHOTS" in query.upper():
+                inserts.append(query)
+            return MockCollectResult([])
+
+    payload = {"observation": 'analyst wrote "backslash \\ and quote"', "nested": {"k": 'v"'}}
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=RecordingSession())
+    backend.append_snapshot(
+        Snapshot(
+            snapshot_hash="snap-esc-1",
+            model_hash="m1",
+            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            actor="scanner",
+            event_type="observation_issued",
+            source="alerting",
+            payload=payload,
+        )
+    )
+    backend.flush()
+
+    assert len(inserts) == 1
+    m = re.search(r"'(\{.*?\})'(?=,|\s)", inserts[0].split("FROM", 1)[1], re.DOTALL)
+    assert m, "payload literal not found in INSERT source"
+    snowflake_view = m.group(1).replace("''", "'").replace("\\\\", "\\")
+    assert _json.loads(snowflake_view) == payload
+
+
+def test_snapshot_pandas_failure_falls_back_to_sql(monkeypatch):
+    """The snapshots pandas path must fall back on non-privilege failures too
+    (the models-path twin of test_pandas_path_failure_falls_back_to_sql)."""
+    import sys
+    import types
+
+    from model_ledger.backends.snowflake import SnowflakeLedgerBackend
+
+    statements: list[str] = []
+
+    class FakeConn:
+        _session_parameters = {"QUERY_TAG": "test"}
+
+    class PandasCapableSession:
+        _connection = FakeConn()
+
+        def sql(self, query: str, params: Any = None) -> MockCollectResult:
+            statements.append(query)
+            return MockCollectResult([[0]])
+
+    def exploding_write_pandas(*args, **kwargs):
+        raise KeyError("command")
+
+    fake_tools = types.ModuleType("snowflake.connector.pandas_tools")
+    fake_tools.write_pandas = exploding_write_pandas
+    monkeypatch.setitem(sys.modules, "snowflake.connector.pandas_tools", fake_tools)
+
+    backend = SnowflakeLedgerBackend(schema="TEST_SCHEMA", connection=PandasCapableSession())
+    backend.append_snapshot(
+        Snapshot(
+            snapshot_hash="snap-fb-1",
+            model_hash="m1",
+            timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            actor="scanner",
+            event_type="registered",
+            source="alerting",
+        )
+    )
+    backend.flush()  # must NOT raise
+
+    fallback_inserts = [
+        s for s in statements if "INSERT INTO" in s.upper() and ".SNAPSHOTS" in s.upper()
+    ]
+    assert fallback_inserts, "SQL fallback INSERT never ran after snapshots pandas-path failure"
+    assert not backend._snapshot_buffer, "snapshot buffer not cleared"

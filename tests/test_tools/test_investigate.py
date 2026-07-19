@@ -87,7 +87,8 @@ class TestBasicInvestigation:
 
         result = investigate(InvestigateInput(model_name="fraud_scoring"), ledger)
 
-        assert result.total_events >= 3
+        # Registration logs exactly one event (previously double-fired).
+        assert result.total_events == 2
 
     def test_days_since_last_event(self, ledger):
         record(

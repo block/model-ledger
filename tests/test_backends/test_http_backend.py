@@ -29,6 +29,8 @@ def http_backend():
     backend._base_url = "http://testserver"
     backend._client = TestClient(app)
     backend._hash_to_name = {}
+    backend._registered_hashes = set()
+    backend._snapshot_cache = {}
     yield backend
     backend._client.close()
 
@@ -234,6 +236,8 @@ class TestSaveModelCanonicalHash:
         fresh_backend._base_url = http_backend._base_url
         fresh_backend._client = http_backend._client
         fresh_backend._hash_to_name = {}
+        fresh_backend._registered_hashes = set()
+        fresh_backend._snapshot_cache = {}
 
         ledger = Ledger(backend=fresh_backend)
         created = ledger.tag("scoring-model", "v1.0")
@@ -264,6 +268,8 @@ class TestSaveModelErrorPaths:
             transport=httpx.MockTransport(_always_500),
         )
         backend._hash_to_name = {}
+        backend._registered_hashes = set()
+        backend._snapshot_cache = {}
 
         ref = ModelRef(
             name="credit-scorecard",
@@ -301,6 +307,8 @@ class TestSaveModelErrorPaths:
             transport=httpx.MockTransport(_missing_hash),
         )
         backend._hash_to_name = {}
+        backend._registered_hashes = set()
+        backend._snapshot_cache = {}
 
         ref = ModelRef(
             name="credit-scorecard",

@@ -61,7 +61,7 @@ class DependencyNode(BaseModel):
 class RecordInput(BaseModel):
     """Input for the record tool — log an event against a model."""
 
-    model_name: str
+    model_name: str = Field(min_length=1)
     event: str
     payload: dict[str, Any] = Field(default_factory=dict)
     actor: str = "user"

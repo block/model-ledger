@@ -146,7 +146,13 @@ class Ledger:
         status: str = "active",
         actor: str = "system",
         metadata: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> ModelRef:
+        """Register a model, logging exactly one ``registered`` event.
+
+        ``payload`` entries are merged into the registration event's payload
+        on top of the canonical identity fields (caller keys win).
+        """
         if name in self._name_cache:
             return self._name_cache[name]
         if not self._cache_complete:
@@ -165,18 +171,21 @@ class Ledger:
             metadata=metadata or {},
         )
         self._backend.save_model(model)
+        event_payload: dict[str, Any] = {
+            "name": name,
+            "owner": owner,
+            "tier": tier,
+            "purpose": purpose,
+            "model_origin": model_origin,
+        }
+        if payload:
+            event_payload.update(payload)
         self._backend.append_snapshot(
             Snapshot(
                 model_hash=model.model_hash,
                 actor=actor,
                 event_type="registered",
-                payload={
-                    "name": name,
-                    "owner": owner,
-                    "tier": tier,
-                    "purpose": purpose,
-                    "model_origin": model_origin,
-                },
+                payload=event_payload,
             )
         )
         self._name_cache[name] = model

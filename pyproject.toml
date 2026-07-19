@@ -43,7 +43,6 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["typer>=0.9", "rich>=13.0"]
-excel = ["openpyxl>=3.1"]
 introspect-sklearn = ["scikit-learn>=1.0"]
 introspect-xgboost = ["xgboost>=1.7"]
 introspect-lightgbm = ["lightgbm>=3.0"]

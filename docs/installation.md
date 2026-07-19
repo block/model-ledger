@@ -27,7 +27,6 @@ uv add model-ledger
 | `model-ledger[introspect-sklearn]` | scikit-learn introspector | extract algorithm/features from fitted models |
 | `model-ledger[introspect-xgboost]` | XGBoost introspector | " |
 | `model-ledger[introspect-lightgbm]` | LightGBM introspector | " |
-| `model-ledger[excel]` | openpyxl | spreadsheet import/export |
 | `model-ledger[all]` | Snowflake + pandas + httpx | the common production set |
 
 Combine them: `pip install "model-ledger[mcp,rest-api,snowflake]"`.

@@ -278,3 +278,114 @@ class TestModelToSummary:
 
         summary = _model_to_summary(model, ledger)
         assert summary.platform == "mlflow"
+
+
+class TestQueryFilterByPlatform:
+    """Filter by platform — derived from snapshots, not a model column."""
+
+    @pytest.fixture
+    def platform_ledger(self, ledger):
+        for name, platform in [
+            ("mlflow-model", "mlflow"),
+            ("workflow-model", "workflow-engine"),
+            ("second-mlflow-model", "mlflow"),
+        ]:
+            _register(ledger, name, owner="data-team")
+            ledger.record(
+                name,
+                event="discovered",
+                payload={"platform": platform},
+                actor="connector",
+                source=platform,
+            )
+        _register(ledger, "no-platform-model", owner="data-team")
+        return ledger
+
+    def test_filter_platform(self, platform_ledger):
+        result = query(QueryInput(platform="mlflow"), platform_ledger)
+
+        assert result.total == 2
+        assert {m.name for m in result.models} == {"mlflow-model", "second-mlflow-model"}
+        assert all(m.platform == "mlflow" for m in result.models)
+
+    def test_filter_platform_no_match_returns_zero(self, platform_ledger):
+        """An unknown platform must return 0 results, not the full inventory."""
+        result = query(QueryInput(platform="no_such_platform"), platform_ledger)
+
+        assert result.total == 0
+        assert result.models == []
+        assert result.has_more is False
+
+    def test_platform_combines_with_text(self, platform_ledger):
+        result = query(QueryInput(platform="mlflow", text="second"), platform_ledger)
+
+        assert result.total == 1
+        assert result.models[0].name == "second-mlflow-model"
+
+    def test_platform_with_pagination(self, platform_ledger):
+        result = query(QueryInput(platform="mlflow", limit=1), platform_ledger)
+
+        assert result.total == 2
+        assert len(result.models) == 1
+        assert result.has_more is True
+
+        page2 = query(QueryInput(platform="mlflow", limit=1, offset=1), platform_ledger)
+        assert len(page2.models) == 1
+        assert page2.models[0].name != result.models[0].name
+        assert page2.has_more is False
+
+
+class TestQueryInputParity:
+    """Every filter field advertised on QueryInput must be consumed by query()."""
+
+    def test_every_advertised_filter_narrows_results(self, ledger):
+        _register(
+            ledger,
+            "alpha-model",
+            owner="team-a",
+            model_type="ml_model",
+            purpose="alpha purpose",
+        )
+        _register(
+            ledger,
+            "beta-rules",
+            owner="team-b",
+            model_type="heuristic",
+            purpose="beta purpose",
+        )
+        ledger.record(
+            "alpha-model",
+            event="discovered",
+            payload={"platform": "mlflow"},
+            actor="connector",
+            source="mlflow",
+        )
+        ledger.record(
+            "beta-rules",
+            event="discovered",
+            payload={"platform": "workflow-engine"},
+            actor="connector",
+            source="workflow-engine",
+        )
+        beta = ledger.get("beta-rules")
+        beta.status = "deprecated"
+        ledger._backend.update_model(beta)
+
+        matching = {
+            "text": "alpha",
+            "platform": "mlflow",
+            "model_type": "ml_model",
+            "owner": "team-a",
+            "status": "active",
+        }
+        pagination = {"limit", "offset"}
+        # Schema-vs-implementation parity: fail if QueryInput grows a filter
+        # field this test does not exercise.
+        assert set(QueryInput.model_fields) == set(matching) | pagination
+
+        for field, value in matching.items():
+            result = query(QueryInput(**{field: value}), ledger)
+            assert result.total == 1, f"QueryInput.{field} is not consumed by query()"
+            assert result.models[0].name == "alpha-model", (
+                f"QueryInput.{field} did not narrow results"
+            )

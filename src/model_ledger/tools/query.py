@@ -40,11 +40,35 @@ def _model_to_summary(model: ModelRef, ledger: Ledger) -> ModelSummary:
     )
 
 
+def _summarize(models: list[ModelRef], ledger: Ledger) -> list[ModelSummary]:
+    """Build enriched ModelSummary rows via one batched backend dispatch."""
+    backend = ledger._backend
+    model_hashes = [m.model_hash for m in models]
+    if hasattr(backend, "model_summaries"):
+        enrichment = backend.model_summaries(model_hashes)
+    else:
+        enrichment = batch_fallbacks.model_summaries(backend, model_hashes)
+    return [
+        ModelSummary(
+            name=m.name,
+            owner=m.owner,
+            model_type=m.model_type,
+            status=m.status,
+            platform=enrichment.get(m.model_hash, {}).get("platform"),
+            last_event=enrichment.get(m.model_hash, {}).get("last_event"),
+            event_count=enrichment.get(m.model_hash, {}).get("event_count", 0),
+        )
+        for m in models
+    ]
+
+
 def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     """Search and filter the model inventory with pagination.
 
     Pushes limit, offset, and text filters to the backend when supported
-    (e.g., Snowflake SQL) to avoid fetching all rows.
+    (e.g., Snowflake SQL) to avoid fetching all rows. The ``platform``
+    filter is derived from snapshot data (``discovered`` payload, then
+    snapshot source), so it is resolved in batch and applied here.
     """
     filters: dict[str, str] = {}
     if input.model_type is not None:
@@ -53,6 +77,9 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
         filters["owner"] = input.owner
     if input.status is not None:
         filters["status"] = input.status
+
+    if input.platform is not None:
+        return _query_by_platform(input, ledger, filters)
 
     count_filters = dict(filters)
     if input.text:
@@ -81,22 +108,37 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
 
     has_more = (input.offset + input.limit) < total
 
-    model_hashes = [m.model_hash for m in models]
-    if hasattr(backend, "model_summaries"):
-        enrichment = backend.model_summaries(model_hashes)
-    else:
-        enrichment = batch_fallbacks.model_summaries(backend, model_hashes)
-    summaries = [
-        ModelSummary(
-            name=m.name,
-            owner=m.owner,
-            model_type=m.model_type,
-            status=m.status,
-            platform=enrichment.get(m.model_hash, {}).get("platform"),
-            last_event=enrichment.get(m.model_hash, {}).get("last_event"),
-            event_count=enrichment.get(m.model_hash, {}).get("event_count", 0),
-        )
-        for m in models
-    ]
+    return QueryOutput(total=total, models=_summarize(models, ledger), has_more=has_more)
 
-    return QueryOutput(total=total, models=summaries, has_more=has_more)
+
+def _query_by_platform(input: QueryInput, ledger: Ledger, filters: dict[str, str]) -> QueryOutput:
+    """Apply the platform filter over structurally-matched models.
+
+    Platform is not a column on the model row — it is resolved from each
+    model's snapshots (``batch_platforms`` pushes this down in SQL-backed
+    backends) — so filtering and pagination happen here rather than in
+    ``list_models``.
+    """
+    backend = ledger._backend
+
+    models_all = ledger.list(**filters)
+    if input.text:
+        text_lower = input.text.lower()
+        models_all = [
+            m
+            for m in models_all
+            if text_lower in m.name.lower() or text_lower in (m.purpose or "").lower()
+        ]
+
+    model_hashes = [m.model_hash for m in models_all]
+    if hasattr(backend, "batch_platforms"):
+        platforms = backend.batch_platforms(model_hashes)
+    else:
+        platforms = batch_fallbacks.batch_platforms(backend, model_hashes)
+
+    matched = [m for m in models_all if platforms.get(m.model_hash) == input.platform]
+    total = len(matched)
+    page = matched[input.offset : input.offset + input.limit]
+    has_more = (input.offset + input.limit) < total
+
+    return QueryOutput(total=total, models=_summarize(page, ledger), has_more=has_more)

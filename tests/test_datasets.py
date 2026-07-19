@@ -41,6 +41,9 @@ def test_make_rule_engine():
 
 
 xgboost = pytest.importorskip("xgboost")
+# The sample-model factories below build training frames with pandas, which
+# no extra guarantees alongside the ML libs — skip, don't fail, without it.
+pandas = pytest.importorskip("pandas")
 
 
 def test_make_fraud_detector():

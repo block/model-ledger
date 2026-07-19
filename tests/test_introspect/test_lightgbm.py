@@ -41,7 +41,8 @@ def test_introspect(introspector, fitted_lgb):
 
 def test_introspect_feature_names(introspector):
     import lightgbm as lgb
-    import pandas as pd
+
+    pd = pytest.importorskip("pandas")
 
     X = pd.DataFrame({"feat_a": [1, 2, 3, 4], "feat_b": [5, 6, 7, 8]})
     y = [0, 1, 0, 1]

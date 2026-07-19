@@ -51,7 +51,7 @@ def test_introspect_logistic_regression(introspector, fitted_lr):
 
 
 def test_introspect_with_feature_names(introspector):
-    import pandas as pd
+    pd = pytest.importorskip("pandas")
 
     X = pd.DataFrame({"age": [1, 2, 3, 4], "income": [10, 20, 30, 40]})
     y = [0, 1, 0, 1]

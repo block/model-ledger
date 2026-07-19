@@ -25,6 +25,24 @@ class TestExtractTables:
         assert extract_tables_from_sql("") == []
         assert extract_tables_from_sql(None) == []
 
+    def test_unqualified_names(self):
+        sql = "INSERT INTO feature_store SELECT * FROM raw_events"
+        assert extract_tables_from_sql(sql) == ["raw_events"]
+
+    def test_unqualified_join(self):
+        tables = extract_tables_from_sql("SELECT * FROM orders JOIN customers ON 1=1")
+        assert tables == ["orders", "customers"]
+
+    def test_mixed_qualified_and_bare(self):
+        tables = extract_tables_from_sql("SELECT * FROM schema.table1 JOIN raw_events ON 1=1")
+        assert tables == ["schema.table1", "raw_events"]
+
+    def test_bare_sql_keywords_not_extracted(self):
+        # Subqueries / table functions must not surface keywords as tables.
+        assert extract_tables_from_sql("SELECT * FROM LATERAL (SELECT 1)") == []
+        assert extract_tables_from_sql("SELECT * FROM TABLE(my_function())") == []
+        assert extract_tables_from_sql("SELECT * FROM VALUES (1), (2)") == []
+
 
 class TestExtractWriteTables:
     def test_insert_into(self):
@@ -42,6 +60,27 @@ class TestExtractWriteTables:
     def test_empty(self):
         assert extract_write_tables("") == []
         assert extract_write_tables(None) == []
+
+    def test_unqualified_insert(self):
+        assert extract_write_tables("INSERT INTO feature_store SELECT * FROM raw_events") == [
+            "feature_store"
+        ]
+
+    def test_unqualified_create(self):
+        assert extract_write_tables("CREATE TABLE staging AS SELECT 1") == ["staging"]
+
+    def test_unqualified_merge(self):
+        assert extract_write_tables("MERGE INTO targets USING src ON 1=1") == ["targets"]
+
+    def test_docstring_example_extractable_by_sibling(self):
+        # The extract_write_tables docstring example must be fully parseable
+        # by both extractors.
+        sql = "INSERT INTO schema.output SELECT * FROM source"
+        assert extract_write_tables(sql) == ["schema.output"]
+        assert extract_tables_from_sql(sql) == ["source"]
+
+    def test_insert_overwrite_keyword_not_extracted(self):
+        assert extract_write_tables("INSERT OVERWRITE INTO schema.t SELECT 1") != ["OVERWRITE"]
 
 
 class TestExtractModelNameFilters:

@@ -9,23 +9,58 @@ from __future__ import annotations
 
 import re
 
+# Bare (unqualified) identifiers that can follow FROM/JOIN/INTO in valid SQL
+# without naming a table — subqueries, table functions, literal row sources,
+# and statement keywords. Qualified names (with dots) are never filtered.
+_SQL_NON_TABLE_KEYWORDS = frozenset(
+    {
+        "select",
+        "lateral",
+        "unnest",
+        "table",
+        "values",
+        "dual",
+        "generator",
+        "into",
+        "overwrite",
+        "if",
+        "not",
+        "exists",
+        "or",
+        "replace",
+    }
+)
+
+_TABLE_IDENTIFIER = r"([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*){0,2})"
+
+
+def _is_table_name(identifier: str) -> bool:
+    """True unless a bare identifier is really a SQL keyword."""
+    return "." in identifier or identifier.lower() not in _SQL_NON_TABLE_KEYWORDS
+
 
 def extract_tables_from_sql(sql: str | None) -> list[str]:
     """Extract table names from SQL FROM and JOIN clauses.
 
+    Handles fully-qualified (``db.schema.table``), schema-qualified
+    (``schema.table``), and bare (``table``) identifiers.
     Returns deduplicated list preserving first-seen order.
 
     Example:
         >>> extract_tables_from_sql("SELECT * FROM schema.table1 JOIN schema.table2 ON 1=1")
         ['schema.table1', 'schema.table2']
+        >>> extract_tables_from_sql("SELECT * FROM raw_events")
+        ['raw_events']
     """
     if not sql:
         return []
-    pattern = r"(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*){1,2})"
+    pattern = rf"(?:FROM|JOIN)\s+{_TABLE_IDENTIFIER}"
     matches = re.findall(pattern, sql, re.IGNORECASE)
     seen: set[str] = set()
     result: list[str] = []
     for table in matches:
+        if not _is_table_name(table):
+            continue
         lower = table.lower()
         if lower not in seen:
             seen.add(lower)
@@ -36,24 +71,28 @@ def extract_tables_from_sql(sql: str | None) -> list[str]:
 def extract_write_tables(sql: str | None) -> list[str]:
     """Extract tables that a SQL statement writes to.
 
-    Handles INSERT INTO, CREATE [OR REPLACE] TABLE, MERGE INTO.
+    Handles INSERT INTO, CREATE [OR REPLACE] TABLE, MERGE INTO, with
+    qualified or bare table identifiers.
 
     Example:
         >>> extract_write_tables("INSERT INTO schema.output SELECT * FROM source")
         ['schema.output']
+        >>> extract_write_tables("INSERT INTO feature_store SELECT * FROM raw_events")
+        ['feature_store']
     """
     if not sql:
         return []
-    table_pattern = r"([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*){1,2})"
     results: list[str] = []
     seen: set[str] = set()
 
     for pattern in [
-        rf"INSERT\s+(?:INTO\s+)?{table_pattern}",
-        rf"CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{table_pattern}",
-        rf"MERGE\s+INTO\s+{table_pattern}",
+        rf"INSERT\s+(?:OVERWRITE\s+)?(?:INTO\s+)?{_TABLE_IDENTIFIER}",
+        rf"CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_TABLE_IDENTIFIER}",
+        rf"MERGE\s+INTO\s+{_TABLE_IDENTIFIER}",
     ]:
         for match in re.finditer(pattern, sql, re.IGNORECASE):
+            if not _is_table_name(match.group(1)):
+                continue
             t = match.group(1).lower()
             if t not in seen:
                 seen.add(t)

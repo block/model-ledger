@@ -8,6 +8,29 @@ from typing import Protocol, runtime_checkable
 from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
 
+def validate_backend(backend: object | None) -> None:
+    """Raise ``TypeError`` early if ``backend`` is not a ``LedgerBackend``.
+
+    Catches the common mistake of passing a ``Ledger`` (or a database path)
+    where a storage backend is expected — which would otherwise fail deep
+    inside the first operation with a confusing ``AttributeError``.
+    """
+    if backend is None or isinstance(backend, LedgerBackend):
+        return
+    from model_ledger.sdk.ledger import Ledger
+
+    hint = ""
+    if isinstance(backend, Ledger):
+        hint = (
+            " — pass the Ledger's storage backend (e.g. SQLiteLedgerBackend), not the Ledger itself"
+        )
+    elif isinstance(backend, str):
+        hint = " — construct a backend from the path first (e.g. SQLiteLedgerBackend(path))"
+    raise TypeError(
+        f"backend must implement the LedgerBackend protocol; got {type(backend).__name__}{hint}"
+    )
+
+
 @runtime_checkable
 class LedgerBackend(Protocol):
     def save_model(self, model: ModelRef) -> None: ...

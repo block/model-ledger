@@ -260,3 +260,23 @@ class TestDiscoverEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["models_added"] == 2
+
+
+class TestCreateAppBackendGuard:
+    """create_app validates the backend at construction, not first request."""
+
+    def test_rejects_ledger_instance(self):
+        from model_ledger.sdk.ledger import Ledger
+
+        with pytest.raises(TypeError, match="LedgerBackend"):
+            create_app(backend=Ledger())
+
+    def test_rejects_arbitrary_object(self):
+        with pytest.raises(TypeError, match="LedgerBackend"):
+            create_app(backend="./ledger.db")
+
+    def test_accepts_real_backend(self):
+        from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+
+        app = create_app(backend=InMemoryLedgerBackend())
+        assert TestClient(app).get("/overview").status_code == 200

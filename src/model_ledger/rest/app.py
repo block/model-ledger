@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException
 
 from model_ledger import __version__
 from model_ledger.backends import batch_fallbacks
-from model_ledger.backends.ledger_protocol import LedgerBackend
+from model_ledger.backends.ledger_protocol import LedgerBackend, validate_backend
 from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.sdk.ledger import Ledger
 from model_ledger.tools.changelog import changelog as changelog_fn
@@ -66,7 +66,12 @@ def create_app(
 
     Returns:
         A configured FastAPI application.
+
+    Raises:
+        TypeError: If ``backend`` does not implement the LedgerBackend
+            protocol (e.g. a ``Ledger`` was passed by mistake).
     """
+    validate_backend(backend)
     ledger = Ledger(backend=backend)
 
     if demo:

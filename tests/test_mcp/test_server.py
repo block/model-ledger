@@ -203,3 +203,27 @@ class TestMainEntryPoint:
         from model_ledger.mcp.server import main
 
         assert callable(main)
+
+
+class TestCreateServerBackendGuard:
+    """create_server validates the backend at construction, not first call."""
+
+    def test_rejects_ledger_instance(self):
+        from model_ledger.mcp.server import create_server
+        from model_ledger.sdk.ledger import Ledger
+
+        with pytest.raises(TypeError, match="LedgerBackend"):
+            create_server(backend=Ledger())
+
+    def test_rejects_arbitrary_object(self):
+        from model_ledger.mcp.server import create_server
+
+        with pytest.raises(TypeError, match="LedgerBackend"):
+            create_server(backend="./ledger.db")
+
+    def test_accepts_real_backend(self):
+        from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+        from model_ledger.mcp.server import create_server
+
+        server = create_server(backend=InMemoryLedgerBackend())
+        assert server is not None

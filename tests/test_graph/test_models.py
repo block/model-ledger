@@ -10,7 +10,7 @@ class TestDataPort:
         assert p.schema == {}
 
     def test_lowercases(self):
-        assert DataPort("APP_COMPLIANCE.CASH.TABLE").identifier == "app_compliance.cash.table"
+        assert DataPort("ANALYTICS.EVENTS.TABLE").identifier == "analytics.events.table"
 
     def test_equality(self):
         assert DataPort("table_a") == DataPort("table_a")

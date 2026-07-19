@@ -113,6 +113,18 @@ class TestStripTemplateVars:
         result = strip_template_vars("SELECT * FROM {{app}}.{{cash}}.my_table")
         assert result == "SELECT * FROM app.cash.my_table"
 
+    def test_strips_spaced_vars(self):
+        result = strip_template_vars(
+            "SELECT * FROM {{ schema }}.{{ table }} WHERE run_date = '{{ ds }}'"
+        )
+        assert result == "SELECT * FROM schema.table WHERE run_date = 'ds'"
+
+    def test_docstring_example_is_accurate(self):
+        assert (
+            strip_template_vars("SELECT * FROM {{schema}}.{{table_name}}")
+            == "SELECT * FROM schema.table_name"
+        )
+
     def test_no_templates(self):
         assert strip_template_vars("SELECT 1") == "SELECT 1"
 

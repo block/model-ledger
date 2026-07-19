@@ -191,13 +191,17 @@ def extract_comment_tags(sql: str | None, prefix: str = "@") -> dict[str, str]:
 def strip_template_vars(sql: str | None) -> str:
     """Strip {{var}} template wrappers from SQL.
 
-    Converts {{schema}}.{{table}} → schema.table.
-    Common in ETL platforms that use template variables in SQL.
+    Converts ``{{schema}}.{{table}}`` → ``schema.table``. Whitespace inside
+    the braces is tolerated, so spaced variables like ``{{ ds }}`` (common
+    in scheduler-templated SQL) are stripped too. Common in ETL platforms
+    that use template variables in SQL.
 
     Example:
         >>> strip_template_vars("SELECT * FROM {{schema}}.{{table_name}}")
-        'SELECT * FROM app_compliance.cash.table'
+        'SELECT * FROM schema.table_name'
+        >>> strip_template_vars("SELECT * FROM {{ analytics }}.{{ events }}")
+        'SELECT * FROM analytics.events'
     """
     if not sql:
         return ""
-    return re.sub(r"\{\{(\w+)\}\}", r"\1", sql)
+    return re.sub(r"\{\{\s*(\w+)\s*\}\}", r"\1", sql)

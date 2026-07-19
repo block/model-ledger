@@ -35,7 +35,10 @@ def sql_connector(
 
     Args:
         name: Platform name for discovered DataNodes.
-        connection: Database connection with execute() method.
+        connection: Database connection with an execute() method that returns
+            dict-style rows (mappings addressable by column name). Raw DB-API
+            tuple rows are rejected — configure a dict row factory (sqlite3)
+            or a DictCursor (most drivers) first.
         query: SQL query to run.
         name_column: Column containing the model name.
         name_prefix: Optional prefix for model names (e.g., "queue:").
@@ -145,7 +148,17 @@ class _SQLConnector:
 
     def discover(self) -> list[DataNode]:
         rows = self._conn.execute(self._query)
-        return [self._to_node(row) for row in rows]
+        nodes: list[DataNode] = []
+        for row in rows:
+            if not hasattr(row, "get"):
+                raise TypeError(
+                    "sql_connector requires dict-style rows (mappings addressable "
+                    f"by column name), got {type(row).__name__}. Configure the "
+                    "connection to return mappings — e.g. set a dict row_factory "
+                    "on sqlite3, or use your driver's DictCursor."
+                )
+            nodes.append(self._to_node(row))
+        return nodes
 
     def _build_port(self, row: dict[str, Any], port_cfg: dict[str, str]) -> DataPort | None:
         """Build a DataPort from a port config dict."""

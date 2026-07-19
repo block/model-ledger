@@ -38,6 +38,21 @@ ledger.add(etl_jobs.discover())
 ledger.connect()            # links ETL outputs to model inputs automatically
 ```
 
+!!! note "The connection must return dict-style rows"
+    `sql_connector` addresses row values by column name (`row["owner"]`), so the
+    connection's `execute()` must return mappings, not raw DB-API tuples — tuple
+    rows raise a `TypeError` at discovery. For `sqlite3`, set a dict row factory;
+    for most other drivers, use the `DictCursor` equivalent:
+
+    ```python
+    import sqlite3
+
+    conn = sqlite3.connect("registry.db")
+    conn.row_factory = lambda cursor, row: {
+        d[0]: row[i] for i, d in enumerate(cursor.description)
+    }
+    ```
+
 ## REST APIs
 
 Works with MLflow, SageMaker, Vertex AI, or any JSON API:

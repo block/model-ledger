@@ -14,13 +14,20 @@ from model_ledger.introspect.models import (
 class SklearnIntrospector:
     name = "sklearn"
 
+    # Frameworks whose sklearn-API wrappers subclass BaseEstimator but have
+    # dedicated introspectors. The generic sklearn introspector must defer to
+    # those regardless of registry iteration order.
+    _WRAPPER_MODULES = frozenset({"xgboost", "lightgbm"})
+
     def can_handle(self, obj: Any) -> bool:
         try:
             from sklearn.base import BaseEstimator
-
-            return isinstance(obj, BaseEstimator)
         except ImportError:
             return False
+        if not isinstance(obj, BaseEstimator):
+            return False
+        root_module = (type(obj).__module__ or "").split(".", 1)[0]
+        return root_module not in self._WRAPPER_MODULES
 
     def introspect(self, obj: Any) -> IntrospectionResult:
         from sklearn.pipeline import Pipeline

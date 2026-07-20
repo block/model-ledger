@@ -5,16 +5,55 @@ from __future__ import annotations
 import contextlib
 
 from model_ledger.backends import batch_fallbacks
+from model_ledger.core.exceptions import ModelNotFoundError
 from model_ledger.sdk.ledger import Ledger
 from model_ledger.tools.schemas import DependencyNode, TraceInput, TraceOutput
+
+
+def _bfs_levels(
+    ledger: Ledger,
+    root: str,
+    direction: str,
+    max_depth: int | None,
+) -> list[tuple[str, int]]:
+    """Breadth-first traversal from ``root``, recording each node's real level.
+
+    ``depth`` is the BFS level — the shortest edge distance from the traced
+    node — not a position in a flat transitive list. Each node is reported
+    once, at its minimum depth. The traversal terminates at ``max_depth``,
+    so depth-bounded queries do depth-bounded work.
+    """
+    visited: set[str] = {root}
+    frontier: list[str] = [root]
+    levels: list[tuple[str, int]] = []
+    depth = 0
+    while frontier and (max_depth is None or depth < max_depth):
+        depth += 1
+        next_frontier: list[str] = []
+        for name in frontier:
+            try:
+                edges = ledger.dependencies(name, direction=direction)
+            except (KeyError, ValueError, ModelNotFoundError):
+                continue
+            for edge in edges:
+                child = edge["model"].name
+                if child in visited:
+                    continue
+                visited.add(child)
+                levels.append((child, depth))
+                next_frontier.append(child)
+        frontier = next_frontier
+    return levels
 
 
 def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
     """Traverse a model's dependency graph.
 
     Walks upstream (models this one depends on) and/or downstream
-    (models that depend on this one), returning ``DependencyNode`` lists
-    with depth and relationship metadata.
+    (models that depend on this one) breadth-first, returning
+    ``DependencyNode`` lists whose ``depth`` is the actual BFS level from
+    the traced model. ``input.depth`` bounds the traversal itself, not
+    just the output.
 
     Raises:
         ModelNotFoundError: If the target model does not exist.
@@ -22,23 +61,16 @@ def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
     ledger.get(input.name)
     backend = ledger._backend
 
-    upstream_names: list[str] = []
+    upstream_levels: list[tuple[str, int]] = []
     if input.direction in ("upstream", "both"):
-        try:
-            upstream_names = ledger.upstream(input.name)
-        except (KeyError, ValueError):
-            upstream_names = []
+        upstream_levels = _bfs_levels(ledger, input.name, "upstream", input.depth)
 
-    downstream_names: list[str] = []
+    downstream_levels: list[tuple[str, int]] = []
     if input.direction in ("downstream", "both"):
-        try:
-            downstream_names = ledger.downstream(input.name)
-        except (KeyError, ValueError):
-            downstream_names = []
+        downstream_levels = _bfs_levels(ledger, input.name, "downstream", input.depth)
 
-    all_names = upstream_names + downstream_names
     name_to_hash: dict[str, str] = {}
-    for n in all_names:
+    for n, _ in upstream_levels + downstream_levels:
         with contextlib.suppress(Exception):
             name_to_hash[n] = ledger.get(n).model_hash
 
@@ -51,36 +83,17 @@ def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
     else:
         platforms = {}
 
-    upstream_nodes: list[DependencyNode] = []
-    total_up = len(upstream_names)
-    for idx, name in enumerate(upstream_names):
+    def _node(name: str, depth: int, relationship: str) -> DependencyNode:
         mh = name_to_hash.get(name)
-        platform = platforms.get(mh) if mh else None
-        upstream_nodes.append(
-            DependencyNode(
-                name=name,
-                platform=platform,
-                depth=total_up - idx,
-                relationship="depends_on",
-            )
+        return DependencyNode(
+            name=name,
+            platform=platforms.get(mh) if mh else None,
+            depth=depth,
+            relationship=relationship,
         )
 
-    downstream_nodes: list[DependencyNode] = []
-    for idx, name in enumerate(downstream_names):
-        mh = name_to_hash.get(name)
-        platform = platforms.get(mh) if mh else None
-        downstream_nodes.append(
-            DependencyNode(
-                name=name,
-                platform=platform,
-                depth=idx + 1,
-                relationship="feeds_into",
-            )
-        )
-
-    if input.depth is not None:
-        upstream_nodes = [n for n in upstream_nodes if n.depth <= input.depth]
-        downstream_nodes = [n for n in downstream_nodes if n.depth <= input.depth]
+    upstream_nodes = [_node(n, d, "depends_on") for n, d in upstream_levels]
+    downstream_nodes = [_node(n, d, "feeds_into") for n, d in downstream_levels]
 
     total = len(upstream_nodes) + len(downstream_nodes)
     return TraceOutput(

@@ -232,3 +232,150 @@ class TestTraceNonexistentModel:
     def test_raises_model_not_found(self, ledger):
         with pytest.raises(ModelNotFoundError):
             trace(TraceInput(name="nonexistent_model"), ledger)
+
+
+@pytest.fixture
+def fanout_ledger(ledger):
+    """Synthetic fan-out DAG: 19 transitive upstreams of scoring_model
+    spread over 8 real BFS levels with uneven fan-out, a diamond
+    (r1 is reachable via both t1 and t2), and a shortcut (r2 is both a
+    direct upstream and reachable again at level 3).
+
+    Level sizes from scoring_model: [4, 3, 2, 4, 2, 2, 1, 1].
+    """
+    edges = [
+        # (upstream, downstream) — downstream depends_on upstream
+        ("f1", "scoring_model"),
+        ("f2", "scoring_model"),
+        ("f3", "scoring_model"),
+        ("r2", "scoring_model"),  # shortcut: also reachable at level 3
+        ("t1", "f1"),
+        ("t2", "f1"),
+        ("t3", "f2"),
+        ("r1", "t1"),
+        ("r1", "t2"),  # diamond: r1 via two paths
+        ("r2", "t2"),
+        ("r3", "t3"),
+        ("s1", "r1"),
+        ("s2", "r1"),
+        ("s3", "r1"),
+        ("s4", "r1"),
+        ("u1", "s1"),
+        ("u2", "s4"),
+        ("v1", "u1"),
+        ("v2", "u1"),
+        ("w1", "v1"),
+        ("x1", "w1"),
+    ]
+    names = {"scoring_model"} | {n for e in edges for n in e}
+    for name in sorted(names):
+        ledger.register(
+            name=name,
+            owner="risk-team",
+            model_type="ml_model",
+            tier="low",
+            purpose="fixture",
+        )
+    for up, down in edges:
+        ledger.link_dependency(up, down, actor="graph_builder")
+    return ledger
+
+
+EXPECTED_UPSTREAM_DEPTHS = {
+    "f1": 1,
+    "f2": 1,
+    "f3": 1,
+    "r2": 1,  # shortest path wins over the level-3 route
+    "t1": 2,
+    "t2": 2,
+    "t3": 2,
+    "r1": 3,
+    "r3": 3,
+    "s1": 4,
+    "s2": 4,
+    "s3": 4,
+    "s4": 4,
+    "u1": 5,
+    "u2": 5,
+    "v1": 6,
+    "v2": 6,
+    "w1": 7,
+    "x1": 8,
+}
+
+
+class TestTraceDepthIsBfsLevel:
+    """Regression: depth must be the actual BFS level from the traced node,
+    not the node's position in a flat transitive list. Previously any model
+    with N transitive upstreams rendered as an N-deep linear chain."""
+
+    def test_upstream_depths_are_bfs_levels(self, fanout_ledger):
+        result = trace(TraceInput(name="scoring_model", direction="upstream"), fanout_ledger)
+
+        depths = {n.name: n.depth for n in result.upstream}
+        assert depths == EXPECTED_UPSTREAM_DEPTHS
+
+    def test_max_depth_is_level_count_not_node_count(self, fanout_ledger):
+        result = trace(TraceInput(name="scoring_model", direction="upstream"), fanout_ledger)
+
+        assert len(result.upstream) == 19
+        assert max(n.depth for n in result.upstream) == 8  # not 19
+
+    def test_diamond_node_appears_once_at_min_depth(self, fanout_ledger):
+        result = trace(TraceInput(name="scoring_model", direction="upstream"), fanout_ledger)
+
+        r1 = [n for n in result.upstream if n.name == "r1"]
+        assert len(r1) == 1
+        assert r1[0].depth == 3
+        # Shortcut node: direct edge beats the longer route.
+        r2 = [n for n in result.upstream if n.name == "r2"]
+        assert len(r2) == 1
+        assert r2[0].depth == 1
+
+    def test_depth_bound_returns_exactly_the_near_levels(self, fanout_ledger):
+        result = trace(
+            TraceInput(name="scoring_model", direction="upstream", depth=3),
+            fanout_ledger,
+        )
+
+        expected = {n for n, d in EXPECTED_UPSTREAM_DEPTHS.items() if d <= 3}
+        assert {n.name for n in result.upstream} == expected
+
+    def test_downstream_depths_are_bfs_levels(self, fanout_ledger):
+        """Symmetry: downstream had the same flat-list fabrication."""
+        result = trace(TraceInput(name="x1", direction="downstream"), fanout_ledger)
+
+        depths = {n.name: n.depth for n in result.downstream}
+        assert depths == {
+            "w1": 1,
+            "v1": 2,
+            "u1": 3,
+            "s1": 4,
+            "r1": 5,
+            "t1": 6,
+            "t2": 6,  # fan-out: two nodes share level 6
+            "f1": 7,
+            "scoring_model": 8,
+        }
+
+    def test_depth_bound_limits_traversal_work(self, fanout_ledger):
+        """depth must bound the traversal itself, not just filter output."""
+        backend = fanout_ledger._backend
+        calls = {"n": 0}
+        original = backend.list_snapshots
+
+        def counting_list_snapshots(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        backend.list_snapshots = counting_list_snapshots
+        try:
+            trace(TraceInput(name="scoring_model", direction="upstream", depth=1), fanout_ledger)
+            bounded = calls["n"]
+            calls["n"] = 0
+            trace(TraceInput(name="scoring_model", direction="upstream"), fanout_ledger)
+            unbounded = calls["n"]
+        finally:
+            backend.list_snapshots = original
+
+        assert bounded < unbounded

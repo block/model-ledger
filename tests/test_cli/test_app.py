@@ -113,3 +113,39 @@ def test_validate_unknown_profile_exits_cleanly(tmp_path):
     result = runner.invoke(app, ["validate", "test-model", "--db", db, "--profile", "nope"])
     assert result.exit_code == 1
     assert "Unknown profile" in result.output
+
+
+def _inventory_with_version(db):
+    inv = Inventory(db_path=db)
+    inv.register_model(name="test-model", owner="tester", tier="low", intended_purpose="testing")
+    with inv.new_version("test-model") as v:
+        v.add_component("Processing/algorithm", type="algorithm")
+    return inv
+
+
+def test_export_help_describes_a_file_path():
+    result = runner.invoke(app, ["export", "--help"])
+    assert result.exit_code == 0
+    assert "file path" in result.output.lower()
+    assert "directory" not in result.output.lower()
+
+
+def test_export_message_matches_produced_artifact(tmp_path):
+    db = str(tmp_path / "test.db")
+    _inventory_with_version(db)
+    out = str(tmp_path / "pack_out.html")
+
+    result = runner.invoke(app, ["export", "test-model", "--db", db, "--output", out])
+
+    assert result.exit_code == 0
+    # A single file is produced at the given path...
+    from pathlib import Path
+
+    artifact = Path(out)
+    assert artifact.is_file()
+    assert not artifact.is_dir()
+    # ...and the success message names that path, not a directory.
+    # (Rich wraps long lines, so unwrap before matching.)
+    output = result.output.replace("\n", "")
+    assert f"exported to {out}" in output
+    assert f"{out}/" not in output

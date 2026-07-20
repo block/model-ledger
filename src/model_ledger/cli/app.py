@@ -373,7 +373,9 @@ def export_cmd(
     model_name: str = typer.Argument(help="Name of the model to export."),
     db: str = typer.Option(default=None, help="Path to the inventory database."),
     version: str | None = typer.Option(None, help="Version to export. Defaults to latest."),
-    output: str = typer.Option("audit_pack", help="Output directory for the audit pack."),
+    output: str = typer.Option(
+        "audit_pack.html", help="Output file path for the audit pack (a single HTML file)."
+    ),
 ) -> None:
     """Export an audit pack for a model version."""
     db = db or _default_db()
@@ -397,11 +399,11 @@ def export_cmd(
         from model_ledger.export.audit_pack import export_audit_pack
 
         export_audit_pack(inventory=inv, model_name=model_name, version=version, output_path=output)
-        console.print(f"[green]Audit pack exported to {output}/[/green]")
+        console.print(f"[green]Audit pack exported to {output}[/green]")
     except (ImportError, AttributeError):
         console.print(
             f"[yellow]Export not yet implemented.[/yellow] "
-            f"Would export audit pack for {model_name} v{version} to {output}/"
+            f"Would export audit pack for {model_name} v{version} to {output}"
         )
 
 

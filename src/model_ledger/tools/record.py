@@ -26,7 +26,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
                 name=input.model_name,
                 owner=input.owner or "unknown",
                 model_type=input.model_type or "unknown",
-                tier="unclassified",
+                tier=input.tier or "unclassified",
                 purpose=input.purpose or "",
                 actor=input.actor,
                 payload=input.payload or None,

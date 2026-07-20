@@ -170,24 +170,31 @@ class Ledger:
             status=status,
             metadata=metadata or {},
         )
-        self._backend.save_model(model)
-        event_payload: dict[str, Any] = {
-            "name": name,
-            "owner": owner,
-            "tier": tier,
-            "purpose": purpose,
-            "model_origin": model_origin,
-        }
-        if payload:
-            event_payload.update(payload)
-        self._backend.append_snapshot(
-            Snapshot(
-                model_hash=model.model_hash,
-                actor=actor,
-                event_type="registered",
-                payload=event_payload,
+        register_model = getattr(self._backend, "register_model", None)
+        if callable(register_model):
+            # Pass-through backends (e.g. HttpLedgerBackend) register in a
+            # single call so the payload, tier, and actor reach the remote
+            # server, which logs the single "registered" event itself.
+            register_model(model, payload=payload or {}, actor=actor)
+        else:
+            self._backend.save_model(model)
+            event_payload: dict[str, Any] = {
+                "name": name,
+                "owner": owner,
+                "tier": tier,
+                "purpose": purpose,
+                "model_origin": model_origin,
+            }
+            if payload:
+                event_payload.update(payload)
+            self._backend.append_snapshot(
+                Snapshot(
+                    model_hash=model.model_hash,
+                    actor=actor,
+                    event_type="registered",
+                    payload=event_payload,
+                )
             )
-        )
         self._name_cache[name] = model
         return model
 

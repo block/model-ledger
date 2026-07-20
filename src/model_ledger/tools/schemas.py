@@ -68,6 +68,7 @@ class RecordInput(BaseModel):
     owner: str | None = None
     model_type: str | None = None
     purpose: str | None = None
+    tier: str | None = None
 
 
 class RecordOutput(BaseModel):

@@ -46,7 +46,20 @@ class HttpLedgerBackend:
 
     # ── Models ──
 
-    def save_model(self, model: ModelRef) -> None:
+    def register_model(
+        self,
+        model: ModelRef,
+        *,
+        payload: dict[str, Any] | None = None,
+        actor: str = "system",
+    ) -> None:
+        """Register a model server-side in a single POST /record.
+
+        ``Ledger.register()`` dispatches here instead of the two-step
+        save_model + append_snapshot, so the caller's registration payload,
+        tier, and actor reach the server (the server's record tool logs the
+        single ``registered`` event itself).
+        """
         resp = self._client.post(
             "/record",
             json={
@@ -55,7 +68,9 @@ class HttpLedgerBackend:
                 "owner": model.owner,
                 "model_type": model.model_type,
                 "purpose": model.purpose,
-                "payload": {},
+                "tier": model.tier,
+                "actor": actor,
+                "payload": payload or {},
             },
         )
         # Fail loudly on HTTP errors rather than caching a model that was
@@ -78,9 +93,12 @@ class HttpLedgerBackend:
         model.model_hash = server_hash
         self._hash_to_name[server_hash] = model.name
         # The server's /record tool logs the "registered" event as part of
-        # registration — remember that so the SDK's follow-up
+        # registration — remember that so any follow-up
         # append_snapshot(registered) is not posted a second time.
         self._registered_hashes.add(server_hash)
+
+    def save_model(self, model: ModelRef) -> None:
+        self.register_model(model)
 
     def get_model(self, model_hash: str) -> ModelRef | None:
         name = self._hash_to_name.get(model_hash)

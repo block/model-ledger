@@ -107,6 +107,7 @@ def create_server(
         owner: str | None = None,
         model_type: str | None = None,
         purpose: str | None = None,
+        tier: str | None = None,
     ) -> dict:
         """Register a new model or record an event on an existing model.
 
@@ -121,6 +122,7 @@ def create_server(
             owner=owner,
             model_type=model_type,
             purpose=purpose,
+            tier=tier,
         )
         return _record(inp, ledger).model_dump(mode="json")
 
@@ -354,6 +356,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
         owner: str | None = None,
         model_type: str | None = None,
         purpose: str | None = None,
+        tier: str | None = None,
     ) -> dict:
         """Register a new model or record an event on an existing model.
 
@@ -370,6 +373,7 @@ def _create_http_server(http_backend: Any) -> FastMCP:
                 "owner": owner,
                 "model_type": model_type,
                 "purpose": purpose,
+                "tier": tier,
             },
         )
         return resp.json()  # type: ignore[no-any-return]

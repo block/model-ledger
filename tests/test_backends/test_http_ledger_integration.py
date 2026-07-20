@@ -284,6 +284,68 @@ class TestOldEventsVisibleOverHttp:
         assert res.total == 1
 
 
+class TestRegistrationFidelityOverHttp:
+    """Registration over HTTP must carry the same information as a local
+    backend: the caller's payload lands on the single registered event,
+    and the tier lands on the model row."""
+
+    def test_registration_payload_lands_on_registered_event(self):
+        from model_ledger.tools.record import record
+        from model_ledger.tools.schemas import RecordInput
+
+        server_backend, _, _, ledger = _make_stack()
+        record(
+            RecordInput(
+                model_name="m1",
+                event="registered",
+                payload={"framework": "xgboost", "version": "2.1"},
+                actor="ci",
+                owner="risk",
+                model_type="ml_model",
+                purpose="scoring",
+            ),
+            ledger,
+        )
+        registered = [s for s in server_backend._snapshots if s.event_type == "registered"]
+        assert len(registered) == 1
+        assert registered[0].payload.get("framework") == "xgboost"
+        assert registered[0].payload.get("version") == "2.1"
+
+    def test_register_payload_kwarg_lands_on_registered_event(self):
+        server_backend, _, _, ledger = _make_stack()
+        ledger.register(
+            name="m2",
+            owner="risk",
+            model_type="ml_model",
+            tier="low",
+            purpose="p",
+            payload={"framework": "lightgbm"},
+        )
+        registered = [s for s in server_backend._snapshots if s.event_type == "registered"]
+        assert len(registered) == 1
+        assert registered[0].payload.get("framework") == "lightgbm"
+
+    def test_tier_survives_http_registration(self):
+        server_backend, _, _, ledger = _make_stack()
+        ledger.register(
+            name="tiered", owner="risk", model_type="ml_model", tier="high", purpose="p"
+        )
+        assert server_backend.get_model_by_name("tiered").tier == "high"
+
+    def test_actor_survives_http_registration(self):
+        server_backend, _, _, ledger = _make_stack()
+        ledger.register(
+            name="acted",
+            owner="risk",
+            model_type="ml_model",
+            tier="low",
+            purpose="p",
+            actor="pipeline-bot",
+        )
+        registered = [s for s in server_backend._snapshots if s.event_type == "registered"]
+        assert registered[0].actor == "pipeline-bot"
+
+
 class TestServerRejectsEmptyModelName:
     """Defense in depth: old clients that still post ``model_name: ""``
     must fail loudly instead of silently corrupting the ledger."""

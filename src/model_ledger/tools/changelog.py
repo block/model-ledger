@@ -53,7 +53,7 @@ def changelog(input: ChangelogInput, ledger: Ledger) -> ChangelogOutput:
         model = ledger.get(input.model_name)
         model_hash = model.model_hash
 
-    backend = ledger._backend
+    backend = ledger.backend
     if hasattr(backend, "changelog_page"):
         events_dicts, total = backend.changelog_page(
             since=since,

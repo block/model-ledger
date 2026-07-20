@@ -21,7 +21,7 @@ def tag(input: TagInput, ledger: Ledger) -> TagOutput:
 def list_tags(model_name: str, ledger: Ledger) -> TagListOutput:
     """Return all tags attached to a model."""
     ref = ledger.get(model_name)
-    tags = ledger._backend.list_tags(ref.model_hash)
+    tags = ledger.backend.list_tags(ref.model_hash)
     return TagListOutput(
         model_name=model_name,
         tags=[_tag_to_output(model_name, t) for t in tags],

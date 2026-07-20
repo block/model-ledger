@@ -59,7 +59,7 @@ def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
         ModelNotFoundError: If the target model does not exist.
     """
     ledger.get(input.name)
-    backend = ledger._backend
+    backend = ledger.backend
 
     upstream_levels: list[tuple[str, int]] = []
     if input.direction in ("upstream", "both"):
@@ -95,7 +95,9 @@ def trace(input: TraceInput, ledger: Ledger) -> TraceOutput:
     upstream_nodes = [_node(n, d, "depends_on") for n, d in upstream_levels]
     downstream_nodes = [_node(n, d, "feeds_into") for n, d in downstream_levels]
 
-    total = len(upstream_nodes) + len(downstream_nodes)
+    # Distinct models: with direction="both" (e.g. in a cycle) a node can be
+    # reachable in both directions but must be counted once.
+    total = len({n for n, _ in upstream_levels} | {n for n, _ in downstream_levels})
     return TraceOutput(
         root=input.name,
         upstream=upstream_nodes,

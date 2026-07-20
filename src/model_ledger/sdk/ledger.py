@@ -77,6 +77,16 @@ class Ledger:
         self._cache_complete = False  # True after bulk preload — skip individual lookups
         self._node_cache: list = []  # DataNodes from add() — reused by connect()
 
+    @property
+    def backend(self) -> LedgerBackend:
+        """The storage backend this ledger reads from and writes to.
+
+        Public accessor for tool functions and integrations that dispatch on
+        optional backend capabilities (``batch_platforms``, ``changelog_page``,
+        ...) — avoids reaching into the private ``_backend`` attribute.
+        """
+        return self._backend
+
     @classmethod
     def from_sqlite(cls, db_path: str) -> Ledger:
         """Create a Ledger backed by a SQLite database.

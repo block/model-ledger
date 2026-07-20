@@ -367,3 +367,11 @@ class TestServerRejectsEmptyModelName:
         )
         assert resp.status_code == 422
         assert server_client.get("/query").json()["total"] == 0
+
+    def test_record_whitespace_only_model_name_is_rejected(self, server_client):
+        resp = server_client.post(
+            "/record",
+            json={"model_name": "   ", "event": "registered", "actor": "old-client"},
+        )
+        assert resp.status_code == 422
+        assert server_client.get("/query").json()["total"] == 0

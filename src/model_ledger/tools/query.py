@@ -42,7 +42,7 @@ def _model_to_summary(model: ModelRef, ledger: Ledger) -> ModelSummary:
 
 def _summarize(models: list[ModelRef], ledger: Ledger) -> list[ModelSummary]:
     """Build enriched ModelSummary rows via one batched backend dispatch."""
-    backend = ledger._backend
+    backend = ledger.backend
     model_hashes = [m.model_hash for m in models]
     if hasattr(backend, "model_summaries"):
         enrichment = backend.model_summaries(model_hashes)
@@ -84,7 +84,7 @@ def query(input: QueryInput, ledger: Ledger) -> QueryOutput:
     count_filters = dict(filters)
     if input.text:
         count_filters["text"] = input.text
-    backend = ledger._backend
+    backend = ledger.backend
     if hasattr(backend, "count_models"):
         total = backend.count_models(**count_filters)
     else:
@@ -119,7 +119,7 @@ def _query_by_platform(input: QueryInput, ledger: Ledger, filters: dict[str, str
     backends) — so filtering and pagination happen here rather than in
     ``list_models``.
     """
-    backend = ledger._backend
+    backend = ledger.backend
 
     models_all = ledger.list(**filters)
     if input.text:

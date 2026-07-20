@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Shared types
@@ -69,6 +69,14 @@ class RecordInput(BaseModel):
     model_type: str | None = None
     purpose: str | None = None
     tier: str | None = None
+
+    @field_validator("model_name")
+    @classmethod
+    def _model_name_not_blank(cls, v: str) -> str:
+        """Whitespace-only names would register near-invisible models."""
+        if not v.strip():
+            raise ValueError("model_name must contain non-whitespace characters")
+        return v
 
 
 class RecordOutput(BaseModel):

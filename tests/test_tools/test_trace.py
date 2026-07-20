@@ -379,3 +379,30 @@ class TestTraceDepthIsBfsLevel:
             backend.list_snapshots = original
 
         assert bounded < unbounded
+
+
+class TestTotalNodesCountsDistinctModels:
+    def test_cycle_traced_both_ways_counts_each_model_once(self, ledger):
+        for name in ("a", "b"):
+            ledger.register(
+                name=name, owner="risk-team", model_type="ml_model", tier="low", purpose="fixture"
+            )
+        ledger.link_dependency("a", "b", actor="graph_builder")
+        ledger.link_dependency("b", "a", actor="graph_builder")
+
+        out = trace(TraceInput(name="a", direction="both"), ledger)
+        # b is reachable upstream AND downstream of a — one distinct model.
+        assert len(out.upstream) == 1
+        assert len(out.downstream) == 1
+        assert out.total_nodes == 1
+
+    def test_disjoint_directions_still_sum(self, ledger):
+        for name in ("mid", "up", "down"):
+            ledger.register(
+                name=name, owner="risk-team", model_type="ml_model", tier="low", purpose="fixture"
+            )
+        ledger.link_dependency("up", "mid", actor="graph_builder")
+        ledger.link_dependency("mid", "down", actor="graph_builder")
+
+        out = trace(TraceInput(name="mid", direction="both"), ledger)
+        assert out.total_nodes == 2

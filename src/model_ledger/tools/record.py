@@ -20,7 +20,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
             is not ``"registered"``.
     """
     if input.event == "registered":
-        existing = ledger._backend.get_model_by_name(input.model_name)
+        existing = ledger.backend.get_model_by_name(input.model_name)
         if existing is None:
             model = ledger.register(
                 name=input.model_name,
@@ -32,7 +32,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
                 payload=input.payload or None,
             )
             # register() appended the single canonical "registered" snapshot.
-            snapshot = ledger._backend.latest_snapshot(model.model_hash)
+            snapshot = ledger.backend.latest_snapshot(model.model_hash)
             if snapshot is None:  # pragma: no cover — register always logs one
                 raise RuntimeError("register() did not log a registration event")
             return RecordOutput(
@@ -45,7 +45,7 @@ def record(input: RecordInput, ledger: Ledger) -> RecordOutput:
 
         # Idempotent re-registration: point at the existing registration
         # event instead of appending a duplicate.
-        registered = ledger._backend.list_snapshots(existing.model_hash, event_type="registered")
+        registered = ledger.backend.list_snapshots(existing.model_hash, event_type="registered")
         if registered:
             snapshot = max(registered, key=lambda s: s.timestamp)
         else:

@@ -81,7 +81,7 @@ def investigate(input: InvestigateInput, ledger: Ledger) -> InvestigateOutput:
         now = datetime.now(timezone.utc)
         days_since_last_event = (now - latest_ts).days
 
-    backend = ledger._backend
+    backend = ledger.backend
     try:
         if hasattr(backend, "batch_dependencies"):
             deps = backend.batch_dependencies(model.model_hash)

@@ -182,7 +182,7 @@ def create_app(
     @app.get("/overview")
     def overview_endpoint() -> dict[str, Any]:
         models = ledger.list()
-        backend = ledger._backend
+        backend = ledger.backend
         if hasattr(backend, "count_all_snapshots"):
             total_events = backend.count_all_snapshots()
         else:

@@ -151,12 +151,19 @@ class _SQLConnector:
         nodes: list[DataNode] = []
         for row in rows:
             if not hasattr(row, "get"):
-                raise TypeError(
-                    "sql_connector requires dict-style rows (mappings addressable "
-                    f"by column name), got {type(row).__name__}. Configure the "
-                    "connection to return mappings — e.g. set a dict row_factory "
-                    "on sqlite3, or use your driver's DictCursor."
-                )
+                if hasattr(row, "keys"):
+                    # Name-addressable rows without the full dict API
+                    # (e.g. sqlite3.Row has keys() and row["col"] but no
+                    # .get()/.items()) — materialize a real dict.
+                    row = dict(row)
+                else:
+                    raise TypeError(
+                        "sql_connector requires dict-style rows (mappings addressable "
+                        f"by column name), got {type(row).__name__}. Configure the "
+                        "connection to return mappings — e.g. set "
+                        "row_factory = sqlite3.Row (or a dict row_factory) on "
+                        "sqlite3, or use your driver's DictCursor."
+                    )
             nodes.append(self._to_node(row))
         return nodes
 

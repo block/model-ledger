@@ -44,6 +44,88 @@ class TestExtractTables:
         assert extract_tables_from_sql("SELECT * FROM VALUES (1), (2)") == []
 
 
+class TestCteNamesExcluded:
+    """CTE names are query-local aliases, never read tables.
+
+    Bare-identifier acceptance must not turn WITH-clause bindings into
+    phantom lineage inputs.
+    """
+
+    def test_single_cte(self):
+        sql = (
+            "WITH recent_events AS (SELECT * FROM warehouse.raw_events) SELECT * FROM recent_events"
+        )
+        assert extract_tables_from_sql(sql) == ["warehouse.raw_events"]
+
+    def test_multi_cte_dbt_style(self):
+        sql = """
+        WITH base AS (
+            SELECT * FROM raw.events
+        ), enriched AS (
+            SELECT * FROM base JOIN raw.users ON base.user_id = raw.users.id
+        ), final AS (
+            SELECT * FROM enriched
+        )
+        SELECT * FROM final
+        """
+        assert extract_tables_from_sql(sql) == ["raw.events", "raw.users"]
+
+    def test_nested_with(self):
+        sql = (
+            "WITH outer_cte AS ("
+            "  WITH inner_cte AS (SELECT * FROM warehouse.raw_events)"
+            "  SELECT * FROM inner_cte"
+            ") SELECT * FROM outer_cte JOIN warehouse.users ON 1=1"
+        )
+        assert extract_tables_from_sql(sql) == ["warehouse.raw_events", "warehouse.users"]
+
+    def test_with_recursive(self):
+        sql = (
+            "WITH RECURSIVE ancestry AS ("
+            "  SELECT * FROM org_chart"
+            "  UNION ALL"
+            "  SELECT * FROM ancestry JOIN org_chart ON 1=1"
+            ") SELECT * FROM ancestry"
+        )
+        assert extract_tables_from_sql(sql) == ["org_chart"]
+
+    def test_cte_with_column_list(self):
+        sql = "WITH cte (a, b) AS (SELECT 1, 2 FROM real_table) SELECT * FROM cte"
+        assert extract_tables_from_sql(sql) == ["real_table"]
+
+    def test_cte_shadowing_real_table_is_excluded(self):
+        # A CTE that reuses a real table's name shadows it for the whole
+        # statement; references resolve to the CTE, so nothing is extracted.
+        sql = "WITH raw_events AS (SELECT * FROM warehouse.archive) SELECT * FROM raw_events"
+        assert extract_tables_from_sql(sql) == ["warehouse.archive"]
+
+    def test_cte_feeding_a_write_statement(self):
+        sql = "WITH cte AS (SELECT 1) INSERT INTO out_table SELECT * FROM cte"
+        assert extract_tables_from_sql(sql) == []
+        assert extract_write_tables(sql) == ["out_table"]
+
+    def test_original_bare_from_still_resolves(self):
+        # The OSS-4 headline case must keep working with the CTE filter on.
+        sql = "INSERT INTO feature_store SELECT * FROM raw_events"
+        assert extract_tables_from_sql(sql) == ["raw_events"]
+
+    def test_case_insensitive_exclusion(self):
+        sql = "WITH Recent AS (SELECT * FROM warehouse.raw_events) SELECT * FROM RECENT"
+        assert extract_tables_from_sql(sql) == ["warehouse.raw_events"]
+
+
+class TestDeleteFromNotARead:
+    def test_bare_delete_target_not_extracted(self):
+        assert extract_tables_from_sql("DELETE FROM audit_log WHERE 1=1") == []
+
+    def test_qualified_delete_target_not_extracted(self):
+        assert extract_tables_from_sql("DELETE FROM schema.audit_log WHERE 1=1") == []
+
+    def test_delete_with_using_keeps_the_read_source(self):
+        sql = "DELETE FROM audit_log USING retention_policy WHERE 1=1"
+        assert "audit_log" not in extract_tables_from_sql(sql)
+
+
 class TestExtractWriteTables:
     def test_insert_into(self):
         assert "schema.output" in extract_write_tables("INSERT INTO schema.output SELECT 1")
@@ -81,6 +163,18 @@ class TestExtractWriteTables:
 
     def test_insert_overwrite_keyword_not_extracted(self):
         assert extract_write_tables("INSERT OVERWRITE INTO schema.t SELECT 1") != ["OVERWRITE"]
+
+    def test_insert_overwrite_table_hive_form(self):
+        # Hive/Spark: INSERT OVERWRITE TABLE <name> ...
+        sql = "INSERT OVERWRITE TABLE feature_out SELECT * FROM src"
+        assert extract_write_tables(sql) == ["feature_out"]
+
+    def test_insert_overwrite_table_qualified(self):
+        sql = "INSERT OVERWRITE TABLE warehouse.feature_out SELECT * FROM src"
+        assert extract_write_tables(sql) == ["warehouse.feature_out"]
+
+    def test_insert_overwrite_bare(self):
+        assert extract_write_tables("INSERT OVERWRITE feature_out SELECT 1") == ["feature_out"]
 
 
 class TestExtractModelNameFilters:

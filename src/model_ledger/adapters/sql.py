@@ -33,6 +33,31 @@ _SQL_NON_TABLE_KEYWORDS = frozenset(
 
 _TABLE_IDENTIFIER = r"([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*){0,2})"
 
+# A CTE binding: `WITH [RECURSIVE] name [(cols)] AS (` or a comma-continued
+# `, name [(cols)] AS (`. The comma form is only meaningful inside a WITH
+# clause, so _extract_cte_names guards on the statement containing WITH.
+_CTE_BINDING_PATTERN = re.compile(
+    r"(?:\bWITH\s+(?:RECURSIVE\s+)?|,\s*)"
+    r"([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\([^()]*\)\s*)?AS\s*\(",
+    re.IGNORECASE,
+)
+
+# `DELETE FROM target` — the target is neither a read nor (for lineage
+# purposes here) a write; strip the FROM so the read extractor skips it.
+_DELETE_FROM_PATTERN = re.compile(r"\bDELETE\s+FROM\b", re.IGNORECASE)
+
+
+def _extract_cte_names(sql: str) -> set[str]:
+    """Lowercased WITH-clause binding names (including nested/recursive CTEs).
+
+    CTE names are query-local aliases: a reference to one resolves to the
+    CTE for the whole statement (even when it shadows a real table), so
+    they must never surface as read tables.
+    """
+    if not re.search(r"\bWITH\b", sql, re.IGNORECASE):
+        return set()
+    return {m.group(1).lower() for m in _CTE_BINDING_PATTERN.finditer(sql)}
+
 
 def _is_table_name(identifier: str) -> bool:
     """True unless a bare identifier is really a SQL keyword."""
@@ -44,7 +69,14 @@ def extract_tables_from_sql(sql: str | None) -> list[str]:
 
     Handles fully-qualified (``db.schema.table``), schema-qualified
     (``schema.table``), and bare (``table``) identifiers.
+    CTE names (``WITH name AS (...)``) and ``DELETE FROM`` targets are
+    excluded — neither is a read table.
     Returns deduplicated list preserving first-seen order.
+
+    Note:
+        A bare table genuinely named one of the filtered SQL keywords
+        (``values``, ``table``, ``dual``, ...) is not extracted; qualify it
+        (``schema.values``) to force extraction.
 
     Example:
         >>> extract_tables_from_sql("SELECT * FROM schema.table1 JOIN schema.table2 ON 1=1")
@@ -54,6 +86,8 @@ def extract_tables_from_sql(sql: str | None) -> list[str]:
     """
     if not sql:
         return []
+    cte_names = _extract_cte_names(sql)
+    sql = _DELETE_FROM_PATTERN.sub("DELETE", sql)
     pattern = rf"(?:FROM|JOIN)\s+{_TABLE_IDENTIFIER}"
     matches = re.findall(pattern, sql, re.IGNORECASE)
     seen: set[str] = set()
@@ -62,6 +96,8 @@ def extract_tables_from_sql(sql: str | None) -> list[str]:
         if not _is_table_name(table):
             continue
         lower = table.lower()
+        if lower in cte_names:
+            continue
         if lower not in seen:
             seen.add(lower)
             result.append(table)
@@ -71,8 +107,13 @@ def extract_tables_from_sql(sql: str | None) -> list[str]:
 def extract_write_tables(sql: str | None) -> list[str]:
     """Extract tables that a SQL statement writes to.
 
-    Handles INSERT INTO, CREATE [OR REPLACE] TABLE, MERGE INTO, with
-    qualified or bare table identifiers.
+    Handles INSERT INTO, INSERT OVERWRITE [TABLE|INTO], CREATE [OR REPLACE]
+    TABLE, MERGE INTO, with qualified or bare table identifiers.
+
+    Note:
+        A bare table genuinely named one of the filtered SQL keywords
+        (``values``, ``table``, ``dual``, ...) is not extracted; qualify it
+        (``schema.values``) to force extraction.
 
     Example:
         >>> extract_write_tables("INSERT INTO schema.output SELECT * FROM source")
@@ -86,7 +127,7 @@ def extract_write_tables(sql: str | None) -> list[str]:
     seen: set[str] = set()
 
     for pattern in [
-        rf"INSERT\s+(?:OVERWRITE\s+)?(?:INTO\s+)?{_TABLE_IDENTIFIER}",
+        rf"INSERT\s+(?:OVERWRITE\s+)?(?:TABLE\s+|INTO\s+)?{_TABLE_IDENTIFIER}",
         rf"CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_TABLE_IDENTIFIER}",
         rf"MERGE\s+INTO\s+{_TABLE_IDENTIFIER}",
     ]:

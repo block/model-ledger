@@ -197,10 +197,13 @@ class HttpLedgerBackend:
         cached = self._snapshot_cache.get(snapshot_hash)
         if cached is not None:
             return cached
-        # The REST API has no snapshot-by-hash endpoint. Snapshot hashes are
-        # content-derived (model_hash + timestamp + payload), so snapshots
-        # rebuilt from GET /changelog recompute the same identity the server
-        # holds — scan the changelog of every model resolved so far.
+        # The REST API has no snapshot-by-hash endpoint, so scan the
+        # changelog of every model resolved so far. Snapshot hashes are
+        # content-derived (model_hash + timestamp + payload), which means
+        # hashes rebuilt here match SERVER-minted identities. Snapshots
+        # created client-side by Ledger.record() carry a client timestamp,
+        # so their hashes are process-local: resolvable through this
+        # backend's _snapshot_cache, but not from another client.
         for model_hash in list(self._hash_to_name):
             for snap in self.list_snapshots(model_hash):
                 if snap.snapshot_hash == snapshot_hash:

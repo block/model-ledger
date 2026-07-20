@@ -374,7 +374,7 @@ def export_cmd(
     db: str = typer.Option(default=None, help="Path to the inventory database."),
     version: str | None = typer.Option(None, help="Version to export. Defaults to latest."),
     output: str = typer.Option(
-        "audit_pack.html", help="Output file path for the audit pack (a single HTML file)."
+        "audit_pack", help="Output file path for the audit pack (a single HTML file)."
     ),
 ) -> None:
     """Export an audit pack for a model version."""

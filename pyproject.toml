@@ -43,6 +43,10 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["typer>=0.9", "rich>=13.0"]
+# Deprecated: nothing imports openpyxl since the scanner module was removed
+# (post-0.7.7). Kept so `model-ledger[excel]` pins keep resolving within
+# 0.7.x; removal planned for 0.8.0.
+excel = ["openpyxl>=3.1"]
 introspect-sklearn = ["scikit-learn>=1.0"]
 introspect-xgboost = ["xgboost>=1.7"]
 introspect-lightgbm = ["lightgbm>=3.0"]

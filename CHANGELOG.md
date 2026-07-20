@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.7.13 (Unreleased)
+
+- fix: `Ledger(HttpLedgerBackend(url))` no longer corrupts the remote ledger. `append_snapshot` sends the real model name instead of `""` (which auto-registered a phantom empty-name model and attached every recorded event to it) and raises `ModelNotFoundError` for unresolvable hashes; registration logs exactly one `registered` event instead of double-firing (re-registration is now idempotent); `get_snapshot()` serves appended snapshots from a client-side cache and reconstructs older ones from `GET /changelog` instead of always returning `None`. Defense in depth: `RecordInput.model_name` requires `min_length=1`, so old clients that POST an empty model name get a 422 instead of silently corrupting the inventory. A new integration suite drives the SDK against the real `create_app()` handlers (not mocks).
+- fix: the `query` tool's `platform` filter is actually applied. It was advertised in `QueryInput` and the REST/MCP schemas but never read — any platform value returned the full inventory. Platform is resolved from snapshot data in one batched `batch_platforms` dispatch and filtered/paginated in the tool; a schema-vs-implementation parity test now guards every `QueryInput` filter field.
+- fix: the introspector registry dispatches XGBoost sklearn-API models to the xgboost introspector. `SklearnIntrospector.can_handle` now rejects estimators from wrapper frameworks with dedicated introspectors (xgboost, lightgbm) instead of claiming them via `BaseEstimator`, making dispatch independent of entry-point ordering.
+- fix: SQL lineage extraction accepts unqualified (bare) table names — `INSERT INTO feature_store SELECT * FROM raw_events` previously parsed to zero reads and zero writes, silently producing no lineage. A keyword blocklist keeps subqueries, table functions, and row sources out of the results; `INSERT OVERWRITE` is recognized.
+- fix: `strip_template_vars` strips spaced template variables like `{{ ds }}`; its docstring example now shows the actual output.
+- fix: `sql_connector` raises a clear `TypeError` naming the dict-row requirement when the connection yields tuple rows, instead of an opaque indexing error. The connectors guide documents the requirement with a sqlite3 `row_factory` example.
+- fix: `create_app()` / `create_server()` validate the backend at construction and raise a clear `TypeError` (with hints for the common Ledger-instead-of-backend and path-string mistakes) instead of failing deep inside the first request with `AttributeError`.
+- fix(cli): `export --output` help text now says "Output file path" (the command writes a single file, not a directory), the default output gained a proper `.html` extension, and the success message prints the real artifact path.
+- feat: `Ledger.register()` accepts an optional `payload` dict merged into the registration event's payload (caller keys win) — used by the record tool so the single `registered` event still carries the caller's payload.
+- chore: remove the vestigial `excel` extra — nothing has imported openpyxl since the scanner module was removed post-v0.7.7.
+- test: pandas-dependent tests skip instead of hard-failing when pandas is absent alongside the ML introspection libs.
+
+## v0.7.12
+
+- fix: escape backslashes in single-quoted SQL literals — JSON payloads containing escaped double quotes (`\"`) or backslashes reached `PARSE_JSON` mangled on the SQL fallback write path, which re-introduced the poisoned-buffer failure (INSERT fails, buffer never clears, every subsequent flush-before-read 500s) on common data. Also from the post-merge review of #33/#34: privilege denials short-circuit quietly again instead of warning per flush, unexpected pandas-path failures log with `exc_info`, and the failure-path staging-table DROP is gone. (#35)
+
+## v0.7.11
+
+- fix: the pandas bulk write path falls back to the DDL-free SQL path on ANY failure, not just privilege errors. Observed in production: `write_pandas` failing inside the file-transfer agent (not a privilege error) propagated, left the snapshot buffer poisoned, and 500'd every subsequent read on the process. Any pandas-path failure now logs a warning, best-effort drops the staging table, clears cleanly, and falls back. (#34)
+
+## v0.7.10
+
+- fix: the SQL fallback snapshot flush carries PAYLOAD and TAGS — the DDL-free path taken by least-privilege deployments previously inserted only the 7 scalar columns, silently persisting every snapshot with NULL payload and tags. (#33)
+- ci: publish to the official MCP Registry via GitHub OIDC on each release. (#32)
+
 ## v0.7.9
 
 - chore: publish to the official MCP Registry as `io.github.block/model-ledger` — adds `server.json` and the PyPI ownership marker in the README (#31)

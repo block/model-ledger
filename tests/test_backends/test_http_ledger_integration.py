@@ -14,6 +14,8 @@ Starlette's TestClient (a sync httpx.Client subclass), NOT mocks.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 pytest.importorskip("httpx")
@@ -130,6 +132,156 @@ class TestGetSnapshotOverHttp:
 
     def test_get_snapshot_unknown_hash_returns_none(self, backend):
         assert backend.get_snapshot("f" * 32) is None
+
+
+def _make_stack():
+    """A server with an inspectable backend plus an HTTP-backed Ledger."""
+    from model_ledger.backends.ledger_memory import InMemoryLedgerBackend
+
+    server_backend = InMemoryLedgerBackend()
+    server_app = create_app(backend=server_backend)
+    b = HttpLedgerBackend("http://testserver")
+    b._client.close()
+    b._client = TestClient(server_app)
+    return server_backend, server_app, b, Ledger(backend=b)
+
+
+def _fresh_client(server_app):
+    """A second client process: no local caches, same server."""
+    b = HttpLedgerBackend("http://testserver")
+    b._client.close()
+    b._client = TestClient(server_app)
+    return b, Ledger(backend=b)
+
+
+def _age_server_events(server_backend, days=30):
+    """Rewind server-side event timestamps, keeping content hashes consistent
+    (in production an old snapshot's hash reflects its real timestamp)."""
+    from model_ledger.core.ledger_models import _compute_snapshot_hash
+
+    for s in server_backend._snapshots:
+        object.__setattr__(s, "timestamp", s.timestamp - timedelta(days=days))
+        object.__setattr__(
+            s, "snapshot_hash", _compute_snapshot_hash(s.model_hash, s.timestamp, s.payload)
+        )
+
+
+class TestOldEventsVisibleOverHttp:
+    """The changelog tool defaults to a 7-day window when no bounds are
+    given. ``list_snapshots`` must fetch the full history, or every SDK
+    behavior built on it silently breaks for models older than a week."""
+
+    def test_list_snapshots_sees_month_old_events(self):
+        server_backend, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="old-model", owner="risk", model_type="ml_model", tier="low", purpose="p"
+        )
+        _age_server_events(server_backend)
+
+        fresh, _ = _fresh_client(server_app)
+        ref = fresh.get_model_by_name("old-model")
+        assert len(fresh.list_snapshots(ref.model_hash)) >= 1
+
+    def test_latest_snapshot_and_tag_for_old_model(self):
+        server_backend, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="old-model", owner="risk", model_type="ml_model", tier="low", purpose="p"
+        )
+        _age_server_events(server_backend)
+
+        fresh, fresh_ledger = _fresh_client(server_app)
+        ref = fresh.get_model_by_name("old-model")
+        assert fresh.latest_snapshot(ref.model_hash) is not None
+        # Ledger.tag resolves latest_snapshot — must not raise for a
+        # perfectly healthy month-old model.
+        fresh_ledger.tag("old-model", "v1")
+
+    def test_get_snapshot_reconstructs_month_old_snapshot(self):
+        server_backend, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="old-model", owner="risk", model_type="ml_model", tier="low", purpose="p"
+        )
+        _age_server_events(server_backend)
+        old_server_hash = server_backend._snapshots[0].snapshot_hash
+
+        fresh, _ = _fresh_client(server_app)
+        fresh.get_model_by_name("old-model")  # populate name cache
+        got = fresh.get_snapshot(old_server_hash)
+        assert got is not None
+        assert got.snapshot_hash == old_server_hash
+
+    def test_reregistration_of_old_model_is_idempotent_with_real_event_id(self):
+        from model_ledger.tools.record import record
+        from model_ledger.tools.schemas import RecordInput
+
+        server_backend, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="old-model", owner="risk", model_type="ml_model", tier="low", purpose="p"
+        )
+        _age_server_events(server_backend)
+
+        _, fresh_ledger = _fresh_client(server_app)
+        out = record(
+            RecordInput(
+                model_name="old-model",
+                event="registered",
+                payload={},
+                actor="ci",
+                owner="risk",
+                model_type="ml_model",
+                purpose="p",
+            ),
+            fresh_ledger,
+        )
+        registered = [s for s in server_backend._snapshots if s.event_type == "registered"]
+        assert len(registered) == 1  # idempotent even when the event is old
+        assert out.is_new_model is False
+        # The returned event_id identifies a real server-side event.
+        assert out.event_id in {s.snapshot_hash for s in server_backend._snapshots}
+
+    def test_platform_filter_finds_month_old_model(self):
+        from model_ledger.tools.query import query
+        from model_ledger.tools.schemas import QueryInput
+
+        server_backend, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="old-mlflow", owner="o", model_type="ml_model", tier="low", purpose="p"
+        )
+        ledger.record(
+            "old-mlflow",
+            event="discovered",
+            payload={"platform": "mlflow"},
+            actor="c",
+            source="mlflow",
+        )
+        _age_server_events(server_backend)
+
+        _, fresh_ledger = _fresh_client(server_app)
+        res = query(QueryInput(platform="mlflow"), fresh_ledger)
+        assert res.total == 1
+        assert res.models[0].name == "old-mlflow"
+
+    def test_platform_filter_finds_fresh_model_from_fresh_client(self):
+        """Hash-resolution regression: hashes handed out by list_models must
+        be resolvable by the same backend (list_snapshots via get_model),
+        or batch_platforms sees zero snapshots for every model."""
+        from model_ledger.tools.query import query
+        from model_ledger.tools.schemas import QueryInput
+
+        _, server_app, _, ledger = _make_stack()
+        ledger.register(
+            name="fresh-mlflow", owner="o", model_type="ml_model", tier="low", purpose="p"
+        )
+        ledger.record(
+            "fresh-mlflow",
+            event="discovered",
+            payload={"platform": "mlflow"},
+            actor="c",
+            source="mlflow",
+        )
+        _, fresh_ledger = _fresh_client(server_app)
+        res = query(QueryInput(platform="mlflow"), fresh_ledger)
+        assert res.total == 1
 
 
 class TestServerRejectsEmptyModelName:

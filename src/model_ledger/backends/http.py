@@ -118,16 +118,20 @@ class HttpLedgerBackend:
         data = resp.json()
         models = []
         for m in data.get("models", []):
-            models.append(
-                ModelRef(
-                    name=m["name"],
-                    owner=m.get("owner") or "unknown",
-                    model_type=m.get("model_type") or "unknown",
-                    tier="unclassified",
-                    purpose="",
-                    status=m.get("status") or "active",
-                )
+            ref = ModelRef(
+                name=m["name"],
+                owner=m.get("owner") or "unknown",
+                model_type=m.get("model_type") or "unknown",
+                tier="unclassified",
+                purpose="",
+                status=m.get("status") or "active",
             )
+            # ModelSummary omits created_at, so this hash is a client-local
+            # placeholder that changes on every call. Cache the name mapping
+            # so hashes handed out here stay resolvable by get_model /
+            # list_snapshots within this process (e.g. batch_platforms).
+            self._hash_to_name[ref.model_hash] = ref.name
+            models.append(ref)
         return models
 
     def update_model(self, model: ModelRef) -> None:
@@ -190,7 +194,14 @@ class HttpLedgerBackend:
         model = self.get_model(model_hash)
         if not model:
             return []
-        params: dict[str, Any] = {"model_name": model.name, "limit": 10000}
+        # The changelog tool defaults to a 7-day window when no bounds are
+        # given; list_snapshots must return the model's FULL history, so pass
+        # an explicit all-time lower bound.
+        params: dict[str, Any] = {
+            "model_name": model.name,
+            "limit": 10000,
+            "since": "1970-01-01T00:00:00+00:00",
+        }
         if "event_type" in filters:
             params["event_type"] = filters["event_type"]
         resp = self._client.get("/changelog", params=params)

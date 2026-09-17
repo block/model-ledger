@@ -49,7 +49,12 @@ def sql_connector(
             variables). Default: strip_template_vars from model_ledger.adapters.sql.
             Pass None to disable preprocessing.
         shared_table_patterns: When sql_column is set, table names matching any of
-            these substrings will get model_name discriminators from the parsed SQL.
+            these substrings are treated as shared tables and get model_name
+            discriminators from the parsed SQL. The patterns govern both read
+            and write ports: a read of a shared table fans out to one port per
+            model_name literal, a write to a shared table is tagged with the
+            first literal, and tables outside the patterns stay bare on both
+            sides so a bare writer matches a bare reader.
             Default: ["scores", "alert"].
         shared_table_fallback: When a write table matches shared_table_patterns but
             no model_name is found in the SQL, derive model_name from a column value.
@@ -220,11 +225,14 @@ class _SQLConnector:
                         inputs.append(DataPort(t.lower()))
 
                 for t in write_tables:
-                    if model_names:
+                    # Only shared tables carry a model_name discriminator. A job
+                    # that writes an ordinary table while filtering or aliasing
+                    # model_name must expose that write as a bare port so it
+                    # matches the bare read ports of the table's consumers.
+                    shared = any(p in t.lower() for p in self._shared_table_patterns)
+                    if shared and model_names:
                         outputs.append(DataPort(t.lower(), model_name=model_names[0]))
-                    elif self._shared_table_fallback and any(
-                        p in t.lower() for p in self._shared_table_patterns
-                    ):
+                    elif shared and self._shared_table_fallback:
                         # Derive model_name from name column with optional prefix stripping
                         src_col = self._shared_table_fallback["source_column"]
                         fallback_name = str(row.get(src_col, ""))

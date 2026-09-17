@@ -294,6 +294,139 @@ def test_shared_table_fallback():
     assert out[0].schema["model_name"] == "checks"  # prefix stripped
 
 
+def test_non_shared_write_table_stays_bare_when_model_name_present():
+    """A model_name literal scopes only shared tables; an ordinary write stays bare."""
+    conn = MockConnection(
+        [
+            {
+                "name": "closer",
+                "raw_sql": (
+                    "INSERT INTO warehouse.case_closures "
+                    "SELECT id FROM warehouse.alerts WHERE model_name = 'rule_a'"
+                ),
+            },
+        ]
+    )
+    c = sql_connector(
+        name="etl",
+        connection=conn,
+        query="SELECT name, raw_sql FROM jobs",
+        name_column="name",
+        sql_column="raw_sql",
+        shared_table_patterns=["alert"],
+    )
+    node = c.discover()[0]
+    reads = {p.identifier: p.schema for p in node.inputs}
+    writes = {p.identifier: p.schema for p in node.outputs}
+    assert reads == {"warehouse.alerts": {"model_name": "rule_a"}}
+    assert writes == {"warehouse.case_closures": {}}
+
+
+def test_shared_write_table_still_tagged():
+    """Guards the existing behaviour: a shared write keeps the first literal."""
+    conn = MockConnection(
+        [
+            {
+                "name": "alerter",
+                "raw_sql": (
+                    "INSERT INTO warehouse.global_alerts "
+                    "SELECT id, 'rule_a' AS model_name FROM warehouse.events"
+                ),
+            },
+        ]
+    )
+    c = sql_connector(
+        name="etl",
+        connection=conn,
+        query="SELECT name, raw_sql FROM jobs",
+        name_column="name",
+        sql_column="raw_sql",
+        shared_table_patterns=["alert"],
+    )
+    node = c.discover()[0]
+    writes = {p.identifier: p.schema for p in node.outputs}
+    assert writes == {"warehouse.global_alerts": {"model_name": "rule_a"}}
+    # The non-shared read stays bare.
+    assert [p.schema for p in node.inputs] == [{}]
+
+
+def test_fallback_only_applies_to_shared_write():
+    """With no literal, the fallback name lands on the shared write only."""
+    conn = MockConnection(
+        [
+            {
+                "name": "etl_rule_b",
+                "raw_sql": (
+                    "CREATE OR REPLACE TABLE warehouse.global_alerts AS "
+                    "SELECT id FROM warehouse.events; "
+                    "INSERT INTO warehouse.case_closures SELECT id FROM warehouse.events"
+                ),
+            },
+        ]
+    )
+    c = sql_connector(
+        name="etl",
+        connection=conn,
+        query="SELECT name, raw_sql FROM jobs",
+        name_column="name",
+        sql_column="raw_sql",
+        shared_table_patterns=["alert"],
+        shared_table_fallback={"source_column": "name", "strip_prefix": "etl_"},
+    )
+    node = c.discover()[0]
+    writes = {p.identifier: p.schema for p in node.outputs}
+    assert writes == {
+        "warehouse.global_alerts": {"model_name": "rule_b"},
+        "warehouse.case_closures": {},
+    }
+
+
+def test_bare_write_connects_to_bare_reader():
+    """The untagged write from a literal-bearing job links to a plain reader."""
+    from model_ledger import Ledger
+
+    producer = sql_connector(
+        name="etl",
+        connection=MockConnection(
+            [
+                {
+                    "name": "closer",
+                    "raw_sql": (
+                        "INSERT INTO warehouse.case_closures "
+                        "SELECT id FROM warehouse.alerts WHERE model_name = 'rule_a'"
+                    ),
+                },
+            ]
+        ),
+        query="SELECT name, raw_sql FROM jobs",
+        name_column="name",
+        sql_column="raw_sql",
+        shared_table_patterns=["alert"],
+    )
+    consumer = sql_connector(
+        name="etl",
+        connection=MockConnection(
+            [
+                {
+                    "name": "reporter",
+                    "raw_sql": "SELECT count(*) FROM warehouse.case_closures",
+                },
+            ]
+        ),
+        query="SELECT name, raw_sql FROM jobs",
+        name_column="name",
+        sql_column="raw_sql",
+        shared_table_patterns=["alert"],
+    )
+    ledger = Ledger()
+    ledger.add(producer.discover())
+    ledger.add(consumer.discover())
+    result = ledger.connect()
+    assert result["links_created"] == 1
+    deps = ledger.dependencies("reporter", direction="upstream")
+    assert [(d["model"].name, d["relationship"]) for d in deps] == [("closer", "data_flow")]
+
+
 def test_empty_result():
     conn = MockConnection([])
     c = sql_connector(name="test", connection=conn, query="SELECT 1", name_column="name")

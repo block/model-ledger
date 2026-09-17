@@ -1,6 +1,10 @@
 # Changelog
 
-## v0.7.13 (Unreleased)
+## Unreleased
+
+- fix: `sql_connector` no longer tags non-shared write tables with a `model_name` discriminator. The write branch of SQL parsing applied the first `model_name` literal to every write table, so a job that writes an ordinary table and also filters or aliases `model_name` exposed that write as a tagged port that could never match the bare read ports of the table's consumers, and the lineage was silently dropped. `shared_table_patterns` now governs both sides: shared writes keep the first literal (or the `shared_table_fallback` name), everything else is a bare port. Jobs whose SQL hits both conditions get a new `discovered` snapshot on the first run after upgrading; no existing port match is removed, because a bare output can only gain matches against bare readers.
+
+## v0.7.13
 
 Compatibility notes: this is a patch release — no public surface is removed. The `excel` extra is deprecated (unused since the scanner removal) and the strict full-protocol backend validation considered for this release was softened to a core-method duck check; both removals/tightenings are deferred to 0.8.0.
 

@@ -251,6 +251,37 @@ class TestConnect:
         assert r2["links_created"] == 0
         assert r2["links_skipped"] >= 1
 
+    def test_typed_edge_does_not_block_data_flow(self, ledger):
+        """A typed edge recorded before the first port match must not hide it."""
+        ledger.add([DataNode("writer", outputs=["t"]), DataNode("reader", inputs=["t"])])
+        ledger.link_dependency("writer", "reader", relationship="flagging_history", actor="t")
+        result = ledger.connect()
+        assert result["links_created"] == 1
+        assert result["links_skipped"] == 0
+        deps = ledger.dependencies("reader", direction="upstream")
+        assert sorted((d["model"].name, d["relationship"]) for d in deps) == [
+            ("writer", "data_flow"),
+            ("writer", "flagging_history"),
+        ]
+        # The data_flow row is now present, so a second pass dedupes on it.
+        again = ledger.connect()
+        assert again["links_created"] == 0
+        assert again["links_skipped"] == 1
+
+    def test_legacy_edge_without_relationship_still_dedupes(self, ledger):
+        """A depends_on row with no relationship key counts as data_flow."""
+        ledger.add([DataNode("writer", outputs=["t"]), DataNode("reader", inputs=["t"])])
+        writer = ledger.get("writer")
+        ledger.record(
+            "reader",
+            event="depends_on",
+            payload={"upstream": "writer", "upstream_hash": writer.model_hash},
+            actor="legacy",
+        )
+        result = ledger.connect()
+        assert result["links_created"] == 0
+        assert result["links_skipped"] == 1
+
     def test_pipeline(self, ledger):
         ledger.add(
             [

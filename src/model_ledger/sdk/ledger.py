@@ -533,7 +533,11 @@ class Ledger:
         """Match output ports to input ports. Write only new dependency links.
 
         Uses cached nodes from add() if available (avoids re-reading from backend).
-        Preloads existing edges to skip duplicates.
+        Preloads existing ``data_flow`` edges to skip duplicates. Edges with any
+        other relationship (typed edges written through ``link_dependency``) do
+        not count as present: an observed port match on the same pair is still
+        recorded, so the two relationships coexist instead of the typed edge
+        hiding the lineage.
         """
         from collections import defaultdict
 
@@ -546,11 +550,16 @@ class Ledger:
             for port in node.outputs:
                 output_index[port.identifier].append((node, port))
 
-        # Preload existing edges to skip duplicates
+        # Preload existing data_flow edges to skip duplicates. connect() only
+        # ever writes data_flow, so that is the only relationship that makes a
+        # pair "already present". A missing relationship key is treated as
+        # data_flow to keep legacy rows deduplicated.
         existing_edges: set[tuple[str, str]] = set()
         if hasattr(self._backend, "list_all_snapshots"):
             hash_to_name = {ref.model_hash: name for name, ref in self._name_cache.items()}
             for s in self._backend.list_all_snapshots(event_type="depends_on"):
+                if s.payload.get("relationship", "data_flow") != "data_flow":
+                    continue
                 upstream = s.payload.get("upstream")
                 downstream = hash_to_name.get(s.model_hash)
                 if upstream and downstream:

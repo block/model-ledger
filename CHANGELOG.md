@@ -3,6 +3,7 @@
 ## Unreleased
 
 - fix: `sql_connector` no longer tags non-shared write tables with a `model_name` discriminator. The write branch of SQL parsing applied the first `model_name` literal to every write table, so a job that writes an ordinary table and also filters or aliases `model_name` exposed that write as a tagged port that could never match the bare read ports of the table's consumers, and the lineage was silently dropped. `shared_table_patterns` now governs both sides: shared writes keep the first literal (or the `shared_table_fallback` name), everything else is a bare port. Jobs whose SQL hits both conditions get a new `discovered` snapshot on the first run after upgrading; no existing port match is removed, because a bare output can only gain matches against bare readers.
+- fix: `Ledger.connect()` deduplicates against existing `data_flow` edges only. The preload treated any `depends_on` row on a pair as "already linked" regardless of relationship, so a typed edge recorded through `link_dependency` (for example `suppressed_by` or `version_of`) before the pair's first port match hid the observed lineage forever. Typed edges and the observed `data_flow` edge now coexist on the same pair; a `depends_on` row with no `relationship` key still counts as `data_flow`, so legacy rows keep deduplicating.
 
 ## v0.7.13
 

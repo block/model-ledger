@@ -147,6 +147,40 @@ class TestQueryFilterByModelType:
         assert result.total == 3
 
 
+class TestQueryFilterByStatus:
+    """Status is a passthrough string filter, so the paused states are
+    queryable as soon as a connector stamps them."""
+
+    @pytest.fixture
+    def status_ledger(self, ledger):
+        _register(ledger, "live-rule")
+        _register(ledger, "shadow-rule")
+        _register(ledger, "paused-rule")
+        for name, status in (("shadow-rule", "shadow"), ("paused-rule", "disabled")):
+            ref = ledger.get(name)
+            ref.status = status
+            ledger._backend.update_model(ref)
+        return ledger
+
+    @pytest.mark.parametrize(
+        "status,expected",
+        [("active", "live-rule"), ("shadow", "shadow-rule"), ("disabled", "paused-rule")],
+    )
+    def test_filter_by_status(self, status_ledger, status, expected):
+        result = query(QueryInput(status=status), status_ledger)
+        assert result.total == 1
+        assert result.models[0].name == expected
+        assert result.models[0].status == status
+
+    def test_summary_carries_paused_status(self, status_ledger):
+        result = query(QueryInput(), status_ledger)
+        assert {m.name: m.status for m in result.models} == {
+            "live-rule": "active",
+            "shadow-rule": "shadow",
+            "paused-rule": "disabled",
+        }
+
+
 class TestQueryTextSearch:
     """Fuzzy text search on name and purpose."""
 

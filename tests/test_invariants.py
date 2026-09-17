@@ -95,13 +95,20 @@ def test_history_is_ordered_newest_first(seq: list[tuple[str, dict]]) -> None:
 
 # Independent oracle for status propagation: the canonical form of every valid
 # discovered status. Anything else (unknown strings, empty, absent) is "no opinion".
-_CANONICAL_STATUS = {s: s for s in ("development", "review", "active", "deprecated", "retired")} | {
+_CANONICAL_STATUS = {
+    s: s for s in ("development", "review", "active", "shadow", "disabled", "deprecated", "retired")
+} | {
     "ACTIVE": "active",
+    "Shadow": "shadow",
+    "DISABLED": "disabled",
     "Deprecated": "deprecated",
     "RETIRED": "retired",
 }
 _DISCOVERED_STATUSES = st.lists(
-    st.one_of(st.none(), st.sampled_from([*_CANONICAL_STATUS, "", "not-a-status", "unknown"])),
+    st.one_of(
+        st.none(),
+        st.sampled_from([*_CANONICAL_STATUS, "", "not-a-status", "unknown", "dormant"]),
+    ),
     max_size=8,
 )
 

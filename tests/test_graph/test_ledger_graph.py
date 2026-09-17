@@ -184,6 +184,131 @@ class TestAdd:
         assert result["skipped"] == 1
         assert ledger.get("scorer").status == "deprecated"
 
+    @pytest.mark.parametrize("paused", ["shadow", "disabled"])
+    def test_add_new_model_with_paused_status(self, ledger, paused):
+        """A fresh node discovered in a paused state registers in that state,
+        not as the ``active`` default."""
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": paused},
+            )
+        )
+        assert ledger.get("scorer").status == paused
+
+    @pytest.mark.parametrize("paused", ["shadow", "disabled"])
+    def test_add_paused_status_round_trips_with_active(self, ledger, paused):
+        """active -> paused -> active follows the source; the paused state is
+        not sticky and does not need a manual reset when the source re-enables."""
+        node = DataNode("scorer", platform="rules_engine", outputs=["alerts"])
+        ledger.add(node)
+        assert ledger.get("scorer").status == "active"
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": paused},
+            )
+        )
+        assert ledger.get("scorer").status == paused
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": "active"},
+            )
+        )
+        assert ledger.get("scorer").status == "active"
+
+    def test_add_paused_status_case_insensitive(self, ledger):
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": "DISABLED"},
+            )
+        )
+        assert ledger.get("scorer").status == "disabled"
+
+    def test_add_paused_status_heals_row_without_new_snapshot(self, ledger):
+        """A row that regressed to active (for example, registered before the
+        paused states existed) is corrected on the next add() of an unchanged
+        payload: the status lands and dedup still skips the snapshot."""
+        meta = {"status": "disabled"}
+        ledger.add(DataNode("scorer", platform="rules_engine", outputs=["alerts"], metadata=meta))
+        ref = ledger.get("scorer")
+        ref.status = "active"
+        ledger._backend.update_model(ref)
+        result = ledger.add(
+            DataNode("scorer", platform="rules_engine", outputs=["alerts"], metadata=meta)
+        )
+        assert result == {"added": 0, "skipped": 1}
+        assert ledger.get("scorer").status == "disabled"
+
+    def test_add_unknown_status_keeps_paused_status(self, ledger):
+        """An unmapped literal is no opinion and must not regress a paused row."""
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": "disabled"},
+            )
+        )
+        ledger.add(
+            DataNode(
+                "scorer",
+                platform="rules_engine",
+                outputs=["alerts"],
+                metadata={"status": "dormant"},
+            )
+        )
+        assert ledger.get("scorer").status == "disabled"
+
+    def test_add_unknown_status_warns_once_per_literal(self, ledger, caplog):
+        """Each distinct unrecognized status literal is logged once at WARNING
+        per ledger instance, naming the literal, not once per node."""
+        nodes = [
+            DataNode(
+                f"rule_{i}",
+                platform="rules_engine",
+                outputs=[f"t{i}"],
+                metadata={"status": "dormant"},
+            )
+            for i in range(5)
+        ]
+        with caplog.at_level("WARNING", logger="model_ledger.sdk.ledger"):
+            ledger.add(nodes)
+            ledger.add(
+                DataNode(
+                    "other", platform="rules_engine", outputs=["t"], metadata={"status": "Dormant"}
+                )
+            )
+            ledger.add(
+                DataNode(
+                    "third", platform="rules_engine", outputs=["t"], metadata={"status": "paused"}
+                )
+            )
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 2
+        assert "'dormant'" in warnings[0].getMessage()
+        assert "rules_engine" in warnings[0].getMessage()
+        assert "'paused'" in warnings[1].getMessage()
+
+    def test_add_known_or_absent_status_does_not_warn(self, ledger, caplog):
+        with caplog.at_level("WARNING", logger="model_ledger.sdk.ledger"):
+            ledger.add(DataNode("a", platform="p", outputs=["t1"]))
+            ledger.add(DataNode("b", platform="p", outputs=["t2"], metadata={"status": ""}))
+            ledger.add(DataNode("c", platform="p", outputs=["t3"], metadata={"status": None}))
+            ledger.add(DataNode("d", platform="p", outputs=["t4"], metadata={"status": "shadow"}))
+            ledger.add(DataNode("e", platform="p", outputs=["t5"], metadata={"status": "Disabled"}))
+        assert [r for r in caplog.records if r.levelname == "WARNING"] == []
+
     def test_add_source_updated_at_does_not_affect_dedup(self, ledger):
         node1 = DataNode(
             "scorer",

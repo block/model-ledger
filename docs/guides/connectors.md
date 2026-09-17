@@ -121,3 +121,15 @@ Run connectors on a schedule (cron, Airflow, Prefect) writing to a shared backen
 `add()` is idempotent — it content-hashes nodes and skips unchanged ones — and a
 `last_seen` timestamp is updated every run, so you can detect models that have gone
 silent. See the recipe: [Discover from a SQL registry](../recipes/discover-sql.md).
+
+## Lifecycle status from the source
+
+A connector that knows whether a model is live can say so with
+`metadata={"status": ...}`. Any `ModelStatus` value is accepted, case-insensitive:
+`development`, `review`, `active`, `shadow`, `disabled`, `deprecated`, `retired`.
+`shadow` means deployed and evaluated but taking no action; `disabled` means present
+at the source but switched off. `add()` propagates the value to the model row on every
+run, including models registered earlier, so a rule paused upstream reads `disabled`
+after the next sync and flips back to `active` when the source re-enables it. An
+absent status leaves the stored value untouched; an unrecognized literal is also left
+untouched and logged once at WARNING so the mapping gap is visible.

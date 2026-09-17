@@ -112,6 +112,37 @@ class TestQueryAfterRegister:
         assert data["total"] == 0
         assert data["models"] == []
 
+    @pytest.mark.parametrize("paused", ["shadow", "disabled"])
+    def test_query_status_filter_returns_paused_models(self, paused):
+        """GET /query?status=<paused> returns rows a connector stamped with a
+        paused state; the REST layer passes the string through unchanged."""
+        from model_ledger.graph.models import DataNode
+        from model_ledger.sdk.ledger import Ledger
+
+        ledger = Ledger()
+        ledger.add(
+            [
+                DataNode("live-rule", platform="rules_engine", outputs=["alerts_a"]),
+                DataNode(
+                    "paused-rule",
+                    platform="rules_engine",
+                    outputs=["alerts_b"],
+                    metadata={"status": paused},
+                ),
+            ]
+        )
+        client = TestClient(create_app(ledger.backend))
+
+        resp = client.get("/query", params={"status": paused})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["models"][0]["name"] == "paused-rule"
+        assert data["models"][0]["status"] == paused
+
+        resp = client.get("/query", params={"status": "active"})
+        assert [m["name"] for m in resp.json()["models"]] == ["live-rule"]
+
 
 class TestInvestigateEndpoint:
     """GET /investigate/{model_name} — deep-dive into a model."""

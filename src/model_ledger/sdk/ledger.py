@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -15,6 +16,8 @@ from model_ledger.core.ledger_models import ModelRef, Snapshot, Tag
 
 if TYPE_CHECKING:
     from model_ledger.graph.models import DataNode
+
+logger = logging.getLogger(__name__)
 
 
 class AddResult(TypedDict):
@@ -34,9 +37,11 @@ class ConnectResult(TypedDict):
 def _normalize_status(raw: object) -> str | None:
     """Coerce a connector-discovered status to its canonical ModelStatus value.
 
-    Returns None for absent or unrecognized values — "no opinion" — so callers
-    leave the stored status untouched. A connector that stops reporting status
-    must never regress an explicitly set status back to the default.
+    Accepts any ``ModelStatus`` value case-insensitively, including the
+    paused states ``shadow`` and ``disabled``. Returns None for absent or
+    unrecognized values, meaning "no opinion", so callers leave the stored
+    status untouched. A connector that stops reporting status must never
+    regress an explicitly set status back to the default.
     """
     if not isinstance(raw, str):
         return None
@@ -76,6 +81,10 @@ class Ledger:
         self._name_cache: dict[str, ModelRef] = {}
         self._cache_complete = False  # True after bulk preload — skip individual lookups
         self._node_cache: list = []  # DataNodes from add() — reused by connect()
+        # Unrecognized discovered status literals already warned about, so a
+        # connector emitting one unmapped value across thousands of nodes
+        # produces a single WARNING per ledger instance, not one per node.
+        self._unmapped_status_warned: set[str] = set()
 
     @property
     def backend(self) -> LedgerBackend:
@@ -408,6 +417,27 @@ class Ledger:
 
     # --- Graph methods (v0.4.0) ---
 
+    def _warn_unmapped_status(self, raw: object, platform: str | None) -> None:
+        """Log once per distinct unrecognized status literal seen by ``add()``.
+
+        Absent and blank values are not reported: they are the documented way
+        for a connector to express no opinion. Only a non-empty string that
+        fails to coerce to a ``ModelStatus`` is a mapping gap worth surfacing.
+        """
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        key = raw.strip().lower()
+        if key in self._unmapped_status_warned:
+            return
+        self._unmapped_status_warned.add(key)
+        logger.warning(
+            "Discovered status %r (platform=%s) is not a ModelStatus value; "
+            "leaving stored status unchanged. Known values: %s",
+            raw,
+            platform or "unknown",
+            ", ".join(s.value for s in ModelStatus),
+        )
+
     def add(self, nodes: DataNode | builtins.list[DataNode]) -> AddResult:
         """Register DataNodes. Each becomes a ModelRef + discovered Snapshot.
 
@@ -417,11 +447,14 @@ class Ledger:
         Recognized ``node.metadata`` keys map onto the model row: ``owner``,
         ``model_type``/``node_type``/``type``, ``tier``, ``purpose``,
         ``model_origin``, and ``status``. A discovered ``status`` (any
-        ``ModelStatus`` value, case-insensitive) is propagated to the model —
-        including already-registered models — so lifecycle changes detected at
-        the source (e.g. ``deprecated`` for an entity deleted upstream) reach
-        the model row on the next sync. An absent or unrecognized status leaves
-        the stored status unchanged.
+        ``ModelStatus`` value, case-insensitive, including ``shadow`` and
+        ``disabled``) is propagated to the model, including already-registered
+        models, so lifecycle changes detected at the source (e.g. ``disabled``
+        for a rule paused upstream, or ``deprecated`` for an entity deleted
+        upstream) reach the model row on the next sync. An absent or
+        unrecognized status leaves the stored status unchanged; each distinct
+        unrecognized literal is logged once at WARNING so silent no-opinion
+        outcomes are visible to the operator.
         """
         import hashlib
         import json
@@ -452,7 +485,10 @@ class Ledger:
         added = 0
         skipped = 0
         for node in nodes:
-            node_status = _normalize_status(node.metadata.get("status"))
+            raw_status = node.metadata.get("status")
+            node_status = _normalize_status(raw_status)
+            if node_status is None:
+                self._warn_unmapped_status(raw_status, node.platform)
             ref = self.register(
                 name=node.name,
                 owner=node.metadata.get("owner") or "unknown",

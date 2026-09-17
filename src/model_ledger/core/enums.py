@@ -30,9 +30,20 @@ class RiskTier(CaseInsensitiveEnum):
 
 
 class ModelStatus(CaseInsensitiveEnum):
+    """Lifecycle state of a model, in lifecycle order.
+
+    ``SHADOW`` and ``DISABLED`` sit between ``ACTIVE`` and ``DEPRECATED``:
+    both describe a model that still exists at its source but is not acting
+    on production decisions. A shadow model is deployed and evaluated but
+    takes no action; a disabled model has been switched off and can be
+    re-enabled. ``DEPRECATED`` and ``RETIRED`` remain the terminal states.
+    """
+
     DEVELOPMENT = "development"
     REVIEW = "review"
     ACTIVE = "active"
+    SHADOW = "shadow"
+    DISABLED = "disabled"
     DEPRECATED = "deprecated"
     RETIRED = "retired"
 

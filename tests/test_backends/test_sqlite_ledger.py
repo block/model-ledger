@@ -84,6 +84,19 @@ class TestModels:
         result = backend.get_model(m.model_hash)
         assert result.status == "deprecated"
 
+    @pytest.mark.parametrize("paused", ["shadow", "disabled"])
+    def test_paused_status_round_trips_and_filters(self, backend, paused):
+        """The status column is unconstrained text, so the paused states
+        persist verbatim and are selectable with the status filter."""
+        live = _make_model("live")
+        backend.save_model(live)
+        m = _make_model("paused")
+        m.status = paused
+        backend.save_model(m)
+        assert backend.get_model(m.model_hash).status == paused
+        assert [r.name for r in backend.list_models(status=paused)] == ["paused"]
+        assert [r.name for r in backend.list_models(status="active")] == ["live"]
+
 
 class TestSnapshots:
     def test_append_and_get(self, backend):
